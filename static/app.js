@@ -298,18 +298,27 @@ function renderResults(data) {
     hide(genreCallout);
   }
 
-  // Conversion comparison card — show if we have peer data (even without user's own rate)
+  // Conversion comparison card — show if we have peer data
   const convCard = $('#conversion-card');
   const comp = (userProfile && userProfile.conversion_comparison) || {};
-  if (userProfile && (userProfile.conversion_rate != null || comp.peer_median != null)) {
-    $('#conv-yours').textContent = userProfile.conversion_rate != null
-      ? userProfile.conversion_rate.toFixed(1) + '%' : '-';
+  const hasUserRate = userProfile && userProfile.conversion_rate != null;
+
+  if (userProfile && (hasUserRate || comp.peer_median != null)) {
+    // Only show "Your Rate" box if we have their data
+    const yoursStat = $('#conv-yours-stat');
+    if (hasUserRate) {
+      $('#conv-yours').textContent = userProfile.conversion_rate.toFixed(1) + '%';
+      show(yoursStat);
+    } else {
+      hide(yoursStat);
+    }
+
     $('#conv-median').textContent = comp.peer_median != null ? comp.peer_median.toFixed(1) + '%' : '-';
     $('#conv-top25').textContent = comp.peer_top_25 != null ? comp.peer_top_25.toFixed(1) + '%' : '-';
 
-    // Fan opportunity
+    // Fan opportunity — only show if we have their rate
     const oppEl = $('#conv-opportunity');
-    if (userProfile.additional_fans > 0) {
+    if (hasUserRate && userProfile.additional_fans > 0) {
       const fans = userProfile.additional_fans.toLocaleString();
       const rev = '$' + userProfile.additional_revenue.toLocaleString();
       oppEl.innerHTML =
