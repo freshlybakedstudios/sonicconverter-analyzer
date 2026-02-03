@@ -110,7 +110,19 @@ function handleFile(file) {
   selectedFile = file;
   $('#file-name').textContent = file.name;
   show($('#selected-file'));
+  updateAnalyzeButton();
 }
+
+// Enable analyze button only when file AND genre are selected
+function updateAnalyzeButton() {
+  const btn = $('#analyze-btn');
+  const hasFile = !!selectedFile;
+  const hasGenre = !!$('#genre-select').value;
+  btn.disabled = !(hasFile && hasGenre);
+}
+
+// Listen for genre changes
+$('#genre-select').addEventListener('change', updateAnalyzeButton);
 
 // -------------------------------------------------------
 // Analyze
