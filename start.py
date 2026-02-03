@@ -1,45 +1,38 @@
 #!/usr/bin/env python3
 """
 Startup script for Railway deployment.
-Starts server immediately, builds GEMS cache in background if missing.
+Downloads GEMS cache from GCS if missing, then starts server.
 """
 import os
 import subprocess
 import sys
-import threading
+import urllib.request
 from pathlib import Path
 
 CACHE_PATH = Path(__file__).parent / 'cache' / 'universe' / 'gems_universe.json'
+CACHE_URL = 'https://storage.googleapis.com/fbs-static-assets/gems_universe.json'
 
 
-def build_cache_background():
-    """Build the GEMS universe cache in a background thread."""
-    print("📦 Cache not found — building from Supabase in background...")
+def download_cache():
+    """Download the GEMS universe cache from GCS."""
+    print("📦 Downloading cache from GCS...")
 
-    url = os.getenv('SUPABASE_URL')
-    key = os.getenv('SUPABASE_SERVICE_KEY')
-
-    if not url or not key:
-        print("❌ SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
-        return
+    # Create directory if needed
+    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        from build_gems_universe_cache import UniverseCacheBuilder
-        builder = UniverseCacheBuilder(url, key)
-        builder.build()
-        print("✅ Cache built successfully - restart the app or it will load on next request")
+        urllib.request.urlretrieve(CACHE_URL, CACHE_PATH)
+        print(f"✅ Cache downloaded to {CACHE_PATH}")
     except Exception as e:
-        print(f"❌ Cache build failed: {e}")
+        print(f"❌ Cache download failed: {e}")
+        raise
 
 
 def main():
     if CACHE_PATH.exists():
         print(f"✅ Cache already exists at {CACHE_PATH}")
     else:
-        # Start cache build in background thread
-        thread = threading.Thread(target=build_cache_background, daemon=True)
-        thread.start()
-        print("⏳ Cache building in background - app may not work until complete")
+        download_cache()
 
     port = os.getenv('PORT', '8000')
     print(f"🚀 Starting server on port {port}...")
