@@ -39,7 +39,7 @@ def _build_eq_bar(label: str, value: float, max_val: float = 0.4) -> str:
     <tr>
       <td style="color:#aaa;font-size:13px;width:90px;padding:3px 0">{label}</td>
       <td style="padding:3px 0">
-        <div style="background:#2a2a2a;border-radius:4px;height:18px;width:100%">
+        <div style="background:#1a1818;border-radius:4px;height:18px;width:100%">
           <div style="background:linear-gradient(90deg,#D8E166,#B5C851);height:18px;border-radius:4px;width:{width}%"></div>
         </div>
       </td>
@@ -57,7 +57,7 @@ def _build_match_row(idx: int, match: Dict) -> str:
     conv_str = f'{conv:.1f}%' if conv is not None else '-'
     link = f'<a href="{link_url}" style="color:#B5C851;text-decoration:none">{name}</a>' if link_url else name
     return f"""
-    <tr style="border-bottom:1px solid #333">
+    <tr style="border-bottom:1px solid #3a3636">
       <td style="padding:8px;color:#888">{idx}</td>
       <td style="padding:8px">{link}</td>
       <td style="padding:8px;color:#D8E166;font-weight:bold">{sim:.0%}</td>
@@ -74,21 +74,21 @@ def _build_conversion_section(user_profile: Dict) -> str:
     peer_median = comp.get('peer_median', 0)
     peer_top_25 = comp.get('peer_top_25', 0)
     return f'''
-      <div style="background:#1c1c30;border:1px solid #2a2a40;border-radius:8px;padding:20px;margin:0 0 16px">
+      <div style="background:#231f20;border:1px solid #3a3636;border-radius:8px;padding:20px;margin:0 0 16px">
         <h2 style="color:#fff;font-size:18px;margin:0 0 16px">Your Conversion Rate</h2>
         <table style="width:100%;border-collapse:collapse">
           <tr>
-            <td style="text-align:center;padding:12px;background:#161625;border-radius:8px">
+            <td style="text-align:center;padding:12px;background:#1a1818;border-radius:8px">
               <div style="font-size:22px;font-weight:700;color:#B5C851">{conv_rate:.1f}%</div>
               <div style="font-size:11px;color:#888;margin-top:4px">YOUR RATE</div>
             </td>
             <td style="width:12px"></td>
-            <td style="text-align:center;padding:12px;background:#161625;border-radius:8px">
+            <td style="text-align:center;padding:12px;background:#1a1818;border-radius:8px">
               <div style="font-size:22px;font-weight:700;color:#B5C851">{peer_median:.1f}%</div>
               <div style="font-size:11px;color:#888;margin-top:4px">PEER MEDIAN</div>
             </td>
             <td style="width:12px"></td>
-            <td style="text-align:center;padding:12px;background:#161625;border-radius:8px">
+            <td style="text-align:center;padding:12px;background:#1a1818;border-radius:8px">
               <div style="font-size:22px;font-weight:700;color:#B5C851">{peer_top_25:.1f}%</div>
               <div style="font-size:11px;color:#888;margin-top:4px">TOP 25%</div>
             </td>
@@ -171,9 +171,10 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
 
     html = f"""
     <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-                max-width:600px;margin:0 auto;background:#1a1a2e;color:#eee;padding:32px;border-radius:12px">
+                max-width:600px;margin:0 auto;background:#141213;color:#eee;padding:32px;border-radius:12px">
 
       <div style="text-align:center;margin-bottom:24px">
+        <img src="https://freshlybakedstudios.com/logo.png" alt="Freshly Baked Studios" style="width:120px;height:auto;margin-bottom:16px">
         <h1 style="color:#fff;margin:0;font-size:24px">Your Sonic Breakdown</h1>
         <p style="color:#888;margin:4px 0 0">Freshly Baked Studios</p>
       </div>
@@ -211,7 +212,7 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
 
       <!-- Genre Alignment -->
       {f'''
-      <div style="background:#1c1c30;border:1px solid #D8E166;border-left:4px solid #D8E166;border-radius:8px;padding:16px 20px;margin:24px 0 16px">
+      <div style="background:#231f20;border:1px solid #D8E166;border-left:4px solid #D8E166;border-radius:8px;padding:16px 20px;margin:24px 0 16px">
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#888">Best Genre Fit</div>
         <div style="font-size:24px;font-weight:700;color:#B5C851;margin:4px 0">{genre_alignment["genre"]}</div>
         <div style="font-size:13px;color:#888">{genre_alignment["count"]} of {genre_alignment["total"]} matches ({genre_alignment["percentage"]:.0f}%)</div>
@@ -223,7 +224,7 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
       <!-- Top Matches -->
       <h2 style="color:#fff;font-size:18px;margin:24px 0 12px">Similar Artists</h2>
       <table style="width:100%;border-collapse:collapse;color:#eee;font-size:13px">
-        <tr style="border-bottom:2px solid #444">
+        <tr style="border-bottom:2px solid #3a3636">
           <th style="text-align:left;padding:8px;color:#888">#</th>
           <th style="text-align:left;padding:8px;color:#888">Artist</th>
           <th style="text-align:left;padding:8px;color:#888">Match</th>
