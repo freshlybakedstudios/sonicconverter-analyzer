@@ -50,20 +50,16 @@ def _build_eq_bar(label: str, value: float, max_val: float = 0.4) -> str:
 def _build_match_row(idx: int, match: Dict) -> str:
     sim = match.get('similarity', 0)
     name = match.get('name', 'Unknown')
-    tier = match.get('tier', '')
-    genre = match.get('primary_genre', '')
     link_url = match.get('track_url') or match.get('spotify_url', '')
     conv = match.get('conversion_rate')
     conv_str = f'{conv:.1f}%' if conv is not None else '-'
-    link = f'<a href="{link_url}" style="color:#B5C851;text-decoration:none">{name}</a>' if link_url else name
+    link = f'<a href="{link_url}" style="color:#B5C851;text-decoration:none;white-space:nowrap">{name}</a>' if link_url else f'<span style="white-space:nowrap">{name}</span>'
     return f"""
     <tr style="border-bottom:1px solid #3a3636">
-      <td style="padding:8px;color:#888">{idx}</td>
-      <td style="padding:8px">{link}</td>
-      <td style="padding:8px;color:#D8E166;font-weight:bold">{sim:.0%}</td>
-      <td style="padding:8px;color:#B0C936;font-weight:600">{conv_str}</td>
-      <td style="padding:8px;color:#aaa">{tier}</td>
-      <td style="padding:8px;color:#aaa">{genre}</td>
+      <td style="padding:6px 8px;color:#888;width:24px">{idx}</td>
+      <td style="padding:6px 8px">{link}</td>
+      <td style="padding:6px 8px;color:#D8E166;font-weight:bold;white-space:nowrap">{sim:.0%}</td>
+      <td style="padding:6px 8px;color:#B0C936;font-weight:600;white-space:nowrap">{conv_str}</td>
     </tr>"""
 
 
@@ -174,6 +170,7 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
                 max-width:600px;margin:0 auto;background:#141213;color:#eee;padding:32px;border-radius:12px">
 
       <div style="text-align:center;margin-bottom:24px">
+        <img src="https://storage.googleapis.com/fbs-static-assets/axd-logo.png" alt="Freshly Baked Studios" style="width:180px;height:auto;margin-bottom:16px">
         <h1 style="color:#fff;margin:0;font-size:24px">Your Sonic Breakdown</h1>
         <p style="color:#888;margin:4px 0 0">Freshly Baked Studios</p>
       </div>
@@ -182,24 +179,26 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
       <p style="color:#ccc">Here's the full analysis of your uploaded track.</p>
 
       <!-- Key Stats -->
-      <div style="display:flex;justify-content:space-between;margin:20px 0;flex-wrap:wrap">
-        <div style="text-align:center;flex:1;min-width:80px;padding:8px">
-          <div style="font-size:24px;color:#D8E166;font-weight:bold">{bpm:.0f}</div>
-          <div style="font-size:11px;color:#888">BPM</div>
-        </div>
-        <div style="text-align:center;flex:1;min-width:80px;padding:8px">
-          <div style="font-size:24px;color:#D8E166;font-weight:bold">{key} {scale}</div>
-          <div style="font-size:11px;color:#888">KEY</div>
-        </div>
-        <div style="text-align:center;flex:1;min-width:80px;padding:8px">
-          <div style="font-size:24px;color:#D8E166;font-weight:bold">{lufs:.1f}</div>
-          <div style="font-size:11px;color:#888">LUFS</div>
-        </div>
-        <div style="text-align:center;flex:1;min-width:80px;padding:8px">
-          <div style="font-size:24px;color:#D8E166;font-weight:bold">{energy:.2f}</div>
-          <div style="font-size:11px;color:#888">ENERGY</div>
-        </div>
-      </div>
+      <table style="width:100%;margin:20px 0;border-collapse:collapse">
+        <tr>
+          <td style="text-align:center;padding:8px;width:25%">
+            <div style="font-size:24px;color:#D8E166;font-weight:bold">{bpm:.0f}</div>
+            <div style="font-size:11px;color:#888">BPM</div>
+          </td>
+          <td style="text-align:center;padding:8px;width:25%">
+            <div style="font-size:24px;color:#D8E166;font-weight:bold">{key} {scale}</div>
+            <div style="font-size:11px;color:#888">KEY</div>
+          </td>
+          <td style="text-align:center;padding:8px;width:25%">
+            <div style="font-size:24px;color:#D8E166;font-weight:bold">{lufs:.1f}</div>
+            <div style="font-size:11px;color:#888">LUFS</div>
+          </td>
+          <td style="text-align:center;padding:8px;width:25%">
+            <div style="font-size:24px;color:#D8E166;font-weight:bold">{energy:.2f}</div>
+            <div style="font-size:11px;color:#888">ENERGY</div>
+          </td>
+        </tr>
+      </table>
 
       <!-- EQ Breakdown -->
       <h2 style="color:#fff;font-size:18px;margin:24px 0 12px">Frequency Balance</h2>
@@ -222,14 +221,12 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
 
       <!-- Top Matches -->
       <h2 style="color:#fff;font-size:18px;margin:24px 0 12px">Similar Artists</h2>
-      <table style="width:100%;border-collapse:collapse;color:#eee;font-size:13px">
+      <table style="width:100%;border-collapse:collapse;color:#eee;font-size:14px">
         <tr style="border-bottom:2px solid #3a3636">
-          <th style="text-align:left;padding:8px;color:#888">#</th>
-          <th style="text-align:left;padding:8px;color:#888">Artist</th>
-          <th style="text-align:left;padding:8px;color:#888">Match</th>
-          <th style="text-align:left;padding:8px;color:#888">Conversion</th>
-          <th style="text-align:left;padding:8px;color:#888">Tier</th>
-          <th style="text-align:left;padding:8px;color:#888">Genre</th>
+          <th style="text-align:left;padding:6px 8px;color:#888;width:24px">#</th>
+          <th style="text-align:left;padding:6px 8px;color:#888">Artist</th>
+          <th style="text-align:left;padding:6px 8px;color:#888">Match</th>
+          <th style="text-align:left;padding:6px 8px;color:#888">Conv.</th>
         </tr>
         {match_rows}
       </table>
