@@ -3,7 +3,7 @@
    ------------------------------------------------------- */
 
 :root {
-  --bg: #0d0d1a;
+  --bg: rgb(20, 18, 19);
   --surface: #161625;
   --card: #1c1c30;
   --border: #2a2a40;
@@ -21,7 +21,11 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--bg);
+  background-image: url('bg.png');
+  background-repeat: repeat;
+  background-color: rgb(20, 18, 19);
+  background-size: auto;
+  background-position: center;
   color: var(--text);
   line-height: 1.6;
   min-height: 100vh;
