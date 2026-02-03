@@ -174,7 +174,6 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
                 max-width:600px;margin:0 auto;background:#141213;color:#eee;padding:32px;border-radius:12px">
 
       <div style="text-align:center;margin-bottom:24px">
-        <img src="https://freshlybakedstudios.com/logo.png" alt="Freshly Baked Studios" style="width:120px;height:auto;margin-bottom:16px">
         <h1 style="color:#fff;margin:0;font-size:24px">Your Sonic Breakdown</h1>
         <p style="color:#888;margin:4px 0 0">Freshly Baked Studios</p>
       </div>
