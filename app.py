@@ -44,9 +44,21 @@ access_tokens: dict = {}  # token -> {name, email, created_at}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global supabase
-    print("Starting up — loading GEMS universe cache...")
-    matcher.load_cache()
-    supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_SERVICE_KEY'))
+    print("Starting up...")
+
+    # Try to load cache if it exists
+    try:
+        matcher.load_cache()
+    except FileNotFoundError:
+        print("⚠️  Cache not found - run build_gems_universe_cache.py or wait for background build")
+
+    url = os.getenv('SUPABASE_URL')
+    key = os.getenv('SUPABASE_SERVICE_KEY')
+    if url and key:
+        supabase = create_client(url, key)
+    else:
+        print("⚠️  SUPABASE_URL/SUPABASE_SERVICE_KEY not set - some features disabled")
+
     print("Ready.")
     yield
     print("Shutting down.")
@@ -75,7 +87,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health():
-    return {"status": "ok", "cache_loaded": matcher.universe is not None}
+    return {"status": "ok", "cache_loaded": matcher.cache is not None}
 
 
 # ---------------------------------------------------------------------------
