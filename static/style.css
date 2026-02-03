@@ -661,24 +661,28 @@ body {
 /* ---- FLOATING PIES ---- */
 .spawned-pie {
   position: fixed;
-  width: 32px;
-  height: 32px;
+  width: 48px;
+  height: 48px;
   pointer-events: none;
   z-index: 9999;
+  opacity: 0;
 }
 
 @keyframes pieFloat {
   0% {
     opacity: 0;
-    transform: translate(0, 0) scale(0.5);
+    transform: translate(0, 0) scale(0.3);
   }
-  10% {
+  15% {
     opacity: 1;
     transform: translate(0, 0) scale(1);
   }
+  85% {
+    opacity: 0.8;
+  }
   100% {
     opacity: 0;
-    transform: translate(var(--tx), var(--ty)) scale(0.5);
+    transform: translate(var(--tx), var(--ty)) scale(0.6);
   }
 }
 

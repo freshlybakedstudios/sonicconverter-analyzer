@@ -397,18 +397,22 @@ function spawnPies(e) {
   const mouseX = e.clientX;
   const mouseY = e.clientY;
 
-  pieFiles.forEach((src, i) => {
+  // Only spawn a few random pies per click (not all 15)
+  const numToSpawn = 3 + Math.floor(Math.random() * 4); // 3-6 pies
+  const shuffled = [...pieFiles].sort(() => Math.random() - 0.5).slice(0, numToSpawn);
+
+  shuffled.forEach((src, i) => {
     const img = document.createElement('img');
     img.src = src;
     img.className = 'spawned-pie';
 
     // Random offset from click position
-    const offsetX = Math.random() * 100 - 50;
-    const offsetY = Math.random() * 100 - 50;
+    const offsetX = Math.random() * 80 - 40;
+    const offsetY = Math.random() * 80 - 40;
 
-    // Random movement direction
-    const translateX = Math.random() * 200 - 100;
-    const translateY = -300 + Math.random() * 100;
+    // Random movement direction (float upward)
+    const translateX = Math.random() * 150 - 75;
+    const translateY = -200 - Math.random() * 100;
 
     img.style.left = `${mouseX + offsetX}px`;
     img.style.top = `${mouseY + offsetY}px`;
@@ -417,8 +421,8 @@ function spawnPies(e) {
 
     // Random rotation direction
     const rotateDir = Math.random() > 0.5 ? 'rotateClockwise' : 'rotateCounterClockwise';
-    const duration = 2 + Math.random() * 4;
-    img.style.animation = `pieFloat ${duration}s linear forwards, ${rotateDir} ${duration}s linear infinite`;
+    const duration = 2 + Math.random() * 2; // 2-4 seconds
+    img.style.animation = `pieFloat ${duration}s ease-out forwards, ${rotateDir} ${duration}s linear infinite`;
 
     document.body.appendChild(img);
 
