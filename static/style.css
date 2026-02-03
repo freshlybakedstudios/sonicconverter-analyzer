@@ -180,8 +180,14 @@ body {
   cursor: pointer;
   transition: background 0.15s;
 }
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   background: var(--surface);
+}
+.btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: var(--text-dim);
+  border-color: var(--border);
 }
 
 /* ---- SECTIONS ---- */
