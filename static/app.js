@@ -376,21 +376,21 @@ function renderResults(data) {
 // Floating Pies Spawner
 // -------------------------------------------------------
 const pieFiles = [
-  'pies/allfbsgraphices-02.svg',
-  'pies/allfbsgraphices-03.svg',
-  'pies/allfbsgraphices-04.svg',
-  'pies/allfbsgraphices-05.svg',
-  'pies/allfbsgraphices-06.svg',
-  'pies/allfbsgraphices-07.svg',
-  'pies/allfbsgraphices-09.svg',
-  'pies/allfbsgraphices-10.svg',
-  'pies/allfbsgraphices-11.svg',
-  'pies/allfbsgraphices-12.svg',
-  'pies/allfbsgraphices-13.svg',
-  'pies/allfbsgraphices-14.svg',
-  'pies/allfbsgraphices-15.svg',
-  'pies/allfbsgraphices-16.svg',
-  'pies/allfbsgraphices-18.svg',
+  '/static/pies/allfbsgraphices-02.svg',
+  '/static/pies/allfbsgraphices-03.svg',
+  '/static/pies/allfbsgraphices-04.svg',
+  '/static/pies/allfbsgraphices-05.svg',
+  '/static/pies/allfbsgraphices-06.svg',
+  '/static/pies/allfbsgraphices-07.svg',
+  '/static/pies/allfbsgraphices-09.svg',
+  '/static/pies/allfbsgraphices-10.svg',
+  '/static/pies/allfbsgraphices-11.svg',
+  '/static/pies/allfbsgraphices-12.svg',
+  '/static/pies/allfbsgraphices-13.svg',
+  '/static/pies/allfbsgraphices-14.svg',
+  '/static/pies/allfbsgraphices-15.svg',
+  '/static/pies/allfbsgraphices-16.svg',
+  '/static/pies/allfbsgraphices-18.svg',
 ];
 
 function spawnPies(e) {
