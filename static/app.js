@@ -371,3 +371,60 @@ function renderResults(data) {
     recList.appendChild(li);
   });
 }
+
+// -------------------------------------------------------
+// Floating Pies Spawner
+// -------------------------------------------------------
+const pieFiles = [
+  'pies/allfbsgraphices-02.svg',
+  'pies/allfbsgraphices-03.svg',
+  'pies/allfbsgraphices-04.svg',
+  'pies/allfbsgraphices-05.svg',
+  'pies/allfbsgraphices-06.svg',
+  'pies/allfbsgraphices-07.svg',
+  'pies/allfbsgraphices-09.svg',
+  'pies/allfbsgraphices-10.svg',
+  'pies/allfbsgraphices-11.svg',
+  'pies/allfbsgraphices-12.svg',
+  'pies/allfbsgraphices-13.svg',
+  'pies/allfbsgraphices-14.svg',
+  'pies/allfbsgraphices-15.svg',
+  'pies/allfbsgraphices-16.svg',
+  'pies/allfbsgraphices-18.svg',
+];
+
+function spawnPies(e) {
+  const mouseX = e.clientX;
+  const mouseY = e.clientY;
+
+  pieFiles.forEach((src, i) => {
+    const img = document.createElement('img');
+    img.src = src;
+    img.className = 'spawned-pie';
+
+    // Random offset from click position
+    const offsetX = Math.random() * 100 - 50;
+    const offsetY = Math.random() * 100 - 50;
+
+    // Random movement direction
+    const translateX = Math.random() * 200 - 100;
+    const translateY = -300 + Math.random() * 100;
+
+    img.style.left = `${mouseX + offsetX}px`;
+    img.style.top = `${mouseY + offsetY}px`;
+    img.style.setProperty('--tx', `${translateX}px`);
+    img.style.setProperty('--ty', `${translateY}px`);
+
+    // Random rotation direction
+    const rotateDir = Math.random() > 0.5 ? 'rotateClockwise' : 'rotateCounterClockwise';
+    const duration = 2 + Math.random() * 4;
+    img.style.animation = `pieFloat ${duration}s linear forwards, ${rotateDir} ${duration}s linear infinite`;
+
+    document.body.appendChild(img);
+
+    // Remove after animation
+    setTimeout(() => img.remove(), duration * 1000);
+  });
+}
+
+document.addEventListener('click', spawnPies);
