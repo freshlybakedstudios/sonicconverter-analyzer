@@ -1,0 +1,64 @@
+# Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+
+# Cache (built from Supabase on deploy)
+cache/
+
+# macOS
+.DS_Store
+.claude/
+
+# Dev/test scripts (not needed for web)
+test_*.py
+*_backup.py
+*_snapshot.py
+*_experiment.py
+*.tmp
+
+# JSON data files
+*.json
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+
+# CLI tools / analysis scripts (not needed for web)
+bulk_*.py
+compare_*.py
+complete_*.py
+consensus_*.py
+dialed_in_*.py
+email_coverage_*.py
+emotion_*.py
+fast_*.py
+final_sonic_matcher*.py
+find_test_artists.js
+formation_*.py
+get_*.py
+granular_*.py
+optimized_*.py
+parameter_*.py
+print_*.py
+production_outreach_*.py
+show_*.py
+tune_*.py
+weighted_*.py
+analyze_spotify_track.py
+build_test_matrix.py
+sonicemotionconversion/
+
+# Markdown docs
+*.md
