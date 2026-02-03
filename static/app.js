@@ -373,7 +373,7 @@ function renderResults(data) {
 }
 
 // -------------------------------------------------------
-// Floating Pies Spawner
+// Floating Pies — Asteroids-style with physics & mouse repel
 // -------------------------------------------------------
 const pieFiles = [
   '/static/pies/allfbsgraphices-02.svg',
@@ -385,50 +385,184 @@ const pieFiles = [
   '/static/pies/allfbsgraphices-09.svg',
   '/static/pies/allfbsgraphices-10.svg',
   '/static/pies/allfbsgraphices-11.svg',
-  '/static/pies/allfbsgraphices-12.svg',
   '/static/pies/allfbsgraphices-13.svg',
   '/static/pies/allfbsgraphices-14.svg',
   '/static/pies/allfbsgraphices-15.svg',
-  '/static/pies/allfbsgraphices-16.svg',
   '/static/pies/allfbsgraphices-18.svg',
 ];
 
-function spawnPies(e) {
-  const mouseX = e.clientX;
-  const mouseY = e.clientY;
+const floatingPies = [];
+let mouseX = -1000;
+let mouseY = -1000;
 
-  // Only spawn a few random pies per click (not all 15)
-  const numToSpawn = 3 + Math.floor(Math.random() * 4); // 3-6 pies
-  const shuffled = [...pieFiles].sort(() => Math.random() - 0.5).slice(0, numToSpawn);
+// Physics constants
+const FRICTION = 0.995;
+const REPEL_RADIUS = 100;
+const REPEL_STRENGTH = 0.8;
 
-  shuffled.forEach((src, i) => {
+function initFloatingPies() {
+  const numPies = 6;
+  const shuffled = [...pieFiles].sort(() => Math.random() - 0.5);
+
+  // 6 pies with varying sizes (slightly larger)
+  const sizes = [55, 75, 95, 115, 140, 170];
+
+  for (let i = 0; i < numPies; i++) {
+    const src = shuffled[i % shuffled.length];
     const img = document.createElement('img');
     img.src = src;
-    img.className = 'spawned-pie';
+    img.className = 'floating-pie';
 
-    // Random offset from click position
-    const offsetX = Math.random() * 80 - 40;
-    const offsetY = Math.random() * 80 - 40;
+    // Random starting position
+    const x = Math.random() * window.innerWidth;
+    const y = Math.random() * window.innerHeight;
 
-    // Random movement direction (float upward)
-    const translateX = Math.random() * 150 - 75;
-    const translateY = -200 - Math.random() * 100;
+    // Faster drift
+    const speed = 0.3 + Math.random() * 0.4;
+    const angle = Math.random() * Math.PI * 2;
+    const baseVx = Math.cos(angle) * speed;
+    const baseVy = Math.sin(angle) * speed;
 
-    img.style.left = `${mouseX + offsetX}px`;
-    img.style.top = `${mouseY + offsetY}px`;
-    img.style.setProperty('--tx', `${translateX}px`);
-    img.style.setProperty('--ty', `${translateY}px`);
+    // Get size from predefined distribution
+    const size = sizes[i];
 
-    // Random rotation direction
-    const rotateDir = Math.random() > 0.5 ? 'rotateClockwise' : 'rotateCounterClockwise';
-    const duration = 2 + Math.random() * 2; // 2-4 seconds
-    img.style.animation = `pieFloat ${duration}s ease-out forwards, ${rotateDir} ${duration}s linear infinite`;
+    // Slow rotation
+    const rotationSpeed = (Math.random() - 0.5) * 0.2;
+
+    // Opacity: smaller = more visible, bigger = more ghostly
+    const opacity = 0.06 + (1 - size / 180) * 0.12;
+
+    img.style.width = `${size}px`;
+    img.style.height = `${size}px`;
+    img.style.opacity = opacity;
 
     document.body.appendChild(img);
 
-    // Remove after animation
-    setTimeout(() => img.remove(), duration * 1000);
+    floatingPies.push({
+      el: img,
+      x, y,
+      vx: baseVx,
+      vy: baseVy,
+      baseVx, baseVy,
+      rotation: Math.random() * 360,
+      rotationSpeed,
+      baseRotationSpeed: rotationSpeed,
+      size,
+      radius: size / 2,
+      mass: size * size, // Mass scales with area
+    });
+  }
+
+  document.addEventListener('mousemove', (e) => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
   });
+
+  requestAnimationFrame(animateFloatingPies);
 }
 
-document.addEventListener('click', spawnPies);
+function animateFloatingPies() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  // Collision detection between all pie pairs
+  for (let i = 0; i < floatingPies.length; i++) {
+    const a = floatingPies[i];
+    const ax = a.x + a.radius;
+    const ay = a.y + a.radius;
+
+    for (let j = i + 1; j < floatingPies.length; j++) {
+      const b = floatingPies[j];
+      const bx = b.x + b.radius;
+      const by = b.y + b.radius;
+
+      const dx = bx - ax;
+      const dy = by - ay;
+      const distSq = dx * dx + dy * dy;
+      const minDist = a.radius + b.radius;
+
+      if (distSq < minDist * minDist && distSq > 0) {
+        const dist = Math.sqrt(distSq);
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // Separate them first (push apart)
+        const overlap = minDist - dist;
+        const totalMass = a.mass + b.mass;
+        const aRatio = b.mass / totalMass;
+        const bRatio = a.mass / totalMass;
+
+        a.x -= overlap * nx * aRatio;
+        a.y -= overlap * ny * aRatio;
+        b.x += overlap * nx * bRatio;
+        b.y += overlap * ny * bRatio;
+
+        // Calculate bounce velocity
+        const relVelX = a.vx - b.vx;
+        const relVelY = a.vy - b.vy;
+        const relVelDotNormal = relVelX * nx + relVelY * ny;
+
+        // Only resolve if moving toward each other
+        if (relVelDotNormal > 0) {
+          const restitution = 0.7; // Bounciness
+          const impulse = (1 + restitution) * relVelDotNormal / totalMass;
+
+          a.vx -= impulse * b.mass * nx;
+          a.vy -= impulse * b.mass * ny;
+          b.vx += impulse * a.mass * nx;
+          b.vy += impulse * a.mass * ny;
+
+          // Spin on impact
+          a.rotationSpeed += (Math.random() - 0.5) * 0.8;
+          b.rotationSpeed += (Math.random() - 0.5) * 0.8;
+        }
+      }
+    }
+  }
+
+  floatingPies.forEach(pie => {
+    // Mouse repulsion
+    const cx = pie.x + pie.radius;
+    const cy = pie.y + pie.radius;
+    const dx = cx - mouseX;
+    const dy = cy - mouseY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < REPEL_RADIUS && dist > 0) {
+      const t = 1 - dist / REPEL_RADIUS;
+      const force = t * t * REPEL_STRENGTH;
+      pie.vx += (dx / dist) * force;
+      pie.vy += (dy / dist) * force;
+      pie.rotationSpeed += (Math.random() - 0.5) * 0.3;
+    }
+
+    // Friction
+    pie.vx *= FRICTION;
+    pie.vy *= FRICTION;
+
+    // Drift back to base velocity
+    pie.vx += (pie.baseVx - pie.vx) * 0.002;
+    pie.vy += (pie.baseVy - pie.vy) * 0.002;
+
+    // Return rotation to base
+    pie.rotationSpeed += (pie.baseRotationSpeed - pie.rotationSpeed) * 0.005;
+
+    // Update position
+    pie.x += pie.vx;
+    pie.y += pie.vy;
+    pie.rotation += pie.rotationSpeed;
+
+    // Wrap edges
+    if (pie.x < -pie.size) pie.x = w;
+    if (pie.x > w) pie.x = -pie.size;
+    if (pie.y < -pie.size) pie.y = h;
+    if (pie.y > h) pie.y = -pie.size;
+
+    pie.el.style.transform = `translate(${pie.x}px, ${pie.y}px) rotate(${pie.rotation}deg)`;
+  });
+
+  requestAnimationFrame(animateFloatingPies);
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', initFloatingPies);
