@@ -305,8 +305,7 @@ class TrackMatcher:
         if not candidate_isrcs:
             candidate_isrcs = set(self._gems_by_isrc.keys())
 
-        matches = []
-        seen_artists = set()
+        all_scored = []  # Score ALL tracks first, dedupe later
 
         for isrc in candidate_isrcs:
             row = self._gems_by_isrc.get(isrc)
@@ -327,10 +326,6 @@ class TrackMatcher:
             track_genres = _parse_track_genres(track_data.get('track_genres', ''))
             artist_id = track_data.get('artist_id')
             if not artist_id:
-                continue
-
-            # Deduplicate by artist
-            if artist_id in seen_artists:
                 continue
 
             similarity, breakdown = self._similarity(
@@ -384,8 +379,6 @@ class TrackMatcher:
             if skip:
                 continue
 
-            seen_artists.add(artist_id)
-
             # Tier + conversion data
             tier_data = self._tiers.get(str(artist_id), {})
             tier = tier_data.get('tier', 'unknown')
@@ -396,7 +389,7 @@ class TrackMatcher:
             if listeners > 0 and followers > 0:
                 conversion_rate = round((followers * 0.1) / (listeners * 4.3) * 100, 2)
 
-            matches.append({
+            all_scored.append({
                 'isrc': isrc,
                 'artist_id': artist_id,
                 'name': artist_data.get('name', 'Unknown'),
@@ -423,9 +416,19 @@ class TrackMatcher:
                               for k, v in breakdown.items()},
             })
 
-        # Sort by similarity descending
-        matches.sort(key=lambda m: m['similarity'], reverse=True)
-        return matches[:top_n]
+        # Sort by similarity descending, then dedupe by artist (keep best match per artist)
+        all_scored.sort(key=lambda m: m['similarity'], reverse=True)
+
+        matches = []
+        seen_artists = set()
+        for m in all_scored:
+            if m['artist_id'] not in seen_artists:
+                seen_artists.add(m['artist_id'])
+                matches.append(m)
+                if len(matches) >= top_n:
+                    break
+
+        return matches
 
     def get_gems_for_artists(self, artist_ids: list) -> Dict[str, Dict]:
         """Return {artist_id: gems_row} for a list of artist IDs (first track per artist)."""
