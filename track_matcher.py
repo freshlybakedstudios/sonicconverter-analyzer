@@ -92,6 +92,66 @@ INCOMPATIBLE_GENRE_PAIRS = {
     frozenset(['hardcore', 'flamenco']),
 }
 
+# ---------------------------------------------------------------------------
+# Genre family clustering — used to penalise cross-family matches
+# Maps individual genre words → a family identifier.
+# Only unambiguous words are mapped; unknown words are simply ignored.
+# ---------------------------------------------------------------------------
+GENRE_FAMILIES = {
+    # Rock
+    'rock': 'rock', 'indie': 'rock', 'alternative': 'rock', 'alt': 'rock',
+    'shoegaze': 'rock', 'grunge': 'rock', 'britpop': 'rock',
+    'post-rock': 'rock', 'noise-rock': 'rock', 'surf': 'rock',
+    'glam': 'rock',
+    # Metal
+    'metal': 'metal', 'death': 'metal', 'black': 'metal', 'doom': 'metal',
+    'thrash': 'metal', 'speed': 'metal', 'metalcore': 'metal',
+    'deathcore': 'metal', 'sludge': 'metal', 'djent': 'metal',
+    'nu-metal': 'metal',
+    # Punk
+    'punk': 'punk', 'post-hardcore': 'punk', 'emo': 'punk',
+    'post-punk': 'punk', 'screamo': 'punk', 'crust': 'punk',
+    'pop-punk': 'punk',
+    # Pop
+    'pop': 'pop', 'synthpop': 'pop', 'electropop': 'pop',
+    'bubblegum': 'pop', 'k-pop': 'pop', 'j-pop': 'pop',
+    'dance-pop': 'pop',
+    # Hip-hop
+    'hip-hop': 'hiphop', 'rap': 'hiphop', 'trap': 'hiphop',
+    'drill': 'hiphop', 'grime': 'hiphop',
+    # Electronic
+    'electronic': 'electronic', 'edm': 'electronic', 'house': 'electronic',
+    'techno': 'electronic', 'trance': 'electronic', 'dubstep': 'electronic',
+    'dnb': 'electronic', 'ambient': 'electronic', 'idm': 'electronic',
+    'electronica': 'electronic',
+    # R&B / Soul
+    'r&b': 'rnb', 'rnb': 'rnb', 'soul': 'rnb', 'funk': 'rnb',
+    'neo-soul': 'rnb', 'motown': 'rnb',
+    # Country / Folk
+    'country': 'folk', 'folk': 'folk', 'bluegrass': 'folk',
+    'americana': 'folk', 'singer-songwriter': 'folk', 'acoustic': 'folk',
+    # Jazz
+    'jazz': 'jazz', 'swing': 'jazz', 'bebop': 'jazz', 'bossa': 'jazz',
+    # Classical
+    'classical': 'classical', 'orchestra': 'classical',
+    'chamber': 'classical', 'baroque': 'classical', 'opera': 'classical',
+    # Latin
+    'latin': 'latin', 'reggaeton': 'latin', 'salsa': 'latin',
+    'bachata': 'latin', 'cumbia': 'latin',
+    # Reggae
+    'reggae': 'reggae', 'ska': 'reggae', 'dancehall': 'reggae',
+}
+
+
+def _genre_families(genre_words: Set[str]) -> Set[str]:
+    """Return the set of genre families for a set of genre words."""
+    families = set()
+    for w in genre_words:
+        fam = GENRE_FAMILIES.get(w)
+        if fam:
+            families.add(fam)
+    return families
+
 
 class TrackMatcher:
     """Loads the GEMS universe cache and matches uploaded track features against it."""
@@ -253,15 +313,15 @@ class TrackMatcher:
             genre_score = len(ga & gb) / len(ga | gb)
         else:
             genre_score = 0
-        breakdown['genre'] = {'score': genre_score, 'weight': 0.0}  # Genre used as filter, not score
+        breakdown['genre'] = {'score': genre_score, 'weight': 0.08}  # Genre nudge — keeps results in the right lane
 
         # LUFS
         lufs_score = 1 - abs((profile_a.get('lufs_integrated') or 0) - (profile_b.get('lufs_integrated') or 0))
         breakdown['lufs_integrated'] = {'score': lufs_score, 'weight': 0.05}
 
-        # Redistribute genre weight to sonic features
-        breakdown['frequency_spectrum']['weight'] = 0.40
-        breakdown['emotion']['weight'] = 0.10
+        # Boost sonic features
+        breakdown['frequency_spectrum']['weight'] = 0.38
+        breakdown['emotion']['weight'] = 0.07
 
         total = sum(item['score'] * item['weight'] for item in breakdown.values())
         return total, breakdown
@@ -382,6 +442,23 @@ class TrackMatcher:
                         break
             if skip:
                 continue
+
+            # Genre family penalty — penalise candidates from a different genre family
+            # so that e.g. "art rock" prioritises rock tracks over metal tracks.
+            if target_genre_words:
+                target_fams = _genre_families(target_genre_words)
+                cand_fams = _genre_families(cand_all)
+                if target_fams and cand_fams:
+                    overlap = target_fams & cand_fams
+                    if not overlap:
+                        # Completely different family (rock vs metal) → 10 % penalty
+                        similarity *= 0.90
+                    elif cand_fams - target_fams:
+                        # Crossover — shares a family but also has a foreign one
+                        # (e.g. "rock metal" vs "rock") → 4 % penalty
+                        similarity *= 0.96
+                    if similarity < threshold:
+                        continue
 
             # Tier + conversion data
             tier_data = self._tiers.get(str(artist_id), {})
