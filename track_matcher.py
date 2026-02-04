@@ -253,11 +253,15 @@ class TrackMatcher:
             genre_score = len(ga & gb) / len(ga | gb)
         else:
             genre_score = 0
-        breakdown['genre'] = {'score': genre_score, 'weight': 0.10}
+        breakdown['genre'] = {'score': genre_score, 'weight': 0.0}  # Genre used as filter, not score
 
         # LUFS
         lufs_score = 1 - abs((profile_a.get('lufs_integrated') or 0) - (profile_b.get('lufs_integrated') or 0))
         breakdown['lufs_integrated'] = {'score': lufs_score, 'weight': 0.05}
+
+        # Redistribute genre weight to sonic features
+        breakdown['frequency_spectrum']['weight'] = 0.40
+        breakdown['emotion']['weight'] = 0.10
 
         total = sum(item['score'] * item['weight'] for item in breakdown.values())
         return total, breakdown
