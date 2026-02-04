@@ -475,7 +475,7 @@ def _generate_recommendations(features: dict, matches: list,
             recs.append(
                 f"Your listener-to-follower conversion ({user_conv:.1f}%) is below the median "
                 f"of your sonic peers ({peer_median:.1f}%). Optimizing your Spotify profile, "
-                f"release strategy, and playlist pitching can close this gap."
+                f"sonic profile, release strategy, and playlist pitching could help close this gap."
             )
 
     # --- Genre alignment rec ---
