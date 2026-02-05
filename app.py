@@ -27,6 +27,7 @@ from supabase import create_client
 load_dotenv()
 
 from audio_analyzer import extract_features
+from chartmetric_lookup import lookup_artist_by_spotify
 from email_sender import send_results_email
 from track_matcher import TrackMatcher, _genre_families
 
@@ -601,17 +602,45 @@ async def analyze(
         spotify_url = lead.get('spotify_url', '')
         spotify_base = spotify_url.split('?')[0].rstrip('/') if spotify_url else ''
         cached_artist_data = None
+        cm_data = None
         if spotify_base:
             for aid, adata in matcher._artists.items():
                 cache_url = (adata.get('spotify_url') or '').split('?')[0].rstrip('/')
                 if cache_url == spotify_base:
                     cached_artist_data = (aid, adata)
-                    # Genre auto-detect removed — sonic + emotional matching
-                    # handles this better than artist-level Spotify genre tags
+                    # Use cached genres if available, fall back to dropdown
+                    cached_genres = adata.get('genres', '')
+                    if cached_genres:
+                        print(f"  Using cached genres: {cached_genres} (ignoring dropdown: {genre or 'empty'})")
+                        genre = cached_genres
+                    else:
+                        print(f"  No cached genres — keeping dropdown: {genre or 'empty'}")
                     break
+
+        # If not in cache, try Chartmetric real-time lookup
+        if not cached_artist_data and spotify_base:
+            print(f"  Cache miss for {spotify_base} — trying Chartmetric lookup...")
+            t_cm = time.time()
+            cm_data = lookup_artist_by_spotify(spotify_base)
+            t_cm = time.time() - t_cm
+            if cm_data:
+                print(f"  CM lookup: {cm_data['name']} — {cm_data['genres']} "
+                      f"({cm_data['tier']}, {cm_data['listeners']:.0f} listeners) "
+                      f"[{t_cm:.1f}s]")
+                # Use CM genres if available, fall back to dropdown
+                if cm_data['genres']:
+                    print(f"  Using CM genres: {cm_data['genres']} (ignoring dropdown: {genre or 'empty'})")
+                    genre = cm_data['genres']
+                else:
+                    print(f"  No CM genres — keeping dropdown: {genre or 'empty'}")
+            else:
+                print(f"  CM lookup: no result [{t_cm:.1f}s]")
 
         # Find matches — get extra so we can filter by tier
         user_monthly = lead.get('monthly_listeners')
+        # CM lookup can provide more accurate listener count
+        if cm_data and cm_data['listeners'] > 0:
+            user_monthly = cm_data['listeners']
         user_tier = _listeners_to_tier(user_monthly) if user_monthly else ''
         fetch_n = 500 if user_tier else 20
 
@@ -723,6 +752,12 @@ async def analyze(
             if u_listeners > 0 and u_followers > 0:
                 u_conversion = round((u_followers * 0.1) / (u_listeners * 4.3) * 100, 2)
             print(f"  User profile: {adata.get('name')}, listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
+        elif cm_data:
+            # Use Chartmetric data for user profile
+            u_listeners = float(cm_data['listeners'] or 0) or u_listeners
+            u_followers = float(cm_data['followers'] or 0)
+            u_conversion = cm_data.get('conversion_rate')
+            print(f"  User profile (CM): {cm_data['name']}, listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
         else:
             print(f"  User profile: no Spotify match (url={'yes' if spotify_base else 'no'}, monthly_listeners={u_listeners})")
 
