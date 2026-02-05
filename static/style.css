@@ -662,6 +662,63 @@ body {
   color: var(--accent-light);
 }
 
+/* Trajectory Targets (flattery matches) */
+.flattery-match {
+  display: flex;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.flattery-match:last-child { border-bottom: none; }
+.flattery-rank {
+  width: 28px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.flattery-info { flex: 1; min-width: 0; }
+.flattery-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.flattery-name a {
+  color: var(--accent-light);
+  text-decoration: none;
+}
+.flattery-name a:hover { text-decoration: underline; }
+.flattery-tier {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+.flattery-track {
+  font-size: 13px;
+  color: var(--text-light);
+  margin-top: 2px;
+}
+.flattery-track a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.flattery-track a:hover { text-decoration: underline; }
+.flattery-listeners {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: 8px;
+}
+.flattery-sim {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
 /* Conversion column in matches table */
 .match-conversion {
   color: var(--success);

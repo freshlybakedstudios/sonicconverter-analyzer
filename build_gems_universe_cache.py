@@ -108,7 +108,12 @@ class UniverseCacheBuilder:
         return all_gems
 
     def fetch_tracks_batch(self, isrc_list):
-        """Fetch track metadata for ISRCs in batches."""
+        """Fetch track metadata for ISRCs in batches.
+
+        Handles both top_track (isrc column) and recent_track (recent_track_isrc column).
+        First pass matches on tracks.isrc, second pass tries unmatched ISRCs
+        against tracks.recent_track_isrc so the full GEMS pool is used.
+        """
         print(f"\n🎸 Fetching track metadata for {len(isrc_list)} ISRCs...")
         start = time.time()
 
@@ -116,11 +121,13 @@ class UniverseCacheBuilder:
         batch_size = 100
         empty_batches = 0
         low_match_batches = 0
+        top_track_matches = 0
+        recent_track_matches = 0
 
+        # --- Pass 1: match on tracks.isrc (top track) ---
         for i in range(0, len(isrc_list), batch_size):
             batch = isrc_list[i:i+batch_size]
             rows = None
-            # Retry logic for timeout errors
             max_retries = 3
             for attempt in range(max_retries):
                 try:
@@ -131,7 +138,7 @@ class UniverseCacheBuilder:
                     break
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        wait_time = 2 ** attempt  # exponential backoff: 1s, 2s, 4s
+                        wait_time = 2 ** attempt
                         print(f"\n   ⚠️  Timeout on batch {i//batch_size}, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
                         time.sleep(wait_time)
                     else:
@@ -143,7 +150,6 @@ class UniverseCacheBuilder:
                 empty_batches += 1
                 continue
 
-            # Track low match rates (less than 50% of batch found)
             if len(rows.data) < len(batch) * 0.5:
                 low_match_batches += 1
 
@@ -155,11 +161,56 @@ class UniverseCacheBuilder:
                     'top_track': r.get('top_track', ''),
                     'spotify_url': r.get('spotify_url', '')
                 }
+                top_track_matches += 1
 
-            print(f"   📦 Processed {min(i + batch_size, len(isrc_list))}/{len(isrc_list)} tracks...", end='\r')
+            print(f"   📦 Pass 1 (top track): {min(i + batch_size, len(isrc_list))}/{len(isrc_list)}...", end='\r')
+
+        print(f"\n   ✅ Pass 1: {top_track_matches} matched via top track ISRC")
+
+        # --- Pass 2: match remaining ISRCs on tracks.recent_track_isrc ---
+        missing_isrcs = [isrc for isrc in isrc_list if isrc not in tracks]
+        if missing_isrcs:
+            print(f"   🔄 Pass 2: trying {len(missing_isrcs)} unmatched ISRCs against recent_track_isrc...")
+            for i in range(0, len(missing_isrcs), batch_size):
+                batch = missing_isrcs[i:i+batch_size]
+                rows = None
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        rows = self.supabase.table('tracks')\
+                            .select('recent_track_isrc, artist_id, recent_track, recent_track_spotify_url, recent_track_genres')\
+                            .in_('recent_track_isrc', batch)\
+                            .execute()
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            wait_time = 2 ** attempt
+                            print(f"\n   ⚠️  Timeout on recent batch, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(wait_time)
+                        else:
+                            print(f"\n   ❌ Recent batch failed after {max_retries} retries, skipping")
+                            rows = None
+                            break
+
+                if rows and rows.data:
+                    for r in rows.data:
+                        isrc = r['recent_track_isrc']
+                        if isrc and isrc not in tracks:
+                            tracks[isrc] = {
+                                'artist_id': r.get('artist_id'),
+                                'track_genres': r.get('recent_track_genres', ''),
+                                'top_track': r.get('recent_track', ''),
+                                'spotify_url': r.get('recent_track_spotify_url', '')
+                            }
+                            recent_track_matches += 1
+
+                print(f"   📦 Pass 2 (recent track): {min(i + batch_size, len(missing_isrcs))}/{len(missing_isrcs)}...", end='\r')
+
+            print(f"\n   🆕 Pass 2: {recent_track_matches} matched via recent_track_isrc")
 
         elapsed = time.time() - start
-        print(f"\n   ✅ Fetched {len(tracks)} track records in {elapsed:.1f}s")
+        print(f"\n   ✅ Fetched {len(tracks)} total track records in {elapsed:.1f}s")
+        print(f"      Top track: {top_track_matches} | Recent track: {recent_track_matches} | Unmatched: {len(isrc_list) - len(tracks)}")
         if empty_batches > 0:
             print(f"   ⚠️  {empty_batches} batches returned empty!")
         if low_match_batches > 0:

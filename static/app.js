@@ -201,6 +201,7 @@ function renderResults(data) {
   const recs = data.recommendations || [];
   const genreAlignment = data.genre_alignment || null;
   const userProfile = data.user_profile || null;
+  const flatteryMatches = data.flattery_matches || [];
 
   // Descriptive labels for numeric features
   function energyLabel(v) {
@@ -330,6 +331,39 @@ function renderResults(data) {
     show(convCard);
   } else {
     hide(convCard);
+  }
+
+  // Trajectory targets (flattery matches)
+  const flatteryCard = $('#flattery-card');
+  const flatteryList = $('#flattery-list');
+  if (flatteryMatches.length > 0) {
+    flatteryList.innerHTML = '';
+    flatteryMatches.forEach((m, i) => {
+      const trackLink = m.track_url
+        ? `<a href="${m.track_url}" target="_blank" rel="noopener">${m.track_name || 'Listen'}</a>`
+        : (m.track_name || '');
+      const artistLink = m.spotify_url
+        ? `<a href="${m.spotify_url}" target="_blank" rel="noopener">${m.name}</a>`
+        : m.name;
+      const sim = (m.similarity * 100).toFixed(1);
+      const tier = (m.tier || '').charAt(0).toUpperCase() + (m.tier || '').slice(1);
+      const listeners = m.listeners ? Math.round(m.listeners).toLocaleString() : '';
+      const listenerStr = listeners ? `<span class="flattery-listeners">${listeners} listeners</span>` : '';
+      const div = document.createElement('div');
+      div.className = 'flattery-match';
+      div.innerHTML = `
+        <div class="flattery-rank">${i + 1}</div>
+        <div class="flattery-info">
+          <div class="flattery-name">${artistLink} <span class="flattery-tier">${tier}</span></div>
+          <div class="flattery-track">${trackLink} ${listenerStr}</div>
+        </div>
+        <div class="flattery-sim">${sim}%</div>
+      `;
+      flatteryList.appendChild(div);
+    });
+    show(flatteryCard);
+  } else {
+    hide(flatteryCard);
   }
 
   // Matches table
