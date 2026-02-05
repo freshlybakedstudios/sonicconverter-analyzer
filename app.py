@@ -28,7 +28,7 @@ load_dotenv()
 
 from audio_analyzer import extract_features
 from email_sender import send_results_email
-from track_matcher import TrackMatcher
+from track_matcher import TrackMatcher, _genre_families
 
 # ---------------------------------------------------------------------------
 # Globals
@@ -647,6 +647,42 @@ async def analyze(
             matches = all_matches[:20]
             print(f"  Matching: {t_match:.1f}s — {len(matches)} matches found")
 
+        # Flattery matches — higher-tier artists with genre family coherence
+        flattery_matches = []
+        if user_tier and all_matches:
+            tier_order_map = {t: i for i, t in enumerate(TIER_RANGES.keys())}
+            user_tier_num = tier_order_map.get(user_tier, -1)
+
+            target_fams = _genre_families(genre) if genre else set()
+
+            seen_artists = set()
+            for m in all_matches:
+                cand_tier_num = tier_order_map.get(m.get('tier', 'unknown'), -1)
+                if cand_tier_num <= user_tier_num:
+                    continue
+
+                aid = m.get('artist_id')
+                if aid in seen_artists:
+                    continue
+
+                # Genre family coherence — skip candidates from a different family
+                if target_fams:
+                    cand_fams = _genre_families(
+                        ','.join(m.get('artist_genres', [])),
+                        m.get('primary_genre', ''),
+                        m.get('secondary_genre', ''),
+                    )
+                    if cand_fams and not (target_fams & cand_fams):
+                        continue
+
+                seen_artists.add(aid)
+                flattery_matches.append(m)
+                if len(flattery_matches) >= 3:
+                    break
+
+        if flattery_matches:
+            print(f"  Flattery: {len(flattery_matches)} trajectory targets found")
+
         # Genre alignment: count across ALL genre fields per match
         genre_alignment = None
         if matches:
@@ -782,6 +818,9 @@ async def analyze(
 
         if user_profile:
             result['user_profile'] = user_profile
+
+        if flattery_matches:
+            result['flattery_matches'] = flattery_matches
 
         # Send email (non-blocking — don't fail the request if email fails)
         try:

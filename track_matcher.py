@@ -93,63 +93,49 @@ INCOMPATIBLE_GENRE_PAIRS = {
 }
 
 # ---------------------------------------------------------------------------
-# Genre family clustering — used to penalise cross-family matches
-# Maps individual genre words → a family identifier.
-# Only unambiguous words are mapped; unknown words are simply ignored.
+# Genre family clustering — loaded from genre_mapping.json
+# Maps full genre strings (e.g. "melodic death metal") → family ("metal").
+# Used to penalise cross-family matches in the similarity scoring.
 # ---------------------------------------------------------------------------
-GENRE_FAMILIES = {
-    # Rock
-    'rock': 'rock', 'indie': 'rock', 'alternative': 'rock', 'alt': 'rock',
-    'shoegaze': 'rock', 'grunge': 'rock', 'britpop': 'rock',
-    'post-rock': 'rock', 'noise-rock': 'rock', 'surf': 'rock',
-    'glam': 'rock',
-    # Metal
-    'metal': 'metal', 'death': 'metal', 'black': 'metal', 'doom': 'metal',
-    'thrash': 'metal', 'speed': 'metal', 'metalcore': 'metal',
-    'deathcore': 'metal', 'sludge': 'metal', 'djent': 'metal',
-    'nu-metal': 'metal',
-    # Punk
-    'punk': 'punk', 'post-hardcore': 'punk', 'emo': 'punk',
-    'post-punk': 'punk', 'screamo': 'punk', 'crust': 'punk',
-    'pop-punk': 'punk',
-    # Pop
-    'pop': 'pop', 'synthpop': 'pop', 'electropop': 'pop',
-    'bubblegum': 'pop', 'k-pop': 'pop', 'j-pop': 'pop',
-    'dance-pop': 'pop',
-    # Hip-hop
-    'hip-hop': 'hiphop', 'rap': 'hiphop', 'trap': 'hiphop',
-    'drill': 'hiphop', 'grime': 'hiphop',
-    # Electronic
-    'electronic': 'electronic', 'edm': 'electronic', 'house': 'electronic',
-    'techno': 'electronic', 'trance': 'electronic', 'dubstep': 'electronic',
-    'dnb': 'electronic', 'ambient': 'electronic', 'idm': 'electronic',
-    'electronica': 'electronic',
-    # R&B / Soul
-    'r&b': 'rnb', 'rnb': 'rnb', 'soul': 'rnb', 'funk': 'rnb',
-    'neo-soul': 'rnb', 'motown': 'rnb',
-    # Country / Folk
-    'country': 'folk', 'folk': 'folk', 'bluegrass': 'folk',
-    'americana': 'folk', 'singer-songwriter': 'folk', 'acoustic': 'folk',
-    # Jazz
-    'jazz': 'jazz', 'swing': 'jazz', 'bebop': 'jazz', 'bossa': 'jazz',
-    # Classical
-    'classical': 'classical', 'orchestra': 'classical',
-    'chamber': 'classical', 'baroque': 'classical', 'opera': 'classical',
-    # Latin
-    'latin': 'latin', 'reggaeton': 'latin', 'salsa': 'latin',
-    'bachata': 'latin', 'cumbia': 'latin',
-    # Reggae
-    'reggae': 'reggae', 'ska': 'reggae', 'dancehall': 'reggae',
-}
+_GENRE_FAMILY_MAP: Dict[str, str] = {}
+
+def _load_genre_mapping():
+    """Flatten genre_mapping.json into a single {genre_string: family} dict."""
+    mapping_path = Path(__file__).parent / 'genre_mapping.json'
+    if not mapping_path.exists():
+        print(f"⚠️  genre_mapping.json not found at {mapping_path}")
+        return
+    with open(mapping_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    for category in data.get('genre_mapping', {}).values():
+        if isinstance(category, dict):
+            for genre_str, family in category.items():
+                _GENRE_FAMILY_MAP[genre_str.lower().strip()] = family
+    print(f"  Loaded {len(_GENRE_FAMILY_MAP)} genre→family mappings")
+
+_load_genre_mapping()
 
 
-def _genre_families(genre_words: Set[str]) -> Set[str]:
-    """Return the set of genre families for a set of genre words."""
-    families = set()
-    for w in genre_words:
-        fam = GENRE_FAMILIES.get(w)
-        if fam:
-            families.add(fam)
+def _genre_families(*genre_strings: str) -> Set[str]:
+    """Resolve genre families from raw genre strings using the comprehensive mapping.
+
+    Tries full genre term match first (e.g. "melodic death metal" → metal),
+    then falls back to individual word matching (e.g. "metal" → metal).
+    """
+    families: Set[str] = set()
+    for gs in genre_strings:
+        if not gs or gs == 'unknown':
+            continue
+        # Split by comma or slash to get individual genre terms
+        terms = [t.strip().lower() for t in gs.replace('/', ',').split(',') if t.strip()]
+        for term in terms:
+            if term in _GENRE_FAMILY_MAP:
+                families.add(_GENRE_FAMILY_MAP[term])
+            else:
+                # Word-level fallback for unrecognised multi-word genres
+                for word in term.split():
+                    if word in _GENRE_FAMILY_MAP:
+                        families.add(_GENRE_FAMILY_MAP[word])
     return families
 
 
@@ -446,17 +432,25 @@ class TrackMatcher:
             # Genre family penalty — penalise candidates from a different genre family
             # so that e.g. "art rock" prioritises rock tracks over metal tracks.
             if target_genre_words:
-                target_fams = _genre_families(target_genre_words)
-                cand_fams = _genre_families(cand_all)
-                if target_fams and cand_fams:
-                    overlap = target_fams & cand_fams
-                    if not overlap:
-                        # Completely different family (rock vs metal) → 10 % penalty
-                        similarity *= 0.90
-                    elif cand_fams - target_fams:
-                        # Crossover — shares a family but also has a foreign one
-                        # (e.g. "rock metal" vs "rock") → 4 % penalty
-                        similarity *= 0.96
+                target_fams = _genre_families(genre_hint)
+                cand_fams = _genre_families(
+                    track_data.get('track_genres', ''),
+                    artist_data.get('genres', ''),
+                    profile.get('primary_genre', ''),
+                    profile.get('secondary_genre', ''),
+                )
+                if target_fams:
+                    if not cand_fams:
+                        # Candidate has no recognisable genre → penalise
+                        similarity *= 0.88
+                    else:
+                        overlap = target_fams & cand_fams
+                        if not overlap:
+                            # Completely different family (rock vs metal) → 10 % penalty
+                            similarity *= 0.90
+                        elif cand_fams - target_fams:
+                            # Crossover — shares a family but also has a foreign one
+                            similarity *= 0.96
                     if similarity < threshold:
                         continue
 

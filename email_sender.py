@@ -63,6 +63,44 @@ def _build_match_row(idx: int, match: Dict) -> str:
     </tr>"""
 
 
+def _build_flattery_row(idx: int, match: Dict) -> str:
+    """Build a single trajectory target row for the email."""
+    name = match.get('name', 'Unknown')
+    sim = match.get('similarity', 0)
+    tier = (match.get('tier') or '').capitalize()
+    track_name = match.get('track_name', '')
+    track_url = match.get('track_url') or match.get('spotify_url', '')
+    listeners = match.get('listeners', 0)
+    listener_str = f'{int(listeners):,} listeners' if listeners else ''
+
+    track_link = f'<a href="{track_url}" style="color:#D8E166;text-decoration:none">{track_name}</a>' if track_url and track_name else (track_name or '')
+
+    return f'''
+    <tr style="border-bottom:1px solid #3a3636">
+      <td style="padding:8px;color:#888;width:24px;vertical-align:top">{idx}</td>
+      <td style="padding:8px;vertical-align:top">
+        <div style="font-weight:600;color:#eee">{name} <span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-left:4px">{tier}</span></div>
+        <div style="font-size:13px;color:#aaa;margin-top:2px">{track_link}{f" &middot; {listener_str}" if listener_str else ""}</div>
+      </td>
+      <td style="padding:8px;color:#D8E166;font-weight:bold;white-space:nowrap;vertical-align:top">{sim:.0%}</td>
+    </tr>'''
+
+
+def _build_flattery_section(flattery_matches: list) -> str:
+    """Build the trajectory targets HTML block for the email."""
+    if not flattery_matches:
+        return ''
+    rows = ''.join(_build_flattery_row(i + 1, m) for i, m in enumerate(flattery_matches[:3]))
+    return f'''
+      <div style="background:#231f20;border:1px solid #3a3636;border-radius:8px;padding:20px;margin:0 0 16px">
+        <h2 style="color:#fff;font-size:18px;margin:0 0 4px">Trajectory Targets</h2>
+        <p style="font-size:13px;color:#888;margin:0 0 12px">Higher-tier artists that match your sonic profile</p>
+        <table style="width:100%;border-collapse:collapse;color:#eee;font-size:14px">
+          {rows}
+        </table>
+      </div>'''
+
+
 def _build_conversion_section(user_profile: Dict) -> str:
     """Build the conversion comparison HTML block for the email."""
     conv_rate = user_profile.get('conversion_rate', 0)
@@ -122,6 +160,7 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
     recs = analysis.get('recommendations', [])
     genre_alignment = analysis.get('genre_alignment')
     user_profile = analysis.get('user_profile')
+    flattery_matches = analysis.get('flattery_matches', [])
 
     # Build EQ bars
     eq_bands = [
@@ -218,6 +257,9 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
 
       <!-- Conversion Comparison -->
       {_build_conversion_section(user_profile) if user_profile and user_profile.get('conversion_rate') is not None else ''}
+
+      <!-- Trajectory Targets -->
+      {_build_flattery_section(flattery_matches)}
 
       <!-- Top Matches -->
       <h2 style="color:#fff;font-size:18px;margin:24px 0 12px">Similar Artists</h2>
