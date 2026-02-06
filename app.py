@@ -372,9 +372,8 @@ def _format_rec(feat: str, consensus: dict) -> str:
                 delta_str = f" (~{abs(pct_delta):.0f}%)"
 
     return (
-        f"[{domain}] {action}. "
-        f"You: {user_str} → top converters: {peer_str}{delta_str} "
-        f"({count}/{total} agree)"
+        f"[{domain}] {action}{delta_str}\n"
+        f"{count}/{total} top converters agree"
     )
 
 
@@ -598,11 +597,16 @@ async def analyze(
         t_features = time.time() - t0
         print(f"  Feature extraction: {t_features:.1f}s")
 
+        # Save original dropdown selection before it gets overwritten
+        dropdown_genre = genre or ''
+
         # If user provided Spotify URL, pull their genre from cache for matching
         spotify_url = lead.get('spotify_url', '')
         spotify_base = spotify_url.split('?')[0].rstrip('/') if spotify_url else ''
         cached_artist_data = None
         cm_data = None
+        user_code2 = None
+        user_pronoun = None
         if spotify_base:
             for aid, adata in matcher._artists.items():
                 cache_url = (adata.get('spotify_url') or '').split('?')[0].rstrip('/')
@@ -615,6 +619,13 @@ async def analyze(
                         genre = cached_genres
                     else:
                         print(f"  No cached genres — keeping dropdown: {genre or 'empty'}")
+                    # Get user's country code and pronouns
+                    user_code2 = adata.get('code2', '')
+                    if user_code2:
+                        print(f"  User country: {user_code2}")
+                    user_pronoun = adata.get('pronoun_title', '')
+                    if user_pronoun:
+                        print(f"  User pronoun: {user_pronoun}")
                     break
 
         # If not in cache, try Chartmetric real-time lookup
@@ -633,6 +644,11 @@ async def analyze(
                     genre = cm_data['genres']
                 else:
                     print(f"  No CM genres — keeping dropdown: {genre or 'empty'}")
+                # Extract pronoun from CM metadata
+                cm_meta = cm_data.get('_meta', {})
+                if cm_meta and cm_meta.get('pronoun_title'):
+                    user_pronoun = cm_meta['pronoun_title']
+                    print(f"  User pronoun (CM): {user_pronoun}")
             else:
                 print(f"  CM lookup: no result [{t_cm:.1f}s]")
 
@@ -644,9 +660,99 @@ async def analyze(
         user_tier = _listeners_to_tier(user_monthly) if user_monthly else ''
         fetch_n = 500 if user_tier else 20
 
+        # Pure sonic matching — no genre penalty
         t0 = time.time()
-        all_matches = matcher.find_matches(features, genre_hint=genre or '', top_n=fetch_n, threshold=0.55)
+        all_matches = matcher.find_matches(features, genre_hint='', top_n=fetch_n, threshold=0.55)
         t_match = time.time() - t0
+
+        # Dropdown boost: only applies when dropdown is COUNTER to artist's genres
+        # (i.e., user is intentionally exploring a different lane)
+        DROPDOWN_BOOST = 0.03
+        artist_families = _genre_families(genre or '')
+        dropdown_families = _genre_families(dropdown_genre) if dropdown_genre else set()
+        dropdown_is_counter = dropdown_families and not (dropdown_families & artist_families)
+
+        if dropdown_genre and dropdown_is_counter:
+            print(f"  Dropdown '{dropdown_genre}' is COUNTER to artist — applying {DROPDOWN_BOOST*100:.0f}% boost")
+            dropdown_lower = dropdown_genre.lower()
+            for m in all_matches:
+                match_genres = set()
+                for field in ('primary_genre', 'secondary_genre'):
+                    g = (m.get(field) or '').strip().lower()
+                    if g:
+                        match_genres.add(g)
+                for g in m.get('artist_genres', []):
+                    if g:
+                        match_genres.add(g.lower())
+                # Check if dropdown appears in any genre string
+                if any(dropdown_lower in g for g in match_genres):
+                    m['similarity'] = m.get('similarity', 0) + DROPDOWN_BOOST
+            # Re-sort by boosted similarity
+            all_matches.sort(key=lambda x: x.get('similarity', 0), reverse=True)
+        elif dropdown_genre:
+            print(f"  Dropdown '{dropdown_genre}' ALIGNS with artist — no boost")
+
+        # Save unfiltered matches for flattery (uses looser filtering)
+        all_matches_unfiltered = list(all_matches)
+
+        # Filter out matches with genre families the artist doesn't have
+        # Uses the full genre taxonomy from genre_mapping.json
+        # (e.g., electronic artists won't appear for pop/rock artists)
+        # This strict filtering applies to Similar Artists only
+        user_families = _genre_families(genre or '')
+
+        # Dropdown expands allowed families - user knows their track's lane
+        if dropdown_genre:
+            dropdown_families = _genre_families(dropdown_genre)
+            user_families = user_families | dropdown_families
+            print(f"  Dropdown '{dropdown_genre}' adds families: {dropdown_families}")
+
+        print(f"  Allowed families: {user_families}")
+
+        def has_foreign_families(m):
+            # Collect all genre strings from the match
+            cand_genres = []
+            for field in ('primary_genre', 'secondary_genre'):
+                g = (m.get(field) or '').strip()
+                if g:
+                    cand_genres.append(g)
+            for g in m.get('artist_genres', []):
+                if g:
+                    cand_genres.append(g)
+            # Get families for this candidate
+            cand_families = _genre_families(*cand_genres)
+            # If candidate has families that user doesn't have, it's foreign
+            foreign = cand_families - user_families
+            # Allow through if no foreign families, or if user has no families (no filtering)
+            return bool(foreign) and bool(user_families)
+
+        pre_filter_count = len(all_matches)
+        all_matches = [m for m in all_matches if not has_foreign_families(m)]
+        print(f"  Family filter: {pre_filter_count} → {len(all_matches)} matches")
+
+        # Country boost: same-region artists get a small boost
+        COUNTRY_BOOST = 0.02
+        if user_code2:
+            boosted_count = 0
+            for m in all_matches:
+                match_code2 = m.get('code2', '')
+                if match_code2 and match_code2 == user_code2:
+                    m['similarity'] = m.get('similarity', 0) + COUNTRY_BOOST
+                    boosted_count += 1
+            if boosted_count > 0:
+                all_matches.sort(key=lambda x: x.get('similarity', 0), reverse=True)
+                print(f"  Country boost: {boosted_count} matches from {user_code2} boosted +{COUNTRY_BOOST*100:.0f}%")
+
+        # Debug: show top 40 matches with genre families
+        print(f"  Top 40 matches (before tier filter):")
+        for i, m in enumerate(all_matches[:40]):
+            artist = m.get('artist_name') or 'Unknown'
+            sim = m.get('similarity') or 0
+            artist_genres = m.get('artist_genres') or []
+            primary = m.get('primary_genre') or ''
+            genres = ', '.join(artist_genres[:3]) if artist_genres else primary or '-'
+            fams = _genre_families(primary, *artist_genres)
+            print(f"    {i+1}. {artist[:20]:20} {sim*100:.1f}% | {genres[:30]:30} | fams: {fams}")
 
         MIN_PEER_MATCHES = 10
         tier_order = list(TIER_RANGES.keys())
@@ -676,16 +782,22 @@ async def analyze(
             matches = all_matches[:20]
             print(f"  Matching: {t_match:.1f}s — {len(matches)} matches found")
 
-        # Flattery matches — higher-tier artists with genre family coherence
+        # Flattery matches — higher-tier artists using family-based genre filtering
+        # Same approach as Similar Artists: must share at least one genre family
         flattery_matches = []
-        if user_tier and all_matches:
+        if user_tier and all_matches_unfiltered:
             tier_order_map = {t: i for i, t in enumerate(TIER_RANGES.keys())}
             user_tier_num = tier_order_map.get(user_tier, -1)
 
-            target_fams = _genre_families(genre) if genre else set()
+            # Use family-based filtering (same as Similar Artists)
+            user_families = _genre_families(genre or '')
+            print(f"  Flattery: user families = {user_families}")
 
+            flattery_candidates = []
             seen_artists = set()
-            for m in all_matches:
+            dropdown_lower = dropdown_genre.lower() if dropdown_genre else ''
+
+            for m in all_matches_unfiltered:
                 cand_tier_num = tier_order_map.get(m.get('tier', 'unknown'), -1)
                 if cand_tier_num <= user_tier_num:
                     continue
@@ -694,20 +806,61 @@ async def analyze(
                 if aid in seen_artists:
                     continue
 
-                # Genre family coherence — skip candidates from a different family
-                if target_fams:
-                    cand_fams = _genre_families(
-                        ','.join(m.get('artist_genres', [])),
-                        m.get('primary_genre', ''),
-                        m.get('secondary_genre', ''),
-                    )
-                    if cand_fams and not (target_fams & cand_fams):
-                        continue
+                # Family-based filtering with exclusive family check
+                cand_genre_parts = []
+                for field in ('primary_genre', 'secondary_genre'):
+                    g = (m.get(field) or '').strip()
+                    if g:
+                        cand_genre_parts.append(g)
+                for g in m.get('artist_genres', []):
+                    if g:
+                        cand_genre_parts.append(g)
+                cand_genre_str = ', '.join(cand_genre_parts)
+                cand_families = _genre_families(cand_genre_str)
+
+                # Must share at least one family
+                if not (user_families & cand_families):
+                    continue
+
+                # Exclusive families: if candidate has these and user doesn't, filter out
+                # These are strong genre identities that shouldn't cross-contaminate
+                EXCLUSIVE_FAMILIES = {'electronic', 'metal', 'hip-hop', 'country', 'classical', 'jazz', 'latin', 'k-pop'}
+                foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - user_families
+                if foreign_exclusive:
+                    continue  # Has exclusive family user doesn't have
 
                 seen_artists.add(aid)
+
+                # Genre boost for flattery scoring
+                genre_boost = 0
+                if dropdown_lower:
+                    if any(dropdown_lower in g for g in cand_genre_parts):
+                        genre_boost = 0.02
+
+                # Pronoun boost: same pronoun gets a meaningful boost
+                pronoun_boost = 0
+                if user_pronoun:
+                    cand_pronoun = m.get('pronoun_title', '')
+                    if cand_pronoun and cand_pronoun == user_pronoun:
+                        pronoun_boost = 0.035  # 3.5% boost for matching pronouns
+
+                total_boost = genre_boost + pronoun_boost
+                flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
+
+            # Sort by tier (highest first), then boosted similarity
+            flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+
+            # Debug: show top candidates with pronoun info
+            if user_pronoun:
+                print(f"  Flattery candidates (top 10):")
+                for i, (tier_num, score, m, cand_pronoun) in enumerate(flattery_candidates[:10]):
+                    name = m.get('artist_name') or 'Unknown'
+                    tier = m.get('tier', '?')
+                    pron_match = "✓" if cand_pronoun == user_pronoun else ""
+                    print(f"    {i+1}. {name[:20]:<20} {tier:<12} {score:.1%} {cand_pronoun or '?':<10} {pron_match}")
+
+            for _, _, m, _ in flattery_candidates[:3]:
                 flattery_matches.append(m)
-                if len(flattery_matches) >= 3:
-                    break
 
         if flattery_matches:
             print(f"  Flattery: {len(flattery_matches)} trajectory targets found")

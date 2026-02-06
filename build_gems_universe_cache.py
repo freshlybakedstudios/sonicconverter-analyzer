@@ -251,6 +251,7 @@ class UniverseCacheBuilder:
                     'spotify_url': r.get('spotify_url'),
                     'pronoun_title': r.get('pronoun_title', ''),
                     'genres': r.get('genres', ''),
+                    'code2': r.get('code2', ''),
                     'is_band': r.get('is_band'),
                     'ensemble_type': r.get('ensemble_type'),
                     'project_type_title': r.get('project_type_title'),

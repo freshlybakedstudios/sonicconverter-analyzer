@@ -469,6 +469,8 @@ class TrackMatcher:
                 'artist_id': artist_id,
                 'name': artist_data.get('name', 'Unknown'),
                 'spotify_url': artist_data.get('spotify_url', ''),
+                'code2': artist_data.get('code2', ''),
+                'pronoun_title': artist_data.get('pronoun_title', ''),
                 'tier': tier,
                 'listeners': listeners,
                 'followers': followers,

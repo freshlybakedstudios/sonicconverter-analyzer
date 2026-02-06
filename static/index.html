@@ -186,27 +186,6 @@
         <div class="genre-callout-detail" id="genre-callout-detail"></div>
       </div>
 
-      <!-- Your Conversion (only shown if Spotify URL provided) -->
-      <div class="conversion-card hidden" id="conversion-card">
-        <h3>Your Conversion Rate</h3>
-        <p class="conversion-note">Listener-to-follower conversion compared to your sonic peers</p>
-        <div class="conversion-grid">
-          <div class="conversion-stat" id="conv-yours-stat">
-            <div class="conversion-value" id="conv-yours">-</div>
-            <div class="conversion-label">Your Rate</div>
-          </div>
-          <div class="conversion-stat">
-            <div class="conversion-value" id="conv-median">-</div>
-            <div class="conversion-label">Peer Median</div>
-          </div>
-          <div class="conversion-stat">
-            <div class="conversion-value" id="conv-top25">-</div>
-            <div class="conversion-label">Top 25%</div>
-          </div>
-        </div>
-        <div class="conversion-opportunity hidden" id="conv-opportunity"></div>
-      </div>
-
       <!-- Trajectory Targets (flattery matches) -->
       <div class="result-card hidden" id="flattery-card">
         <h3>Trajectory Targets</h3>
@@ -236,6 +215,27 @@
         </div>
       </div>
 
+      <!-- Your Conversion (only shown if Spotify URL provided) -->
+      <div class="conversion-card hidden" id="conversion-card">
+        <h3>Your Conversion Rate</h3>
+        <p class="conversion-note">Listener-to-follower conversion compared to your sonic peers</p>
+        <div class="conversion-grid">
+          <div class="conversion-stat" id="conv-yours-stat">
+            <div class="conversion-value" id="conv-yours">-</div>
+            <div class="conversion-label">Your Rate</div>
+          </div>
+          <div class="conversion-stat">
+            <div class="conversion-value" id="conv-median">-</div>
+            <div class="conversion-label">Peer Median</div>
+          </div>
+          <div class="conversion-stat">
+            <div class="conversion-value" id="conv-top25">-</div>
+            <div class="conversion-label">Top 25%</div>
+          </div>
+        </div>
+        <div class="conversion-opportunity hidden" id="conv-opportunity"></div>
+      </div>
+
       <!-- Recommendations -->
       <div class="result-card">
         <h3>Production Recommendations</h3>
@@ -253,6 +253,12 @@
     </section>
 
   </div>
+
+  <!-- Floating CTA -->
+  <a href="https://freshlybakedstudios.com/book" class="floating-cta hidden" id="floating-cta">
+    <span class="cta-icon">🎚️</span>
+    <span class="cta-text">Book Free Mix Consultation</span>
+  </a>
 
   <script src="/static/app.js"></script>
 </body>
