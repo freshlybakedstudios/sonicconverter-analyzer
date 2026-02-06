@@ -19,6 +19,7 @@ function scrollToRegister() {
 
 function resetAll() {
   hide($('#results-section'));
+  hide($('#floating-cta'));
   show($('#upload-section'));
   selectedFile = null;
   hide($('#selected-file'));
@@ -174,6 +175,7 @@ async function analyzeTrack() {
 
     hide($('#loading-section'));
     show($('#results-section'));
+    show($('#floating-cta'));
     $('#results-section').scrollIntoView({ behavior: 'smooth' });
 
   } catch (err) {
@@ -232,7 +234,7 @@ function renderResults(data) {
   const stats = [
     { value: (f.bpm || 0).toFixed(0), label: 'BPM' },
     { value: `${f.key || '?'} ${f.scale || ''}`, label: 'KEY' },
-    { value: (f.lufs_integrated || 0).toFixed(1), label: 'LUFS' },
+    { value: (f.lufs_integrated || 0).toFixed(1), label: 'LUFS', subtitle: 'Integrated Loudness' },
     { value: energyLabel(f.energy || 0), label: 'ENERGY' },
     { value: compressionLabel(f.compression_amount || 0), label: 'COMPRESSION' },
     { value: danceabilityLabel(f.danceability || 0), label: 'DANCEABILITY' },
@@ -240,7 +242,8 @@ function renderResults(data) {
   stats.forEach(s => {
     const div = document.createElement('div');
     div.className = 'stat-card';
-    div.innerHTML = `<div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div>`;
+    const subtitleHtml = s.subtitle ? `<div class="stat-subtitle">${s.subtitle}</div>` : '';
+    div.innerHTML = `<div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div>${subtitleHtml}`;
     statsGrid.appendChild(div);
   });
 
@@ -401,7 +404,12 @@ function renderResults(data) {
   recList.innerHTML = '';
   recs.forEach(r => {
     const li = document.createElement('li');
-    li.textContent = r;
+    const parts = r.split('\n');
+    if (parts.length === 2) {
+      li.innerHTML = `<div class="rec-action">${parts[0]}</div><div class="rec-consensus">${parts[1]}</div>`;
+    } else {
+      li.textContent = r;
+    }
     recList.appendChild(li);
   });
 }
