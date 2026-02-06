@@ -372,8 +372,8 @@ def _format_rec(feat: str, consensus: dict) -> str:
                 delta_str = f" (~{abs(pct_delta):.0f}%)"
 
     return (
-        f"[{domain}] {action}{delta_str}\n"
-        f"{count}/{total} top converters agree"
+        f"[{domain}] {action}\n"
+        f"You: {user_str} → Target: {peer_str}{delta_str} | {count}/{total} agree"
     )
 
 
