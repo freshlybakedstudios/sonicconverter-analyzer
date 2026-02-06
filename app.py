@@ -839,10 +839,9 @@ async def analyze(
 
                 # Pronoun boost: same pronoun gets a meaningful boost
                 pronoun_boost = 0
-                if user_pronoun:
-                    cand_pronoun = m.get('pronoun_title', '')
-                    if cand_pronoun and cand_pronoun == user_pronoun:
-                        pronoun_boost = 0.035  # 3.5% boost for matching pronouns
+                cand_pronoun = m.get('pronoun_title', '')
+                if user_pronoun and cand_pronoun and cand_pronoun == user_pronoun:
+                    pronoun_boost = 0.035  # 3.5% boost for matching pronouns
 
                 total_boost = genre_boost + pronoun_boost
                 flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
