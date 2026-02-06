@@ -657,8 +657,8 @@ async def analyze(
         # CM lookup can provide more accurate listener count
         if cm_data and cm_data['listeners'] > 0:
             user_monthly = cm_data['listeners']
-        user_tier = _listeners_to_tier(user_monthly) if user_monthly else ''
-        fetch_n = 500 if user_tier else 20
+        user_tier = _listeners_to_tier(user_monthly) if user_monthly else 'micro'  # Default to lowest tier
+        fetch_n = 500  # Always fetch enough for family filtering
 
         # Pure sonic matching — no genre penalty
         t0 = time.time()
@@ -746,7 +746,7 @@ async def analyze(
         # Debug: show top 40 matches with genre families
         print(f"  Top 40 matches (before tier filter):")
         for i, m in enumerate(all_matches[:40]):
-            artist = m.get('artist_name') or 'Unknown'
+            artist = m.get('name') or 'Unknown'
             sim = m.get('similarity') or 0
             artist_genres = m.get('artist_genres') or []
             primary = m.get('primary_genre') or ''
