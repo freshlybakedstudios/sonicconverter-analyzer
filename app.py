@@ -658,7 +658,7 @@ async def analyze(
         if cm_data and cm_data['listeners'] > 0:
             user_monthly = cm_data['listeners']
         user_tier = _listeners_to_tier(user_monthly) if user_monthly else 'micro'  # Default to lowest tier
-        fetch_n = 500  # Always fetch enough for family filtering
+        fetch_n = 20000  # Good coverage without excessive processing
 
         # Pure sonic matching — no genre penalty
         t0 = time.time()
@@ -850,13 +850,23 @@ async def analyze(
             flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
             # Debug: show top candidates with pronoun info
-            if user_pronoun:
+            if flattery_candidates:
                 print(f"  Flattery candidates (top 10):")
                 for i, (tier_num, score, m, cand_pronoun) in enumerate(flattery_candidates[:10]):
-                    name = m.get('artist_name') or 'Unknown'
+                    name = m.get('name') or 'Unknown'
                     tier = m.get('tier', '?')
-                    pron_match = "✓" if cand_pronoun == user_pronoun else ""
-                    print(f"    {i+1}. {name[:20]:<20} {tier:<12} {score:.1%} {cand_pronoun or '?':<10} {pron_match}")
+                    # Compute families same way as filter does
+                    cand_genre_parts = []
+                    for field in ('primary_genre', 'secondary_genre'):
+                        g = (m.get(field) or '').strip()
+                        if g:
+                            cand_genre_parts.append(g)
+                    for g in m.get('artist_genres', []):
+                        if g:
+                            cand_genre_parts.append(g)
+                    cand_families = _genre_families(', '.join(cand_genre_parts))
+                    shared = user_families & cand_families
+                    print(f"    {i+1}. {name[:20]:<20} {tier:<12} {score:.1%} | shared: {shared}")
 
             for _, _, m, _ in flattery_candidates[:3]:
                 flattery_matches.append(m)
