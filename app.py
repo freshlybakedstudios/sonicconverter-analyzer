@@ -523,18 +523,26 @@ async def register(
     if not name or not email:
         raise HTTPException(400, "Name and email are required")
 
-    # Store lead in Supabase (core columns only; spotify_url/monthly_listeners
-    # require ALTER TABLE — see README)
+    # Store lead in Supabase with retry logic for connection issues
     row = {
         'name': name,
         'email': email,
         'created_at': datetime.utcnow().isoformat(),
         'analysis_count': 0,
     }
-    try:
-        supabase.table('analyzer_leads').insert(row).execute()
-    except Exception as e:
-        print(f"Supabase insert error (continuing): {e}")
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            supabase.table('analyzer_leads').insert(row).execute()
+            print(f"Lead saved: {email}")
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
+                print(f"Supabase insert retry {attempt + 1}/{max_retries} after {wait_time}s: {e}")
+                time.sleep(wait_time)
+            else:
+                print(f"Supabase insert FAILED after {max_retries} attempts: {e} — lead: {email}")
     # Try to update with optional columns (may fail if columns don't exist yet)
     if spotify_url or monthly_listeners is not None:
         extra = {}
@@ -824,7 +832,7 @@ async def analyze(
 
                 # Exclusive families: if candidate has these and user doesn't, filter out
                 # These are strong genre identities that shouldn't cross-contaminate
-                EXCLUSIVE_FAMILIES = {'electronic', 'metal', 'hip-hop', 'country', 'classical', 'jazz', 'latin', 'k-pop'}
+                EXCLUSIVE_FAMILIES = {'electronic', 'metal', 'hip-hop', 'country', 'classical', 'jazz', 'latin'}
                 foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - user_families
                 if foreign_exclusive:
                     continue  # Has exclusive family user doesn't have
