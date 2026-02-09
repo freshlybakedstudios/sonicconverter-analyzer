@@ -8,6 +8,7 @@ Static files served from ./static/
 
 import math
 import os
+import requests
 import secrets
 import tempfile
 import time
@@ -30,6 +31,28 @@ from audio_analyzer import extract_features
 from chartmetric_lookup import lookup_artist_by_spotify
 from email_sender import send_results_email
 from track_matcher import TrackMatcher, _genre_families
+
+# ---------------------------------------------------------------------------
+# Pushover notifications
+# ---------------------------------------------------------------------------
+PUSHOVER_USER_KEY = os.getenv('PUSHOVER_USER_KEY', 'usbh1c1xzp7ooasfu8vvwbqmgiiipp')
+PUSHOVER_API_TOKEN = os.getenv('PUSHOVER_API_TOKEN', 'azq6g5x1rfzg9sykm6xscw8ypn4m1y')
+
+def send_pushover_notification(title: str, message: str):
+    """Send a push notification via Pushover."""
+    try:
+        requests.post(
+            'https://api.pushover.net/1/messages.json',
+            data={
+                'token': PUSHOVER_API_TOKEN,
+                'user': PUSHOVER_USER_KEY,
+                'title': title,
+                'message': message,
+            },
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"Pushover notification failed: {e}")
 
 # ---------------------------------------------------------------------------
 # Globals
@@ -535,6 +558,11 @@ async def register(
         try:
             supabase.table('analyzer_leads').insert(row).execute()
             print(f"Lead saved: {email}")
+            # Send push notification
+            send_pushover_notification(
+                "New Analyzer Lead",
+                f"{name}\n{email}"
+            )
             break
         except Exception as e:
             if attempt < max_retries - 1:
