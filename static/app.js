@@ -56,6 +56,17 @@ $('#register-form').addEventListener('submit', async (e) => {
     const data = await res.json();
     accessToken = data.token;
 
+    // Track lead conversion
+    if (typeof gtag === 'function') {
+      gtag('event', 'generate_lead', {
+        currency: 'USD',
+        value: 1.00
+      });
+    }
+    if (typeof fbq === 'function') {
+      fbq('track', 'Lead');
+    }
+
     // Transition
     hide($('#register-section'));
     hide($('#hero'));
@@ -171,6 +182,14 @@ async function analyzeTrack() {
     }
 
     const data = await res.json();
+
+    // Track analysis completion
+    if (typeof gtag === 'function') {
+      gtag('event', 'analysis_complete', {
+        event_category: 'engagement'
+      });
+    }
+
     renderResults(data);
 
     hide($('#loading-section'));
