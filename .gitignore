@@ -27,6 +27,7 @@ test_*.py
 
 # JSON data files
 *.json
+!genre_mapping.json
 
 # Logs
 *.log
