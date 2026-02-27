@@ -981,7 +981,6 @@ function appendCuratorEmail(data) {
   if (curator.submithub_url) links.push(`<a href="${curator.submithub_url}" target="_blank" rel="noopener" title="SubmitHub" class="social-link social-submithub">SubmitHub</a>`);
   if (curator.submission_url) links.push(`<a href="${curator.submission_url}" target="_blank" rel="noopener" title="Submission" class="social-link social-submit">Submit</a>`);
   if (curator.twitter_url) links.push(`<a href="${curator.twitter_url}" target="_blank" rel="noopener" title="X / Twitter" class="social-link">X</a>`);
-  if (curator.spotify_profile_url) links.push(`<a href="${curator.spotify_profile_url}" target="_blank" rel="noopener" title="Spotify Profile" class="social-link social-spotify">Spotify</a>`);
 
   const emailCell = curator.email
     ? `<a href="mailto:${curator.email}">${curator.email}</a>`
