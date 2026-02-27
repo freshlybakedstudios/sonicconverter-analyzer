@@ -191,6 +191,7 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
     )
 
     # Matches table
+    total_match_count = analysis.get('total_match_count', len(matches))
     match_rows = ''.join(_build_match_row(i + 1, m) for i, m in enumerate(matches[:5]))
 
     # Recommendations
@@ -263,6 +264,7 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
 
       <!-- Top Matches -->
       <h2 style="color:#fff;font-size:18px;margin:24px 0 12px">Similar Artists</h2>
+      <p style="font-size:13px;color:#888;margin:0 0 8px">{total_match_count} total matches found &mdash; showing top 5</p>
       <table style="width:100%;border-collapse:collapse;color:#eee;font-size:14px">
         <tr style="border-bottom:2px solid #3a3636">
           <th style="text-align:left;padding:6px 8px;color:#888;width:24px">#</th>

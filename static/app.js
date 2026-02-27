@@ -5,6 +5,12 @@ const API_URL = ''; // Same origin when served by FastAPI; set to ngrok URL for 
 
 let accessToken = null;
 let selectedFile = null;
+let currentJobId = null;
+let allMatches = [];      // Full match list from server
+let matchesShown = 20;    // Current pagination offset
+const MATCHES_PER_PAGE = 20;
+let eventSource = null;   // SSE connection
+let inputMode = 'file';   // 'file' or 'url'
 
 // -------------------------------------------------------
 // Helpers
@@ -22,6 +28,10 @@ function resetAll() {
   hide($('#floating-cta'));
   show($('#upload-section'));
   selectedFile = null;
+  allMatches = [];
+  matchesShown = 20;
+  currentJobId = null;
+  if (eventSource) { eventSource.close(); eventSource = null; }
   hide($('#selected-file'));
   $('#file-input').value = '';
 }
@@ -125,16 +135,60 @@ function handleFile(file) {
   updateAnalyzeButton();
 }
 
-// Enable analyze button only when file AND genre are selected
+// Enable analyze button only when input AND genre are ready
 function updateAnalyzeButton() {
   const btn = $('#analyze-btn');
-  const hasFile = !!selectedFile;
   const hasGenre = !!$('#genre-select').value;
-  btn.disabled = !(hasFile && hasGenre);
+  if (inputMode === 'url') {
+    const urlEl = $('#spotify-track-url');
+    const hasUrl = urlEl && urlEl.value.trim().includes('spotify');
+    btn.disabled = !(hasUrl && hasGenre);
+  } else {
+    const hasFile = !!selectedFile;
+    btn.disabled = !(hasFile && hasGenre);
+  }
 }
 
 // Listen for genre changes
 $('#genre-select').addEventListener('change', updateAnalyzeButton);
+
+// Listen for URL input changes
+document.addEventListener('DOMContentLoaded', () => {
+  const urlInput = $('#spotify-track-url');
+  if (urlInput) urlInput.addEventListener('input', updateAnalyzeButton);
+});
+
+// -------------------------------------------------------
+// Input Mode Toggle (File vs URL)
+// -------------------------------------------------------
+function setInputMode(mode) {
+  inputMode = mode;
+  const fileToggle = $('#mode-file');
+  const urlToggle = $('#mode-url');
+  const fileZone = $('#upload-zone');
+  const urlInput = $('#url-input-zone');
+
+  if (mode === 'file') {
+    fileToggle && fileToggle.classList.add('active');
+    urlToggle && urlToggle.classList.remove('active');
+    fileZone && show(fileZone);
+    urlInput && hide(urlInput);
+  } else {
+    fileToggle && fileToggle.classList.remove('active');
+    urlToggle && urlToggle.classList.add('active');
+    fileZone && hide(fileZone);
+    urlInput && show(urlInput);
+  }
+  updateAnalyzeButton();
+}
+
+// Wire up mode toggles (if elements exist)
+document.addEventListener('DOMContentLoaded', () => {
+  const modeFile = $('#mode-file');
+  const modeUrl = $('#mode-url');
+  if (modeFile) modeFile.addEventListener('click', () => setInputMode('file'));
+  if (modeUrl) modeUrl.addEventListener('click', () => setInputMode('url'));
+});
 
 // -------------------------------------------------------
 // Analyze
@@ -142,24 +196,29 @@ $('#genre-select').addEventListener('change', updateAnalyzeButton);
 $('#analyze-btn').addEventListener('click', analyzeTrack);
 
 async function analyzeTrack() {
-  if (!selectedFile || !accessToken) return;
+  if (!accessToken) return;
   const genre = $('#genre-select').value;
   if (!genre) {
     alert('Please select a genre before analyzing.');
     return;
   }
 
+  if (inputMode === 'file' && !selectedFile) return;
+  if (inputMode === 'url') {
+    const urlVal = ($('#spotify-track-url') || {}).value || '';
+    if (!urlVal.includes('spotify.com/track/') && !urlVal.includes('spotify:track:')) {
+      alert('Please enter a valid Spotify track URL');
+      return;
+    }
+  }
+
   // Show loading
   hide($('#upload-section'));
   show($('#loading-section'));
 
-  const statuses = [
-    'Extracting audio features',
-    'Analyzing frequency spectrum',
-    'Detecting emotional character',
-    'Matching against 140,000+ tracks',
-    'Generating recommendations',
-  ];
+  const statuses = inputMode === 'url'
+    ? ['Fetching track from Spotify', 'Extracting audio features', 'Matching against 140,000+ tracks', 'Generating recommendations']
+    : ['Extracting audio features', 'Analyzing frequency spectrum', 'Detecting emotional character', 'Matching against 140,000+ tracks', 'Generating recommendations'];
   let statusIdx = 0;
   const statusInterval = setInterval(() => {
     statusIdx = Math.min(statusIdx + 1, statuses.length - 1);
@@ -167,13 +226,20 @@ async function analyzeTrack() {
   }, 3000);
 
   try {
-    const form = new FormData();
-    form.append('file', selectedFile);
-    form.append('token', accessToken);
-    const genre = $('#genre-select').value;
-    if (genre) form.append('genre', genre);
-
-    const res = await fetch(`${API_URL}/api/analyze`, { method: 'POST', body: form });
+    let res;
+    if (inputMode === 'url') {
+      const form = new FormData();
+      form.append('spotify_url', $('#spotify-track-url').value.trim());
+      form.append('token', accessToken);
+      if (genre) form.append('genre', genre);
+      res = await fetch(`${API_URL}/api/analyze-url`, { method: 'POST', body: form });
+    } else {
+      const form = new FormData();
+      form.append('file', selectedFile);
+      form.append('token', accessToken);
+      if (genre) form.append('genre', genre);
+      res = await fetch(`${API_URL}/api/analyze`, { method: 'POST', body: form });
+    }
     clearInterval(statusInterval);
 
     if (!res.ok) {
@@ -182,12 +248,11 @@ async function analyzeTrack() {
     }
 
     const data = await res.json();
+    currentJobId = data.job_id;
 
     // Track analysis completion
     if (typeof gtag === 'function') {
-      gtag('event', 'analysis_complete', {
-        event_category: 'engagement'
-      });
+      gtag('event', 'analysis_complete', { event_category: 'engagement' });
     }
 
     renderResults(data);
@@ -197,11 +262,86 @@ async function analyzeTrack() {
     show($('#floating-cta'));
     $('#results-section').scrollIntoView({ behavior: 'smooth' });
 
+    // Start SSE for background enrichment
+    if (currentJobId) {
+      startSSE(currentJobId);
+    }
+
   } catch (err) {
     clearInterval(statusInterval);
     hide($('#loading-section'));
     show($('#upload-section'));
     alert('Analysis failed: ' + err.message);
+  }
+}
+
+// -------------------------------------------------------
+// SSE Client for background enrichment
+// -------------------------------------------------------
+function startSSE(jobId) {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource(`${API_URL}/api/analysis/${jobId}/stream`);
+
+  // Show enrichment status
+  const enrichEl = $('#enrichment-status');
+  if (enrichEl) show(enrichEl);
+
+  eventSource.addEventListener('playlists', (e) => {
+    const data = JSON.parse(e.data);
+    appendPlaylistData(data);
+    updateEnrichmentProgress('playlists', data.progress);
+  });
+
+  eventSource.addEventListener('all_playlists', (e) => {
+    const data = JSON.parse(e.data);
+    renderAllPlaylists(data.playlists, data.total);
+  });
+
+  eventSource.addEventListener('confidence', (e) => {
+    const data = JSON.parse(e.data);
+    renderConfidenceBadges(data.confidence_map);
+  });
+
+  eventSource.addEventListener('related_artists', (e) => {
+    const data = JSON.parse(e.data);
+    updateEnrichmentProgress('related_artists', `${data.count} found`);
+  });
+
+  eventSource.addEventListener('credits', (e) => {
+    const data = JSON.parse(e.data);
+    appendCreditsData(data);
+  });
+
+  eventSource.addEventListener('curator_emails', (e) => {
+    const data = JSON.parse(e.data);
+    appendCuratorEmail(data);
+    updateEnrichmentProgress('emails', data.progress);
+  });
+
+  eventSource.addEventListener('complete', () => {
+    const enrichEl = $('#enrichment-status');
+    if (enrichEl) {
+      enrichEl.innerHTML = '<span class="enrichment-done">Enrichment complete</span>';
+      setTimeout(() => hide(enrichEl), 3000);
+    }
+    eventSource.close();
+    eventSource = null;
+  });
+
+  eventSource.addEventListener('error', () => {
+    const enrichEl = $('#enrichment-status');
+    if (enrichEl) hide(enrichEl);
+    if (eventSource) { eventSource.close(); eventSource = null; }
+  });
+}
+
+function updateEnrichmentProgress(type, value) {
+  const el = $(`#enrichment-${type}`);
+  if (el) el.textContent = value;
+  const statusEl = $('#enrichment-status');
+  if (statusEl && !statusEl.classList.contains('hidden')) {
+    const progress = statusEl.querySelector('.enrichment-progress');
+    if (progress) progress.textContent = `Enriching: ${type} ${value}`;
   }
 }
 
@@ -388,35 +528,30 @@ function renderResults(data) {
     hide(flatteryCard);
   }
 
-  // Matches table
-  const tbody = $('#matches-body');
-  tbody.innerHTML = '';
-  matches.forEach((m, i) => {
-    const tr = document.createElement('tr');
-    const linkUrl = m.track_url || m.spotify_url;
-    const artistLink = linkUrl
-      ? `<a href="${linkUrl}" target="_blank" rel="noopener">${m.name}</a>`
-      : m.name;
-    const emos = (m.emotions || []).filter(e => e && e !== 'neutral').slice(0, 3);
-    const emoTags = emos.map(e => `<span class="mini-tag">${EMOTION_LABELS[e] || e}</span>`).join('');
-    const convRate = m.conversion_rate != null ? m.conversion_rate.toFixed(1) + '%' : '-';
-    // Combine all genre fields into one display
-    const allGenres = new Set();
-    if (m.primary_genre && m.primary_genre.toLowerCase() !== 'unknown') allGenres.add(m.primary_genre);
-    if (m.secondary_genre && m.secondary_genre.toLowerCase() !== 'unknown') allGenres.add(m.secondary_genre);
-    (m.artist_genres || []).forEach(g => { if (g) allGenres.add(g); });
-    const genreStr = allGenres.size > 0 ? [...allGenres].join(', ') : '-';
-    tr.innerHTML = `
-      <td>${i + 1}</td>
-      <td class="match-artist">${artistLink}</td>
-      <td class="match-sim">${(m.similarity * 100).toFixed(1)}%</td>
-      <td class="match-conversion">${convRate}</td>
-      <td class="match-tier">${m.tier || '-'}</td>
-      <td class="match-genre">${genreStr}</td>
-      <td class="match-emotions">${emoTags}</td>
-    `;
-    tbody.appendChild(tr);
-  });
+  // Matches table with pagination
+  allMatches = matches;
+  matchesShown = MATCHES_PER_PAGE;
+  const totalCount = data.total_match_count || matches.length;
+
+  // Match counter
+  const matchCounter = $('#match-counter');
+  if (matchCounter) {
+    matchCounter.textContent = `Showing ${Math.min(matchesShown, matches.length)} of ${totalCount} matches`;
+    show(matchCounter);
+  }
+
+  renderMatchRows(matches.slice(0, MATCHES_PER_PAGE), 0);
+
+  // Show More button
+  const showMoreBtn = $('#show-more-btn');
+  if (showMoreBtn) {
+    if (matches.length > MATCHES_PER_PAGE) {
+      show(showMoreBtn);
+      showMoreBtn.textContent = `Show ${MATCHES_PER_PAGE} More`;
+    } else {
+      hide(showMoreBtn);
+    }
+  }
 
   // Recommendations
   const recList = $('#rec-list');
@@ -431,6 +566,253 @@ function renderResults(data) {
     }
     recList.appendChild(li);
   });
+}
+
+// -------------------------------------------------------
+// Match row rendering + pagination
+// -------------------------------------------------------
+function renderMatchRows(matchSlice, startIdx) {
+  const tbody = $('#matches-body');
+  matchSlice.forEach((m, i) => {
+    const idx = startIdx + i;
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-match-key', String(m.artist_id || m.name || idx));
+    const linkUrl = m.track_url || m.spotify_url;
+    const artistLink = linkUrl
+      ? `<a href="${linkUrl}" target="_blank" rel="noopener">${m.name}</a>`
+      : m.name;
+    const emos = (m.emotions || []).filter(e => e && e !== 'neutral').slice(0, 3);
+    const emoTags = emos.map(e => `<span class="mini-tag">${EMOTION_LABELS[e] || e}</span>`).join('');
+    const convRate = m.conversion_rate != null ? m.conversion_rate.toFixed(1) + '%' : '-';
+    const allGenres = new Set();
+    if (m.primary_genre && m.primary_genre.toLowerCase() !== 'unknown') allGenres.add(m.primary_genre);
+    if (m.secondary_genre && m.secondary_genre.toLowerCase() !== 'unknown') allGenres.add(m.secondary_genre);
+    (m.artist_genres || []).forEach(g => { if (g) allGenres.add(g); });
+    const genreStr = allGenres.size > 0 ? [...allGenres].join(', ') : '-';
+    tr.innerHTML = `
+      <td>${idx + 1}</td>
+      <td class="match-artist">${artistLink}</td>
+      <td class="match-sim">${(m.similarity * 100).toFixed(1)}%</td>
+      <td class="match-conversion">${convRate}</td>
+      <td class="match-tier">${m.tier || '-'}</td>
+      <td class="match-genre">${genreStr}</td>
+      <td class="match-emotions">${emoTags}</td>
+    `;
+    // Collapsible playlist section (populated via SSE)
+    const plRow = document.createElement('tr');
+    plRow.className = 'playlist-row hidden';
+    plRow.setAttribute('data-playlist-for', String(m.artist_id || m.name || idx));
+    plRow.innerHTML = `<td colspan="7"><div class="match-playlists"></div></td>`;
+
+    tbody.appendChild(tr);
+    tbody.appendChild(plRow);
+  });
+}
+
+function showMoreMatches() {
+  const nextBatch = allMatches.slice(matchesShown, matchesShown + MATCHES_PER_PAGE);
+  if (nextBatch.length === 0) return;
+  renderMatchRows(nextBatch, matchesShown);
+  matchesShown += nextBatch.length;
+
+  const matchCounter = $('#match-counter');
+  if (matchCounter) {
+    matchCounter.textContent = `Showing ${matchesShown} of ${allMatches.length} matches`;
+  }
+  const showMoreBtn = $('#show-more-btn');
+  if (showMoreBtn) {
+    if (matchesShown >= allMatches.length) {
+      hide(showMoreBtn);
+    } else {
+      showMoreBtn.textContent = `Show ${Math.min(MATCHES_PER_PAGE, allMatches.length - matchesShown)} More`;
+    }
+  }
+}
+
+// Wire up Show More button
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = $('#show-more-btn');
+  if (btn) btn.addEventListener('click', showMoreMatches);
+});
+
+// -------------------------------------------------------
+// SSE data rendering helpers
+// -------------------------------------------------------
+function appendPlaylistData(data) {
+  const matchKey = data.match_key;
+  const plRow = document.querySelector(`tr[data-playlist-for="${matchKey}"]`);
+  if (!plRow) return;
+
+  const container = plRow.querySelector('.match-playlists');
+  if (!container) return;
+
+  const playlists = data.playlists || [];
+  if (playlists.length === 0) return;
+
+  // Show the row
+  plRow.classList.remove('hidden');
+
+  // Make the parent match row clickable to toggle
+  const matchRow = document.querySelector(`tr[data-match-key="${matchKey}"]`);
+  if (matchRow && !matchRow.classList.contains('has-playlists')) {
+    matchRow.classList.add('has-playlists');
+    const badge = document.createElement('span');
+    badge.className = 'playlist-count-badge';
+    badge.textContent = `${playlists.length} playlists`;
+    const artistCell = matchRow.querySelector('.match-artist');
+    if (artistCell) artistCell.appendChild(badge);
+
+    matchRow.style.cursor = 'pointer';
+    matchRow.addEventListener('click', () => {
+      plRow.classList.toggle('hidden');
+    });
+    // Start collapsed
+    plRow.classList.add('hidden');
+  }
+
+  // Render playlists
+  const sorted = [...playlists].sort((a, b) => (b.score || 0) - (a.score || 0));
+  container.innerHTML = sorted.slice(0, 10).map(pl => `
+    <div class="playlist-item ${pl.editorial ? 'editorial' : ''} ${pl.double_validated ? 'double-validated' : ''}">
+      <a href="${pl.link}" target="_blank" rel="noopener">${pl.name}</a>
+      <span class="playlist-followers">${(pl.followers || 0).toLocaleString()} followers</span>
+      ${pl.editorial ? '<span class="playlist-badge editorial-badge">Editorial</span>' : ''}
+      ${pl.status === 'current' ? '<span class="playlist-badge current-badge">Current</span>' : ''}
+      ${pl.curator_name ? `<span class="playlist-curator">${pl.curator_name}</span>` : ''}
+    </div>
+  `).join('');
+}
+
+function renderAllPlaylists(playlists, total) {
+  const container = $('#all-playlists-list');
+  const card = $('#all-playlists-card');
+  if (!container || !card) return;
+
+  show(card);
+  const countEl = $('#all-playlists-count');
+  if (countEl) countEl.textContent = `${total} playlists across all matches`;
+
+  container.innerHTML = playlists.slice(0, 100).map((pl, i) => `
+    <tr class="${pl.double_validated ? 'double-validated-row' : ''}">
+      <td>${i + 1}</td>
+      <td><a href="${pl.link}" target="_blank" rel="noopener">${pl.name}</a></td>
+      <td>${pl.sonic_match || ''}</td>
+      <td>${(pl.followers || 0).toLocaleString()}</td>
+      <td>${pl.editorial ? 'Editorial' : 'Indie'}</td>
+      <td>${pl.status || ''}</td>
+      <td>${(pl.score || 0).toFixed(3)}</td>
+      <td>${pl.curator_name || ''}</td>
+    </tr>
+  `).join('');
+}
+
+function renderConfidenceBadges(confidenceMap) {
+  for (const [key, value] of Object.entries(confidenceMap)) {
+    const row = document.querySelector(`tr[data-match-key="${key}"]`);
+    if (row && value === 'double_validated') {
+      const artistCell = row.querySelector('.match-artist');
+      if (artistCell && !artistCell.querySelector('.confidence-badge')) {
+        const badge = document.createElement('span');
+        badge.className = 'confidence-badge';
+        badge.title = 'Also appears in CM Related Artists — audience overlap confirmed';
+        badge.textContent = 'Audience Match';
+        artistCell.appendChild(badge);
+      }
+      row.classList.add('double-validated-row');
+    }
+  }
+}
+
+function appendCreditsData(data) {
+  const container = $('#credits-list');
+  const card = $('#credits-card');
+  if (!container || !card) return;
+
+  show(card);
+  const credits = data.credits || {};
+  const artistName = data.artist_name || '';
+
+  const producers = credits.producers || [];
+  const writers = credits.writers || [];
+
+  if (producers.length === 0 && writers.length === 0) return;
+
+  const row = document.createElement('div');
+  row.className = 'credits-entry';
+  row.innerHTML = `
+    <div class="credits-artist">${artistName}</div>
+    ${producers.length ? `<div class="credits-role">Producers: ${producers.map(p => p.name).join(', ')}</div>` : ''}
+    ${writers.length ? `<div class="credits-role">Writers: ${writers.map(w => w.name).join(', ')}</div>` : ''}
+  `;
+  container.appendChild(row);
+
+  // Update aggregated counts
+  updateCreditsSummary();
+}
+
+// Track all credits for aggregation
+const creditCounts = { producers: {}, writers: {} };
+
+function updateCreditsSummary() {
+  const container = $('#credits-list');
+  if (!container) return;
+
+  // Rebuild from all credits entries
+  const entries = container.querySelectorAll('.credits-entry');
+  const pCounts = {};
+  const wCounts = {};
+
+  entries.forEach(entry => {
+    const roles = entry.querySelectorAll('.credits-role');
+    roles.forEach(role => {
+      const text = role.textContent;
+      const names = text.replace(/^(Producers|Writers):\s*/, '').split(', ');
+      const isProducer = text.startsWith('Producers');
+      names.forEach(name => {
+        const n = name.trim();
+        if (!n) return;
+        if (isProducer) pCounts[n] = (pCounts[n] || 0) + 1;
+        else wCounts[n] = (wCounts[n] || 0) + 1;
+      });
+    });
+  });
+
+  // Show top credits summary
+  const summaryEl = $('#credits-summary');
+  if (summaryEl) {
+    const topProducers = Object.entries(pCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const topWriters = Object.entries(wCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    let html = '';
+    if (topProducers.length) {
+      html += '<div class="credits-top"><strong>Top Producers:</strong> ' +
+        topProducers.map(([n, c]) => `${n} <span class="credit-count">(${c} tracks)</span>`).join(', ') + '</div>';
+    }
+    if (topWriters.length) {
+      html += '<div class="credits-top"><strong>Top Writers:</strong> ' +
+        topWriters.map(([n, c]) => `${n} <span class="credit-count">(${c} tracks)</span>`).join(', ') + '</div>';
+    }
+    summaryEl.innerHTML = html;
+  }
+}
+
+function appendCuratorEmail(data) {
+  const container = $('#curator-emails-body');
+  const card = $('#curator-emails-card');
+  if (!container || !card) return;
+
+  show(card);
+  const curator = data.curator || {};
+  if (!curator.email) return;
+
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${curator.name || ''}</td>
+    <td>${curator.playlist_name || ''}</td>
+    <td>${(curator.followers || 0).toLocaleString()}</td>
+    <td><a href="mailto:${curator.email}">${curator.email}</a></td>
+    <td>${curator.email_source || ''}</td>
+  `;
+  container.appendChild(tr);
 }
 
 // -------------------------------------------------------

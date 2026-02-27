@@ -134,8 +134,14 @@
 
     <!-- UPLOAD -->
     <section class="section hidden" id="upload-section">
-      <h2>Upload Your Track</h2>
-      <p class="section-sub">Drag and drop or click to select an audio file (MP3, WAV, FLAC).</p>
+      <h2>Analyze Your Track</h2>
+      <p class="section-sub">Upload an audio file or paste a Spotify track URL.</p>
+
+      <!-- Input Mode Toggle -->
+      <div class="input-mode-toggle">
+        <button class="mode-btn active" id="mode-file">Upload File</button>
+        <button class="mode-btn" id="mode-url">Spotify URL</button>
+      </div>
 
       <div class="upload-zone" id="upload-zone">
         <div class="upload-icon">
@@ -148,6 +154,15 @@
         <p class="upload-text">Drop your audio file here</p>
         <p class="upload-hint">or click to browse &mdash; MP3, WAV, FLAC up to 50 MB</p>
         <input type="file" id="file-input" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac" hidden>
+      </div>
+
+      <!-- URL Input (hidden by default) -->
+      <div class="url-input-zone hidden" id="url-input-zone">
+        <div class="form-group">
+          <label for="spotify-track-url">Spotify Track URL</label>
+          <input type="url" id="spotify-track-url" placeholder="https://open.spotify.com/track/..." autocomplete="off">
+        </div>
+        <p class="upload-hint">Paste a Spotify track link to analyze without uploading</p>
       </div>
 
       <div class="genre-picker">
@@ -224,10 +239,17 @@
         <div id="flattery-list"></div>
       </div>
 
+      <!-- Enrichment Status -->
+      <div class="enrichment-status hidden" id="enrichment-status">
+        <div class="enrichment-spinner"></div>
+        <span class="enrichment-progress">Enriching matches with playlist data...</span>
+      </div>
+
       <!-- Matches -->
       <div class="result-card">
         <h3>Similar Artists</h3>
         <p class="card-sub">From our universe of 140,000+ sonically profiled tracks</p>
+        <div class="match-counter" id="match-counter"></div>
         <div class="matches-table-wrap">
           <table class="matches-table" id="matches-table">
             <thead>
@@ -242,6 +264,58 @@
               </tr>
             </thead>
             <tbody id="matches-body"></tbody>
+          </table>
+        </div>
+        <button class="btn-secondary hidden" id="show-more-btn" style="margin-top:12px;width:100%">Show 20 More</button>
+      </div>
+
+      <!-- All Playlists (aggregated, ranked) -->
+      <div class="result-card hidden" id="all-playlists-card">
+        <h3>Ranked Playlists</h3>
+        <p class="card-sub" id="all-playlists-count">Playlists from matched artists, ranked by relevance</p>
+        <div class="matches-table-wrap">
+          <table class="matches-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Playlist</th>
+                <th>Via Artist</th>
+                <th>Followers</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Score</th>
+                <th>Curator</th>
+              </tr>
+            </thead>
+            <tbody id="all-playlists-list"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Producers & Writers -->
+      <div class="result-card hidden" id="credits-card">
+        <h3>Producers &amp; Writers</h3>
+        <p class="card-sub">Behind your matched tracks</p>
+        <div id="credits-summary"></div>
+        <div id="credits-list"></div>
+      </div>
+
+      <!-- Curator Contacts -->
+      <div class="result-card hidden" id="curator-emails-card">
+        <h3>Curator Contacts</h3>
+        <p class="card-sub">Email addresses found for playlist curators</p>
+        <div class="matches-table-wrap">
+          <table class="matches-table">
+            <thead>
+              <tr>
+                <th>Curator</th>
+                <th>Playlist</th>
+                <th>Followers</th>
+                <th>Email</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody id="curator-emails-body"></tbody>
           </table>
         </div>
       </div>
