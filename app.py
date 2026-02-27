@@ -6,12 +6,16 @@ Preloads the 1.2 GB GEMS universe cache at startup, then serves:
 Static files served from ./static/
 """
 
+import asyncio
+import json
 import math
 import os
 import requests
 import secrets
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -21,15 +25,23 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from supabase import create_client
 
 load_dotenv()
 
 from audio_analyzer import extract_features
-from chartmetric_lookup import lookup_artist_by_spotify
+from chartmetric_lookup import (
+    lookup_artist_by_spotify,
+    get_cm_token,
+    _resolve_isrc_to_cm_track_id,
+    _fetch_track_playlists_structured,
+    _fetch_related_artists,
+    _extract_track_credits,
+)
 from email_sender import send_results_email
+from job_manager import JobManager
 from track_matcher import TrackMatcher, _genre_families
 
 # ---------------------------------------------------------------------------
@@ -60,6 +72,11 @@ def send_pushover_notification(title: str, message: str):
 matcher = TrackMatcher()
 supabase = None
 access_tokens: dict = {}  # token -> {name, email, created_at}
+job_mgr = JobManager()
+enrichment_pool = ThreadPoolExecutor(max_workers=3)
+# SSE subscribers: job_id -> list of asyncio.Queue
+sse_subscribers: dict = {}
+_event_loop = None  # Set when the server starts
 
 
 # ---------------------------------------------------------------------------
@@ -76,16 +93,21 @@ async def lifespan(app: FastAPI):
     except FileNotFoundError:
         print("⚠️  Cache not found - run build_gems_universe_cache.py or wait for background build")
 
+    global _event_loop
+    _event_loop = asyncio.get_event_loop()
+
     url = os.getenv('SUPABASE_URL')
     key = os.getenv('SUPABASE_SERVICE_KEY')
     if url and key:
         supabase = create_client(url, key)
+        job_mgr.set_supabase(supabase)
     else:
         print("⚠️  SUPABASE_URL/SUPABASE_SERVICE_KEY not set - some features disabled")
 
     print("Ready.")
     yield
     print("Shutting down.")
+    enrichment_pool.shutdown(wait=False)
 
 
 app = FastAPI(title="SonicConverter Analyzer", lifespan=lifespan)
@@ -811,12 +833,14 @@ async def analyze(
                     if len(same_tier) >= MIN_PEER_MATCHES:
                         break
 
-            matches = same_tier[:20]
+            matches = same_tier  # Return ALL matches, paginated on frontend
             used = ', '.join(t for t in tier_order if t in tiers_used)
             print(f"  Matching: {t_match:.1f}s — {len(all_matches)} total, {len(matches)} in tier(s): {used}")
         else:
-            matches = all_matches[:20]
+            matches = list(all_matches)  # Return ALL matches
             print(f"  Matching: {t_match:.1f}s — {len(matches)} matches found")
+
+        total_match_count = len(matches)
 
         # Flattery matches — higher-tier artists using family-based genre filtering
         # Same approach as Similar Artists: must share at least one genre family
@@ -1010,8 +1034,21 @@ async def analyze(
                                           genre_alignment=genre_alignment,
                                           user_profile=user_profile)
 
+        # Create background enrichment job
+        job_id = job_mgr.create_job(token, features, matches, all_matches=matches)
+
+        # Get user's CM artist ID for related artists lookup
+        user_cm_id = None
+        if cm_data:
+            user_cm_id = cm_data.get('cm_id')
+        elif cached_artist_data:
+            aid, adata = cached_artist_data
+            user_cm_id = adata.get('cm_id') or adata.get('id')
+
         # Build response
         result = {
+            'job_id': job_id,
+            'total_match_count': total_match_count,
             'features': {
                 'bpm': features.get('bpm', 0),
                 'key': features.get('key', '?'),
@@ -1070,6 +1107,12 @@ async def analyze(
         except Exception:
             pass
 
+        # Kick off background enrichment (playlists, related artists, credits, curator emails)
+        enrichment_pool.submit(
+            _run_background_enrichment,
+            job_id, matches, user_cm_id,
+        )
+
         return result
 
     finally:
@@ -1078,6 +1121,485 @@ async def analyze(
             os.unlink(tmp_path)
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# SSE helpers
+# ---------------------------------------------------------------------------
+def _sse_publish(job_id: str, event: str, data: dict):
+    """Publish an SSE event to all subscribers for this job (thread-safe)."""
+    payload = f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    queues = sse_subscribers.get(job_id, [])
+    for q in queues:
+        try:
+            if _event_loop and _event_loop.is_running():
+                _event_loop.call_soon_threadsafe(q.put_nowait, payload)
+            else:
+                q.put_nowait(payload)
+        except Exception:
+            pass
+
+
+def _compute_playlist_score(sonic_similarity: float, followers: int,
+                            is_editorial: bool, is_current: bool,
+                            confidence_boost: float = 0.0) -> float:
+    """Playlist ranking formula from the plan."""
+    import math as _math
+    follower_score = _math.log10(max(followers, 1)) / 6.0
+    editorial_bonus = 1.0 if is_editorial else 0.0
+    recency_bonus = 1.0 if is_current else 0.5
+    return (
+        0.35 * sonic_similarity +
+        0.20 * confidence_boost +
+        0.25 * min(follower_score, 1.0) +
+        0.10 * editorial_bonus +
+        0.10 * recency_bonus
+    )
+
+
+# ---------------------------------------------------------------------------
+# Background enrichment
+# ---------------------------------------------------------------------------
+def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = None):
+    """
+    Runs in a thread. Enriches matches with:
+    1. CM Related Artists (fast, 1 API call) → confidence signal
+    2. Playlists per match (slow, 2-3 calls each) → streamed via SSE
+    3. Track credits → piggybacks on playlist resolution
+    4. Curator emails → runs after playlists
+    """
+    try:
+        refresh_token = os.getenv('REFRESH_TOKEN')
+        if not refresh_token:
+            print(f"Enrichment [{job_id[:8]}]: No REFRESH_TOKEN, skipping")
+            job_mgr.update_job(job_id, status='complete')
+            _sse_publish(job_id, 'complete', {'status': 'complete'})
+            return
+
+        token = get_cm_token(refresh_token)
+        if not token:
+            print(f"Enrichment [{job_id[:8]}]: Failed to get CM token")
+            job_mgr.update_job(job_id, status='complete')
+            _sse_publish(job_id, 'complete', {'status': 'complete'})
+            return
+
+        # --- Phase 3: Related Artists (fast, 1 API call) ---
+        related_set = set()
+        if user_cm_id:
+            try:
+                related = _fetch_related_artists(token, user_cm_id, limit=50)
+                if related:
+                    for ra in related:
+                        name = (ra.get('name') or '').lower().strip()
+                        if name:
+                            related_set.add(name)
+                        sp_url = ra.get('spotify_url') or ''
+                        if sp_url:
+                            related_set.add(sp_url.split('?')[0].rstrip('/'))
+                    print(f"Enrichment [{job_id[:8]}]: {len(related_set)} related artists found")
+                    job_mgr.update_job(job_id,
+                                       related_artists=related,
+                                       progress={'related_artists': 'done'})
+                    _sse_publish(job_id, 'related_artists', {
+                        'related': related,
+                        'count': len(related),
+                    })
+            except Exception as e:
+                print(f"Enrichment [{job_id[:8]}]: Related artists failed: {e}")
+        job_mgr.update_job(job_id, progress={'related_artists': 'done'})
+
+        # Build confidence map — which matches are also CM-related?
+        confidence_map = {}
+        for m in matches:
+            match_name = (m.get('name') or '').lower().strip()
+            match_sp = (m.get('spotify_url') or '').split('?')[0].rstrip('/')
+            is_double = match_name in related_set or (match_sp and match_sp in related_set)
+            if is_double:
+                key = str(m.get('artist_id', m.get('name', '')))
+                confidence_map[key] = 'double_validated'
+        if confidence_map:
+            job_mgr.update_job(job_id, confidence_map=confidence_map)
+            _sse_publish(job_id, 'confidence', {'confidence_map': confidence_map})
+            print(f"Enrichment [{job_id[:8]}]: {len(confidence_map)} double-validated matches")
+
+        # --- Phase 2: Playlists + Phase 4: Credits ---
+        # Process highest-similarity matches first
+        sorted_matches = sorted(matches, key=lambda m: m.get('similarity', 0), reverse=True)
+        total = len(sorted_matches)
+        all_playlists = []
+
+        for idx, m in enumerate(sorted_matches):
+            isrc = m.get('isrc') or ''
+            match_key = str(m.get('artist_id', m.get('name', '')))
+            if not isrc:
+                job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
+                continue
+
+            try:
+                # Resolve ISRC → CM track ID
+                cm_track_id = _resolve_isrc_to_cm_track_id(token, isrc)
+                if not cm_track_id:
+                    job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
+                    continue
+
+                # Fetch structured playlists
+                playlists = _fetch_track_playlists_structured(token, cm_track_id)
+
+                # Extract credits from track metadata (piggyback)
+                try:
+                    credits = _extract_track_credits(token, cm_track_id)
+                    if credits and (credits.get('producers') or credits.get('writers')):
+                        job_mgr.update_job(job_id, credits={match_key: credits})
+                        _sse_publish(job_id, 'credits', {
+                            'match_key': match_key,
+                            'artist_name': m.get('name', ''),
+                            'credits': credits,
+                        })
+                except Exception as e:
+                    print(f"Enrichment [{job_id[:8]}]: Credits failed for {isrc}: {e}")
+
+                if playlists:
+                    # Score playlists
+                    similarity = m.get('similarity', 0)
+                    conf_boost = 0.5 if match_key in confidence_map else 0.0
+                    for pl in playlists:
+                        pl['sonic_match'] = m.get('name', '')
+                        pl['sonic_similarity'] = similarity
+                        pl['score'] = _compute_playlist_score(
+                            similarity,
+                            pl.get('followers', 0),
+                            pl.get('editorial', False),
+                            pl.get('status') == 'current',
+                            confidence_boost=conf_boost,
+                        )
+                        pl['double_validated'] = match_key in confidence_map
+                    all_playlists.extend(playlists)
+
+                    job_mgr.update_job(job_id, playlists={match_key: playlists})
+                    _sse_publish(job_id, 'playlists', {
+                        'match_key': match_key,
+                        'artist_name': m.get('name', ''),
+                        'playlists': playlists,
+                        'progress': f'{idx+1}/{total}',
+                    })
+
+                job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
+
+            except Exception as e:
+                print(f"Enrichment [{job_id[:8]}]: Playlist failed for {isrc}: {e}")
+                job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
+
+        # Send aggregated ranked playlists
+        all_playlists.sort(key=lambda p: p.get('score', 0), reverse=True)
+        _sse_publish(job_id, 'all_playlists', {
+            'playlists': all_playlists[:200],  # Top 200 ranked
+            'total': len(all_playlists),
+        })
+
+        # --- Phase 5: Curator emails ---
+        try:
+            from curator_scraper import scrape_curator_emails
+            # Collect unique curators from playlists
+            curators_to_scrape = []
+            seen_curators = set()
+            for pl in all_playlists[:50]:  # Top 50 playlists
+                curator = pl.get('curator_name', '')
+                if curator and curator not in seen_curators:
+                    seen_curators.add(curator)
+                    curators_to_scrape.append({
+                        'name': curator,
+                        'playlist_name': pl.get('name', ''),
+                        'followers': pl.get('followers', 0),
+                    })
+
+            for i, curator_info in enumerate(curators_to_scrape):
+                try:
+                    result = scrape_curator_emails(curator_info['name'])
+                    if result and result.get('email'):
+                        curator_info.update(result)
+                        job_mgr.update_job(job_id,
+                                           curator_emails={curator_info['name']: curator_info})
+                        _sse_publish(job_id, 'curator_emails', {
+                            'curator': curator_info,
+                            'progress': f'{i+1}/{len(curators_to_scrape)}',
+                        })
+                except Exception as e:
+                    print(f"Enrichment [{job_id[:8]}]: Curator scrape failed for {curator_info['name']}: {e}")
+                job_mgr.update_job(job_id, progress={'curator_emails': f'{i+1}/{len(curators_to_scrape)}'})
+        except ImportError:
+            print(f"Enrichment [{job_id[:8]}]: curator_scraper not available, skipping")
+        except Exception as e:
+            print(f"Enrichment [{job_id[:8]}]: Curator scraping failed: {e}")
+
+        # Done
+        job_mgr.update_job(job_id, status='complete')
+        _sse_publish(job_id, 'complete', {'status': 'complete'})
+        print(f"Enrichment [{job_id[:8]}]: Complete — {len(all_playlists)} playlists found")
+
+    except Exception as e:
+        print(f"Enrichment [{job_id[:8]}]: Fatal error: {e}")
+        job_mgr.update_job(job_id, status='error')
+        _sse_publish(job_id, 'error', {'error': str(e)})
+
+
+# ---------------------------------------------------------------------------
+# SSE streaming endpoint
+# ---------------------------------------------------------------------------
+@app.get("/api/analysis/{job_id}/stream")
+async def stream_enrichment(job_id: str):
+    """SSE endpoint for progressive enrichment updates."""
+    job = job_mgr.get_job_state(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    queue = asyncio.Queue()
+    if job_id not in sse_subscribers:
+        sse_subscribers[job_id] = []
+    sse_subscribers[job_id].append(queue)
+
+    async def event_generator():
+        try:
+            # Send current state first (catch-up for late joiners)
+            state = job_mgr.get_job_state(job_id)
+            if state:
+                if state.get('related_artists'):
+                    yield f"event: related_artists\ndata: {json.dumps({'related': state['related_artists'], 'count': len(state['related_artists'])})}\n\n"
+                if state.get('confidence_map'):
+                    yield f"event: confidence\ndata: {json.dumps({'confidence_map': state['confidence_map']})}\n\n"
+                if state.get('playlists'):
+                    for mk, pls in state['playlists'].items():
+                        yield f"event: playlists\ndata: {json.dumps({'match_key': mk, 'playlists': pls})}\n\n"
+                if state.get('credits'):
+                    for mk, creds in state['credits'].items():
+                        yield f"event: credits\ndata: {json.dumps({'match_key': mk, 'credits': creds})}\n\n"
+                if state.get('curator_emails'):
+                    for name, info in state['curator_emails'].items():
+                        yield f"event: curator_emails\ndata: {json.dumps({'curator': info})}\n\n"
+                if state.get('status') == 'complete':
+                    yield f"event: complete\ndata: {json.dumps({'status': 'complete'})}\n\n"
+                    return
+
+            # Stream live updates
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield msg
+                    if '"status": "complete"' in msg or '"status": "error"' in msg:
+                        break
+                except asyncio.TimeoutError:
+                    yield f": keepalive\n\n"
+        finally:
+            # Cleanup subscriber
+            if job_id in sse_subscribers:
+                try:
+                    sse_subscribers[job_id].remove(queue)
+                except ValueError:
+                    pass
+                if not sse_subscribers[job_id]:
+                    del sse_subscribers[job_id]
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Spotify URL analysis endpoint
+# ---------------------------------------------------------------------------
+@app.post("/api/analyze-url")
+async def analyze_url(
+    spotify_url: str = Form(...),
+    token: str = Form(...),
+    genre: Optional[str] = Form(None),
+):
+    """
+    Analyze a Spotify track by URL.
+    Tries: 1) Mac worker pickup (30s), 2) Spotify preview fallback.
+    """
+    lead = access_tokens.get(token)
+    if not lead:
+        raise HTTPException(401, "Invalid or expired token. Please register first.")
+
+    # Validate Spotify URL
+    if 'open.spotify.com/track/' not in spotify_url and 'spotify:track:' not in spotify_url:
+        raise HTTPException(400, "Please provide a valid Spotify track URL")
+
+    # Extract track ID
+    if 'spotify:track:' in spotify_url:
+        track_id = spotify_url.split('spotify:track:')[1].split('?')[0]
+    else:
+        track_id = spotify_url.split('track/')[1].split('?')[0].split('/')[0]
+
+    # Create a pending job
+    job_id = job_mgr.create_job(token, {}, [])
+    job_mgr.update_job(job_id, status='pending_features')
+
+    # Try to get Spotify preview URL via Spotify Web API
+    preview_url = None
+    sp_token = os.getenv('SPOTIFY_CLIENT_ID')
+    sp_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
+    track_name = ''
+    artist_name = ''
+
+    if sp_token and sp_secret:
+        try:
+            # Get Spotify API token
+            auth_resp = requests.post(
+                'https://accounts.spotify.com/api/token',
+                data={'grant_type': 'client_credentials'},
+                auth=(sp_token, sp_secret),
+                timeout=10,
+            )
+            if auth_resp.status_code == 200:
+                sp_bearer = auth_resp.json()['access_token']
+                track_resp = requests.get(
+                    f'https://api.spotify.com/v1/tracks/{track_id}',
+                    headers={'Authorization': f'Bearer {sp_bearer}'},
+                    timeout=10,
+                )
+                if track_resp.status_code == 200:
+                    track_data = track_resp.json()
+                    preview_url = track_data.get('preview_url')
+                    track_name = track_data.get('name', '')
+                    artist_name = ', '.join(a['name'] for a in track_data.get('artists', []))
+        except Exception as e:
+            print(f"Spotify API failed: {e}")
+
+    # Wait up to 30s for Mac worker to pick up
+    # (Mac worker polls analysis_jobs for status='pending_features')
+    deadline = time.time() + 30
+    features = None
+    while time.time() < deadline:
+        state = job_mgr.get_job_state(job_id)
+        if state and state.get('status') == 'features_ready':
+            features = state.get('features', {})
+            break
+        time.sleep(2)
+
+    # Fallback: download and analyze preview
+    if not features and preview_url:
+        print(f"Mac worker timeout — using Spotify preview for {track_id}")
+        try:
+            preview_resp = requests.get(preview_url, timeout=30)
+            if preview_resp.status_code == 200:
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+                tmp.write(preview_resp.content)
+                tmp.flush()
+                tmp.close()
+                try:
+                    features = extract_features(tmp.name, genre_hint=genre or '')
+                finally:
+                    os.unlink(tmp.name)
+        except Exception as e:
+            print(f"Preview download/analysis failed: {e}")
+
+    if not features:
+        job_mgr.update_job(job_id, status='error')
+        raise HTTPException(
+            503,
+            "Could not analyze this track. The Spotify preview may not be available. "
+            "Try uploading the audio file instead."
+        )
+
+    # We have features — now run the normal matching pipeline
+    job_mgr.update_job(job_id, status='matching', features=features)
+
+    # Find matches (same logic as /api/analyze)
+    user_monthly = lead.get('monthly_listeners')
+    user_tier = _listeners_to_tier(user_monthly) if user_monthly else 'micro'
+    fetch_n = 20000
+
+    all_found = matcher.find_matches(features, genre_hint=genre or '', top_n=fetch_n, threshold=0.55)
+
+    # Apply genre family filtering
+    user_families = _genre_families(genre or '')
+
+    def has_foreign(m):
+        cand_genres = []
+        for field in ('primary_genre', 'secondary_genre'):
+            g = (m.get(field) or '').strip()
+            if g:
+                cand_genres.append(g)
+        for g in m.get('artist_genres', []):
+            if g:
+                cand_genres.append(g)
+        cand_families = _genre_families(*cand_genres)
+        foreign = cand_families - user_families
+        return bool(foreign) and bool(user_families)
+
+    all_found = [m for m in all_found if not has_foreign(m)]
+
+    # Tier filtering
+    MIN_PEER_MATCHES = 10
+    tier_order = list(TIER_RANGES.keys())
+    if user_tier:
+        same_tier = [m for m in all_found if m.get('tier') == user_tier]
+        tiers_used = {user_tier}
+        if len(same_tier) < MIN_PEER_MATCHES and user_tier in tier_order:
+            target_idx = tier_order.index(user_tier)
+            for radius in range(1, len(tier_order)):
+                neighbors = []
+                if target_idx - radius >= 0:
+                    neighbors.append(tier_order[target_idx - radius])
+                if target_idx + radius < len(tier_order):
+                    neighbors.append(tier_order[target_idx + radius])
+                tiers_used.update(neighbors)
+                same_tier = [m for m in all_found if m.get('tier') in tiers_used]
+                if len(same_tier) >= MIN_PEER_MATCHES:
+                    break
+        found_matches = same_tier
+    else:
+        found_matches = list(all_found)
+
+    total_match_count = len(found_matches)
+    new_job_id = job_mgr.create_job(token, features, found_matches)
+
+    result = {
+        'job_id': new_job_id,
+        'total_match_count': total_match_count,
+        'features': {
+            'bpm': features.get('bpm', 0),
+            'key': features.get('key', '?'),
+            'scale': features.get('scale', ''),
+            'lufs_integrated': features.get('lufs_integrated', 0),
+            'energy': features.get('energy', 0),
+            'dynamic_range': features.get('dynamic_range', 0),
+            'compression_amount': features.get('compression_amount', 0),
+            'brightness': features.get('brightness', 0),
+            'danceability': features.get('danceability', 0),
+            'beat_strength': features.get('beat_strength', 0),
+            'sub_ratio': features.get('sub_ratio', 0),
+            'bass_ratio': features.get('bass_ratio', 0),
+            'low_mid_ratio': features.get('low_mid_ratio', 0),
+            'mid_ratio': features.get('mid_ratio', 0),
+            'high_mid_ratio': features.get('high_mid_ratio', 0),
+            'presence_ratio': features.get('presence_ratio', 0),
+            'air_ratio': features.get('air_ratio', 0),
+        },
+        'matches': found_matches,
+        'recommendations': [],
+        'source': {
+            'type': 'spotify_url',
+            'track_name': track_name,
+            'artist_name': artist_name,
+            'preview_used': features is not None and preview_url is not None,
+        },
+        'timing': {},
+    }
+
+    # Kick off background enrichment
+    enrichment_pool.submit(
+        _run_background_enrichment,
+        new_job_id, found_matches, None,
+    )
+
+    return result
 
 
 # ---------------------------------------------------------------------------

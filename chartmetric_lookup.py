@@ -898,3 +898,216 @@ def lookup_artist_by_spotify(spotify_url: str) -> dict | None:
     except Exception as e:
         logger.error(f"CM lookup failed: {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# ISRC → CM Track ID resolution with Supabase caching
+# ---------------------------------------------------------------------------
+CM_SEARCH_TRACKS_URL = "https://api.chartmetric.com/api/search"
+CM_RELATED_ARTISTS_URL = "https://api.chartmetric.com/api/artist/{artist_id}/relatedartists"
+
+
+def _resolve_isrc_to_cm_track_id(token: str, isrc: str) -> int | None:
+    """
+    Resolve an ISRC to a Chartmetric track ID.
+    Checks Supabase cache first, then falls back to CM search API.
+    """
+    if not isrc:
+        return None
+
+    # Check Supabase cache
+    supa_url = os.getenv('SUPABASE_URL')
+    supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+    if supa_url and supa_key:
+        try:
+            headers = _supabase_headers(supa_key, supa_url.split('//', 1)[1].split('.', 1)[0])
+            resp = requests.get(
+                f"{supa_url}/rest/v1/isrc_cm_track_map?isrc=eq.{isrc}&select=cm_track_id",
+                headers=headers, timeout=10,
+            )
+            if resp.status_code == 200 and resp.json():
+                cached = resp.json()[0]
+                cm_id = cached.get('cm_track_id')
+                if cm_id:
+                    return int(cm_id)
+        except Exception as e:
+            logger.debug(f"ISRC cache check failed for {isrc}: {e}")
+
+    # Search CM by ISRC
+    def _call():
+        _rate_wait()
+        resp = requests.get(
+            CM_SEARCH_TRACKS_URL,
+            params={"q": isrc, "type": "tracks"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        tracks = resp.json().get('obj', {}).get('tracks', [])
+        if tracks:
+            return tracks[0].get('id')
+        return None
+
+    cm_track_id = _retry(_call)
+
+    # Cache the result
+    if cm_track_id and supa_url and supa_key:
+        try:
+            project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
+            headers = _supabase_headers(supa_key, project_ref)
+            payload = {
+                'isrc': isrc,
+                'cm_track_id': cm_track_id,
+                'resolved_at': datetime.now(timezone.utc).isoformat(),
+            }
+            requests.post(
+                f"{supa_url}/rest/v1/isrc_cm_track_map",
+                json=payload, headers=headers, timeout=10,
+            )
+        except Exception as e:
+            logger.debug(f"ISRC cache write failed for {isrc}: {e}")
+
+    return cm_track_id
+
+
+# ---------------------------------------------------------------------------
+# Structured playlist fetching (returns list of dicts instead of strings)
+# ---------------------------------------------------------------------------
+def _fetch_track_playlists_structured(token: str, track_id: int) -> list[dict]:
+    """
+    Fetch playlists for a track, returning structured data for scoring.
+    Each dict: {name, playlist_id, link, followers, tags, editorial, curator_name, status}
+    """
+    results = []
+
+    for status in ('current', 'past'):
+        def _call(s=status):
+            _rate_wait()
+            params = {
+                'editorial': True,
+                'indie': True,
+                'personalized': True,
+                'chart': True,
+                'newMusicFriday': True,
+                'radio': True,
+                'brand': True,
+                'majorCurator': True,
+                'popularIndie': True,
+                'thisIs': True,
+                'fullyPersonalized': True,
+                'audiobook': False,
+                'limit': 50,
+                'offset': 0,
+                'sortColumn': 'followers',
+            }
+            resp = requests.get(
+                CM_TRACK_PLAYLISTS_URL.format(track_id=track_id, status=s),
+                headers={"Authorization": f"Bearer {token}"},
+                params=params,
+                timeout=30,
+            )
+            if resp.status_code == 404:
+                return []
+            resp.raise_for_status()
+            return resp.json().get('obj', [])
+
+        items = _retry(_call) or []
+
+        for item in items:
+            pl = item.get('playlist', {})
+            if not pl or not pl.get('playlist_id') or not pl.get('name'):
+                continue
+            tags = [t.get('name', '') for t in pl.get('tags', []) if t.get('name')]
+            results.append({
+                'name': pl.get('name', ''),
+                'playlist_id': pl.get('playlist_id', ''),
+                'link': f"https://open.spotify.com/playlist/{pl.get('playlist_id')}",
+                'followers': pl.get('followers') or 0,
+                'tags': tags,
+                'editorial': bool(pl.get('editorial')),
+                'curator_name': pl.get('curator_name') or pl.get('owner_name') or '',
+                'status': status,
+            })
+
+        if status == 'current':
+            time.sleep(1.0)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Related Artists
+# ---------------------------------------------------------------------------
+def _fetch_related_artists(token: str, cm_id: int, limit: int = 50) -> list[dict]:
+    """
+    Fetch CM related artists for audience overlap cross-referencing.
+    Returns list of {name, cm_id, spotify_url} dicts.
+    """
+    def _call():
+        _rate_wait()
+        resp = requests.get(
+            CM_RELATED_ARTISTS_URL.format(artist_id=cm_id),
+            params={"limit": limit},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        items = resp.json().get('obj', [])
+        results = []
+        for item in items:
+            results.append({
+                'name': item.get('name', ''),
+                'cm_id': item.get('id'),
+                'spotify_url': item.get('spotify_url') or '',
+            })
+        return results
+
+    return _retry(_call) or []
+
+
+# ---------------------------------------------------------------------------
+# Track Credits (producers/writers)
+# ---------------------------------------------------------------------------
+def _extract_track_credits(token: str, cm_track_id: int) -> dict:
+    """
+    Fetch track metadata and extract artist roles (producer, writer, etc.).
+    Returns {producers: [{name, cm_id, role}], writers: [{name, cm_id, role}]}
+    """
+    def _call():
+        _rate_wait()
+        resp = requests.get(
+            CM_TRACK_META_URL.format(track_id=cm_track_id),
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp.status_code == 404:
+            return {}
+        resp.raise_for_status()
+        return resp.json().get('obj', {})
+
+    metadata = _retry(_call)
+    if not metadata:
+        return {'producers': [], 'writers': []}
+
+    producers = []
+    writers = []
+
+    artists = metadata.get('artists', [])
+    if isinstance(artists, list):
+        for artist in artists:
+            if not isinstance(artist, dict):
+                continue
+            role = (artist.get('role') or artist.get('artist_type') or '').lower()
+            name = artist.get('name', '')
+            cm_id = artist.get('id')
+
+            entry = {'name': name, 'cm_id': cm_id, 'role': role}
+
+            if any(r in role for r in ('producer', 'production')):
+                producers.append(entry)
+            elif any(r in role for r in ('writer', 'songwriter', 'composer', 'lyricist')):
+                writers.append(entry)
+
+    return {'producers': producers, 'writers': writers}
