@@ -1876,7 +1876,7 @@ async def analyze_url(
             flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
 
         flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        for _, _, m, _ in flattery_candidates[:3]:
+        for _, _, m, _ in flattery_candidates[:20]:
             flattery_matches.append(m)
 
     new_job_id = job_mgr.create_job(token, features, found_matches)
