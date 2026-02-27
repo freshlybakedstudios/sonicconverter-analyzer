@@ -1440,16 +1440,18 @@ async def analyze_url(
     job_id = job_mgr.create_job(token, {}, [])
     job_mgr.update_job(job_id, status='pending_features')
 
-    # Try to get Spotify preview URL via Spotify Web API
+    # Try to get Spotify preview URL + artist info via Spotify Web API
     preview_url = None
     sp_token = os.getenv('SPOTIFY_CLIENT_ID')
     sp_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
     track_name = ''
     artist_name = ''
+    artist_spotify_url = ''
+    cm_data = None
+    user_cm_id = None
 
     if sp_token and sp_secret:
         try:
-            # Get Spotify API token
             auth_resp = requests.post(
                 'https://accounts.spotify.com/api/token',
                 data={'grant_type': 'client_credentials'},
@@ -1467,9 +1469,30 @@ async def analyze_url(
                     track_data = track_resp.json()
                     preview_url = track_data.get('preview_url')
                     track_name = track_data.get('name', '')
-                    artist_name = ', '.join(a['name'] for a in track_data.get('artists', []))
+                    artists = track_data.get('artists', [])
+                    artist_name = ', '.join(a['name'] for a in artists)
+                    # Get primary artist's Spotify URL for CM lookup
+                    if artists:
+                        ext_urls = artists[0].get('external_urls', {})
+                        artist_spotify_url = ext_urls.get('spotify', '')
         except Exception as e:
             print(f"Spotify API failed: {e}")
+
+    # Look up artist in Chartmetric to get genres automatically
+    if artist_spotify_url:
+        print(f"  URL analysis: looking up artist {artist_name} via CM...")
+        cm_data = lookup_artist_by_spotify(artist_spotify_url)
+        if cm_data:
+            user_cm_id = cm_data.get('cm_id')
+            cm_genres = cm_data.get('genres', '')
+            if cm_genres:
+                print(f"  URL analysis: CM genres = {cm_genres} (overriding dropdown '{genre or 'none'}')")
+                genre = cm_genres
+            if cm_data.get('listeners') and cm_data['listeners'] > 0:
+                lead['monthly_listeners'] = cm_data['listeners']
+            print(f"  URL analysis: {cm_data['name']} — {cm_data.get('tier', '?')} tier, {cm_data.get('listeners', 0):.0f} listeners")
+        else:
+            print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
     # Wait up to 30s for Mac worker to pick up
     # (Mac worker polls analysis_jobs for status='pending_features')
@@ -1596,7 +1619,7 @@ async def analyze_url(
     # Kick off background enrichment
     enrichment_pool.submit(
         _run_background_enrichment,
-        new_job_id, found_matches, None,
+        new_job_id, found_matches, user_cm_id,
     )
 
     return result
