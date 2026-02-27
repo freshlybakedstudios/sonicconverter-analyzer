@@ -1415,7 +1415,12 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                         job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
                         continue
 
-                    playlists = _fetch_track_playlists_structured(token, cm_track_id)
+                    playlists = _fetch_track_playlists_structured(
+                        token, cm_track_id,
+                        isrc=isrc,
+                        artist_name=m.get('name', ''),
+                        track_name=m.get('track_name', ''),
+                    )
 
                     try:
                         credits = _extract_track_credits(token, cm_track_id)

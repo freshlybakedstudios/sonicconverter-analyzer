@@ -980,9 +980,54 @@ def _resolve_isrc_to_cm_track_id(token: str, isrc: str) -> int | None:
 # ---------------------------------------------------------------------------
 # Structured playlist fetching (returns list of dicts instead of strings)
 # ---------------------------------------------------------------------------
+def _upsert_playlist_tracks(isrc: str, artist_name: str, track_name: str,
+                            playlists: list[dict]):
+    """Upsert playlist-track associations into playlist_tracks table."""
+    supa_url = os.getenv('SUPABASE_URL')
+    supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+    if not supa_url or not supa_key or not isrc or not playlists:
+        return
+    try:
+        headers = {
+            'apikey': supa_key,
+            'Authorization': f'Bearer {supa_key}',
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=ignore-duplicates',
+        }
+        rows = []
+        for pl in playlists:
+            pid = pl.get('playlist_id', '')
+            if not pid:
+                continue
+            rows.append({
+                'playlist_id': pid,
+                'spotify_track_id': isrc,  # best we have without Spotify track ID
+                'isrc': isrc,
+                'track_name': track_name or '',
+                'artist_names': artist_name or '',
+                'playlist_name': pl.get('name', ''),
+                'added_at': (pl.get('added_at') or '')[:10] or None,
+                'position': 0,
+            })
+        if rows:
+            resp = requests.post(
+                f"{supa_url}/rest/v1/playlist_tracks",
+                json=rows, headers=headers, timeout=15,
+            )
+            if resp.status_code < 300:
+                logger.debug(f"Upserted {len(rows)} playlist_tracks for ISRC {isrc}")
+            else:
+                logger.debug(f"playlist_tracks upsert status {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logger.debug(f"playlist_tracks upsert failed for {isrc}: {e}")
+
+
 def _fetch_track_playlists_structured(token: str, track_id: int,
                                       max_stale_days: int = 180,
-                                      cache_days: int = 7) -> list[dict]:
+                                      cache_days: int = 7,
+                                      isrc: str = '',
+                                      artist_name: str = '',
+                                      track_name: str = '') -> list[dict]:
     """
     Fetch playlists for a track, returning structured data for scoring.
     Checks Supabase cache first (valid for cache_days).
@@ -1113,6 +1158,10 @@ def _fetch_track_playlists_structured(token: str, track_id: int,
             )
         except Exception as e:
             logger.debug(f"Playlist cache write failed for track {track_id}: {e}")
+
+    # --- Upsert into playlist_tracks for long-term storage ---
+    if results and isrc:
+        _upsert_playlist_tracks(isrc, artist_name, track_name, results)
 
     return results
 
