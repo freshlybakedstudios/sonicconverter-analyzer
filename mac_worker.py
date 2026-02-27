@@ -174,9 +174,15 @@ def _ensure_device_active() -> str | None:
     if not devices:
         return None
 
-    # Prefer the computer/desktop device
+    # Prefer the Spotify desktop app — skip web players (Chrome etc)
+    # Web players don't route audio through Loopback
+    skip_names = ('web player', 'chrome', 'firefox', 'safari', 'edge')
     for dev in devices:
+        name_lower = dev.get('name', '').lower()
         if dev.get('type', '').lower() in ('computer', 'desktop'):
+            if any(s in name_lower for s in skip_names):
+                print(f"  Skipping web player: {dev['name']}")
+                continue
             dev_id = dev['id']
             print(f"  Using device: {dev['name']} ({dev['type']})")
             # Transfer playback to this device to make it active
