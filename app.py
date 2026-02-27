@@ -910,8 +910,8 @@ async def analyze(
                 total_boost = genre_boost + pronoun_boost
                 flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
 
-            # Sort by sonic similarity (highest first), then tier as tiebreaker
-            flattery_candidates.sort(key=lambda x: (x[1], x[0]), reverse=True)
+            # Sort by tier (highest first), then sonic similarity as tiebreaker
+            flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
             # Debug: show top candidates with pronoun info
             if flattery_candidates:
@@ -1152,6 +1152,105 @@ def _sse_publish(job_id: str, event: str, data: dict):
             pass
 
 
+def _resolve_curator_id_by_name(curator_name: str) -> int | None:
+    """Look up cm_curator_id from our curators table by name."""
+    supa_url = os.getenv('SUPABASE_URL')
+    supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+    if not supa_url or not supa_key or not curator_name:
+        return None
+    try:
+        headers = {
+            'apikey': supa_key,
+            'Authorization': f'Bearer {supa_key}',
+            'Accept': 'application/json',
+        }
+        resp = requests.get(
+            f"{supa_url}/rest/v1/curators"
+            f"?curator_name=eq.{requests.utils.quote(curator_name)}"
+            f"&select=cm_curator_id&limit=1",
+            headers=headers, timeout=10,
+        )
+        if resp.status_code == 200:
+            rows = resp.json()
+            if rows:
+                return rows[0].get('cm_curator_id')
+    except Exception as e:
+        print(f"Curator name lookup failed for '{curator_name}': {e}")
+    return None
+
+
+def _lookup_curator_local(cm_curator_id: int) -> dict | None:
+    """Look up curator from our local curators table (143K+ records)."""
+    supa_url = os.getenv('SUPABASE_URL')
+    supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+    if not supa_url or not supa_key:
+        return None
+    try:
+        project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
+        headers = {
+            'apikey': supa_key,
+            'Authorization': f'Bearer {supa_key}',
+            'Accept': 'application/json',
+        }
+        resp = requests.get(
+            f"{supa_url}/rest/v1/curators"
+            f"?cm_curator_id=eq.{cm_curator_id}"
+            f"&select=cm_curator_id,curator_name,submission_email,"
+            f"instagram_url,facebook_url,website_url,twitter_url,"
+            f"groover_url,submithub_url,spotify_url,total_followers",
+            headers=headers, timeout=10,
+        )
+        if resp.status_code == 200:
+            rows = resp.json()
+            if rows:
+                row = rows[0]
+                return {
+                    'email': row.get('submission_email') or '',
+                    'instagram_url': row.get('instagram_url') or '',
+                    'facebook_url': row.get('facebook_url') or '',
+                    'website_url': row.get('website_url') or '',
+                    'twitter_url': row.get('twitter_url') or '',
+                    'groover_url': row.get('groover_url') or '',
+                    'submithub_url': row.get('submithub_url') or '',
+                    'spotify_url': row.get('spotify_url') or '',
+                    'total_followers': row.get('total_followers') or 0,
+                }
+    except Exception as e:
+        print(f"Local curator lookup failed for {cm_curator_id}: {e}")
+    return None
+
+
+def _upsert_curator(cm_curator_id: int, curator_data: dict):
+    """Upsert curator contact info into our curators table for future lookups."""
+    supa_url = os.getenv('SUPABASE_URL')
+    supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+    if not supa_url or not supa_key or not cm_curator_id:
+        return
+    try:
+        headers = {
+            'apikey': supa_key,
+            'Authorization': f'Bearer {supa_key}',
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates',
+        }
+        payload = {'cm_curator_id': cm_curator_id}
+        for field in ('submission_email', 'instagram_url', 'facebook_url',
+                      'website_url', 'twitter_url', 'groover_url',
+                      'submithub_url', 'curator_name'):
+            val = curator_data.get(field)
+            if val:
+                payload[field] = val
+        # Map 'email' to 'submission_email' if present
+        if curator_data.get('email') and 'submission_email' not in payload:
+            payload['submission_email'] = curator_data['email']
+        requests.post(
+            f"{supa_url}/rest/v1/curators",
+            json=payload, headers=headers, timeout=10,
+        )
+    except Exception as e:
+        print(f"Curator upsert failed for {cm_curator_id}: {e}")
+
+
 def _update_curator_cache(cm_curator_id: int, curator_info: dict):
     """Write scraped email back to curator cache so we don't re-scrape."""
     try:
@@ -1367,6 +1466,11 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             for pl in batch_playlists:
                 cm_cid = pl.get('cm_curator_id')
                 curator_name = pl.get('curator_name', '')
+                # Try to resolve curator ID from local DB by name if missing
+                if not cm_cid and curator_name:
+                    cm_cid = _resolve_curator_id_by_name(curator_name)
+                    if cm_cid:
+                        pl['cm_curator_id'] = cm_cid
                 ckey = str(cm_cid) if cm_cid else curator_name
                 if not ckey or ckey in seen_curator_ids:
                     continue
@@ -1386,16 +1490,35 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 try:
                     cm_cid = curator_info.get('cm_curator_id')
 
+                    # Step 1: Check our local curators table (143K+ records, instant)
                     if cm_cid:
+                        local = _lookup_curator_local(cm_cid)
+                        if local:
+                            curator_info.update({k: v for k, v in local.items() if v})
+                            print(f"Enrichment [{job_id[:8]}]: LOCAL curator {cm_cid} ({curator_info['name']}): "
+                                  f"email={'yes' if local.get('email') else 'no'}, "
+                                  f"ig={'yes' if local.get('instagram_url') else 'no'}, "
+                                  f"fb={'yes' if local.get('facebook_url') else 'no'}, "
+                                  f"web={'yes' if local.get('website_url') else 'no'}")
+
+                    # Step 2: CM API fallback (only if local didn't have contact info)
+                    has_any_local = (curator_info.get('email') or
+                                    curator_info.get('instagram_url') or
+                                    curator_info.get('facebook_url') or
+                                    curator_info.get('website_url'))
+                    if cm_cid and not has_any_local:
                         contact = _fetch_curator_contact(token, cm_cid)
                         if contact:
                             curator_info.update(contact)
-                            print(f"Enrichment [{job_id[:8]}]: CM curator {cm_cid} ({curator_info['name']}): "
+                            # Upsert to local curators table for next time
+                            _upsert_curator(cm_cid, contact)
+                            print(f"Enrichment [{job_id[:8]}]: CM API curator {cm_cid} ({curator_info['name']}): "
                                   f"email={'yes' if contact.get('email') else 'no'}, "
                                   f"ig={'yes' if contact.get('instagram_url') else 'no'}, "
                                   f"fb={'yes' if contact.get('facebook_url') else 'no'}, "
                                   f"web={'yes' if contact.get('website_url') else 'no'}")
 
+                    # Step 3: Scraper fallback (IG → FB → website chain)
                     if not curator_info.get('email'):
                         ig = curator_info.get('instagram_url', '')
                         fb = curator_info.get('facebook_url', '')
@@ -1416,6 +1539,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                     print(f"Enrichment [{job_id[:8]}]: Scraper found email for '{curator_info['name']}': {scrape_result['email']}")
                                     if cm_cid:
                                         _update_curator_cache(cm_cid, curator_info)
+                                        _upsert_curator(cm_cid, curator_info)
                                 else:
                                     print(f"Enrichment [{job_id[:8]}]: Scraper no email for '{curator_info['name']}'")
                             except ImportError:
@@ -1886,8 +2010,8 @@ async def analyze_url(
             cand_pronoun = m.get('pronoun_title', 'They')
             flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
 
-        # Sort by sonic similarity (highest first), then tier as tiebreaker
-        flattery_candidates.sort(key=lambda x: (x[1], x[0]), reverse=True)
+        # Sort by tier (highest first), then sonic similarity as tiebreaker
+        flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
         for _, _, m, _ in flattery_candidates[:20]:
             flattery_matches.append(m)
 
