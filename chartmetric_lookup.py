@@ -35,9 +35,10 @@ CM_TRACKS_URL = "https://api.chartmetric.com/api/artist/{artist_id}/tracks"
 CM_TRACK_META_URL = "https://api.chartmetric.com/api/track/{track_id}"
 CM_TRACK_PLAYLISTS_URL = "https://api.chartmetric.com/api/track/{track_id}/spotify/{status}/playlists"
 
-# Rate limiting — same 1.5 s cadence as discovery_events_work.py
+# Rate limiting — thread-safe, 1 req/s CM plan
 _last_call = 0.0
-_RATE_INTERVAL = 1.5
+_RATE_INTERVAL = 1.1  # ~0.9 req/s, safely under 1 req/s CM limit
+_rate_lock = threading.Lock()
 
 # Retry settings — match discovery_events_work.py exactly
 MAX_RETRIES = 5
@@ -65,16 +66,17 @@ NON_SOLO_ARTIST_ROLES = {
 
 def _rate_wait():
     global _last_call
-    now = time.time()
-    gap = now - _last_call
-    if gap < _RATE_INTERVAL:
-        time.sleep(_RATE_INTERVAL - gap)
-    _last_call = time.time()
+    with _rate_lock:
+        now = time.time()
+        gap = now - _last_call
+        if gap < _RATE_INTERVAL:
+            time.sleep(_RATE_INTERVAL - gap)
+        _last_call = time.time()
 
 
 def _retry(fn, *args, **kwargs):
     """Retry with backoff on 429/5xx — same pattern as discovery_events_work.py."""
-    delay = 5.0
+    delay = 2.0
     for attempt in range(MAX_RETRIES):
         try:
             return fn(*args, **kwargs)
@@ -82,11 +84,16 @@ def _retry(fn, *args, **kwargs):
             status = getattr(e.response, 'status_code', None)
             if status == 429:
                 retry_after = e.response.headers.get('Retry-After')
-                # Use at least 5s wait, ignore tiny Retry-After values
-                wait = max(5.0, (float(retry_after) / 1000.0 + 0.5) if retry_after else delay)
+                if retry_after:
+                    try:
+                        wait = max(1.0, float(retry_after) / 1000.0 + 0.5)
+                    except (ValueError, TypeError):
+                        wait = delay
+                else:
+                    wait = delay
                 logger.warning(f"Rate limit 429 — retry {attempt+1}/{MAX_RETRIES} after {wait:.1f}s")
                 time.sleep(wait)
-                delay *= 2.0
+                delay = min(delay * 1.5, 15.0)  # Cap at 15s
             elif status in (500, 502, 503, 504):
                 logger.warning(f"Server {status} — retry {attempt+1}/{MAX_RETRIES} after {delay}s")
                 time.sleep(delay)
