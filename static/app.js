@@ -289,8 +289,10 @@ async function analyzeTrack() {
 // -------------------------------------------------------
 // SSE Client for background enrichment
 // -------------------------------------------------------
+let sseComplete = false;
 function startSSE(jobId) {
   if (eventSource) eventSource.close();
+  sseComplete = false;
   eventSource = new EventSource(`${API_URL}/api/analysis/${jobId}/stream`);
 
   // Show enrichment status
@@ -332,6 +334,7 @@ function startSSE(jobId) {
   });
 
   eventSource.addEventListener('complete', () => {
+    sseComplete = true;
     const enrichEl = $('#enrichment-status');
     if (enrichEl) {
       enrichEl.innerHTML = '<span class="enrichment-done">Enrichment complete</span>';
@@ -342,9 +345,12 @@ function startSSE(jobId) {
   });
 
   eventSource.addEventListener('error', () => {
-    const enrichEl = $('#enrichment-status');
-    if (enrichEl) hide(enrichEl);
     if (eventSource) { eventSource.close(); eventSource = null; }
+    // Auto-reconnect after 2s (Railway proxy can drop long SSE connections)
+    if (!sseComplete) {
+      console.log('SSE disconnected, reconnecting in 2s...');
+      setTimeout(() => { if (!sseComplete) startSSE(jobId); }, 2000);
+    }
   });
 }
 
@@ -573,6 +579,7 @@ function renderResults(data) {
   // Matches table with pagination
   storedPlaylists = {};
   storedConfidence = {};
+  sseComplete = false;
   tierMatches = matches;
   fullPoolMatches = data.all_matches || matches;
   userTier = data.user_tier || '';
