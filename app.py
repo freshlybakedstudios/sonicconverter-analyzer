@@ -1366,6 +1366,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         deduped_playlists = sorted(seen_pl_ids.values(),
                                     key=lambda p: p.get('score', 0), reverse=True)
 
+        job_mgr.update_job(job_id, all_playlists=deduped_playlists)
         _sse_publish(job_id, 'all_playlists', {
             'playlists': deduped_playlists,
             'total': len(deduped_playlists),
@@ -1428,6 +1429,8 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                     _update_curator_cache(cm_cid, curator_info)
                         except ImportError:
                             print(f"Enrichment [{job_id[:8]}]: curator_scraper not available")
+                        except Exception as e:
+                            print(f"Enrichment [{job_id[:8]}]: Scraper error for '{curator_info.get('name', '?')}': {e}")
 
                     # Only publish curators with actual contact info
                     has_contact = (curator_info.get('email') or
@@ -1437,6 +1440,8 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                    curator_info.get('groover_url') or
                                    curator_info.get('submithub_url') or
                                    curator_info.get('submission_url'))
+                    if not has_contact:
+                        print(f"Enrichment [{job_id[:8]}]: No contact info for curator '{curator_info.get('name', '?')}' (cm_id={cm_cid}) — skipped")
                     if has_contact:
                         curator_count += 1
                         job_mgr.update_job(job_id,
@@ -1494,6 +1499,8 @@ async def stream_enrichment(job_id: str):
                 if state.get('credits'):
                     for mk, creds in state['credits'].items():
                         yield f"event: credits\ndata: {json.dumps({'match_key': mk, 'credits': creds})}\n\n"
+                if state.get('all_playlists'):
+                    yield f"event: all_playlists\ndata: {json.dumps({'playlists': state['all_playlists'], 'total': len(state['all_playlists'])})}\n\n"
                 if state.get('curator_emails'):
                     for name, info in state['curator_emails'].items():
                         yield f"event: curator_emails\ndata: {json.dumps({'curator': info})}\n\n"
