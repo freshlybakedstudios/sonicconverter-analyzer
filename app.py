@@ -1516,6 +1516,10 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 ckey = str(cm_cid) if cm_cid else curator_name
                 if not ckey or ckey in seen_curator_ids:
                     continue
+                # Skip Spotify editorial (not a real curator you can contact)
+                spotify_uid = pl.get('spotify_user_id', '')
+                if spotify_uid == 'spotify' or curator_name.lower() == 'spotify':
+                    continue
                 seen_curator_ids.add(ckey)
                 batch_curators.append({
                     'name': curator_name,
@@ -1523,6 +1527,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     'playlist_name': pl.get('name', ''),
                     'playlist_link': pl.get('link', ''),
                     'followers': pl.get('followers', 0),
+                    'spotify_user_id': spotify_uid,
                 })
 
             if batch_curators:
@@ -1589,13 +1594,20 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                             except Exception as e:
                                 print(f"Enrichment [{job_id[:8]}]: Scraper error for '{curator_info.get('name', '?')}': {e}")
 
+                    # Step 4: Spotify profile link as last-resort contact
+                    sp_uid = curator_info.get('spotify_user_id', '')
+                    if sp_uid and sp_uid != 'spotify':
+                        curator_info['spotify_profile_url'] = f"https://open.spotify.com/user/{sp_uid}"
+
                     has_contact = (curator_info.get('email') or
                                    curator_info.get('instagram_url') or
                                    curator_info.get('facebook_url') or
                                    curator_info.get('website_url') or
+                                   curator_info.get('twitter_url') or
                                    curator_info.get('groover_url') or
                                    curator_info.get('submithub_url') or
-                                   curator_info.get('submission_url'))
+                                   curator_info.get('submission_url') or
+                                   curator_info.get('spotify_profile_url'))
                     if not has_contact:
                         print(f"Enrichment [{job_id[:8]}]: No contact info for curator '{curator_info.get('name', '?')}' (cm_id={cm_cid}) — skipped")
                     if has_contact:
