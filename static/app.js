@@ -733,6 +733,15 @@ function renderAllPlaylists(playlists, total) {
   const recentCount = playlists.filter(pl => _isRecentlyActive(pl.added_at || pl.last_updated || '', 90)).length;
   if (countEl) countEl.textContent = `${total} unique playlists found across wider pool — ${recentCount} active in last 90 days`;
 
+  // Show CSV download button
+  const csvBtn = $('#csv-download-btn');
+  if (csvBtn && currentJobId) {
+    csvBtn.classList.remove('hidden');
+    csvBtn.onclick = () => {
+      window.open(`${API_URL}/api/analysis/${currentJobId}/csv`, '_blank');
+    };
+  }
+
   container.innerHTML = playlists.map((pl, i) => {
     const freshDate = pl.added_at || pl.last_updated || '';
     const isRecent = _isRecentlyActive(freshDate, 30);

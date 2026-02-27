@@ -7,6 +7,8 @@ Static files served from ./static/
 """
 
 import asyncio
+import csv
+import io
 import json
 import math
 import os
@@ -1479,6 +1481,74 @@ async def stream_enrichment(job_id: str):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# CSV export endpoint
+# ---------------------------------------------------------------------------
+@app.get("/api/analysis/{job_id}/csv")
+async def export_csv(job_id: str):
+    """Download playlists + curator contacts as CSV."""
+    state = job_mgr.get_job_state(job_id)
+    if not state:
+        raise HTTPException(404, "Job not found")
+
+    # Flatten all playlists from every match into one list, dedup by playlist_id
+    all_playlists = []
+    seen_pids = set()
+    playlists_dict = state.get('playlists') or {}
+    for match_key, pls in playlists_dict.items():
+        for pl in pls:
+            pid = pl.get('playlist_id', '')
+            if pid and pid in seen_pids:
+                continue
+            if pid:
+                seen_pids.add(pid)
+            all_playlists.append(pl)
+    all_playlists.sort(key=lambda p: p.get('score', 0), reverse=True)
+
+    # Build curator lookup by name
+    curator_map = state.get('curator_emails') or {}
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'Playlist', 'Playlist URL', 'Followers', 'Type', 'Status',
+        'Added/Updated', 'Score', 'Sonic Match', 'Similarity',
+        'Curator', 'Email', 'Instagram', 'Facebook', 'Website',
+        'Groover', 'SubmitHub', 'Submission URL',
+    ])
+
+    for pl in all_playlists:
+        curator_name = pl.get('curator_name', '')
+        contact = curator_map.get(curator_name, {})
+
+        writer.writerow([
+            pl.get('name', ''),
+            pl.get('link', ''),
+            pl.get('followers', 0),
+            'Editorial' if pl.get('editorial') else 'Indie',
+            pl.get('status', ''),
+            pl.get('added_at') or pl.get('last_updated', ''),
+            f"{pl.get('score', 0):.3f}",
+            pl.get('sonic_match', ''),
+            f"{pl.get('sonic_similarity', 0):.1%}",
+            curator_name,
+            contact.get('email', ''),
+            contact.get('instagram_url', ''),
+            contact.get('facebook_url', ''),
+            contact.get('website_url', ''),
+            contact.get('groover_url', ''),
+            contact.get('submithub_url', ''),
+            contact.get('submission_url', ''),
+        ])
+
+    csv_bytes = output.getvalue().encode('utf-8')
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="playlists_{job_id[:8]}.csv"'},
     )
 
 
