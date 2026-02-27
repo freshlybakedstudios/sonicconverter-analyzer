@@ -675,17 +675,52 @@ function appendPlaylistData(data) {
     plRow.classList.add('hidden');
   }
 
-  // Render playlists
+  // Render playlists — dedupe by playlist_id, show all
+  const seen = new Set();
+  const deduped = [];
   const sorted = [...playlists].sort((a, b) => (b.score || 0) - (a.score || 0));
-  container.innerHTML = sorted.slice(0, 10).map(pl => `
-    <div class="playlist-item ${pl.editorial ? 'editorial' : ''} ${pl.double_validated ? 'double-validated' : ''}">
+  for (const pl of sorted) {
+    const pid = pl.playlist_id || pl.name;
+    if (!seen.has(pid)) { seen.add(pid); deduped.push(pl); }
+  }
+  container.innerHTML = deduped.map(pl => {
+    const freshDate = pl.added_at || pl.last_updated || '';
+    const isRecent = _isRecentlyActive(freshDate, 30);
+    return `
+    <div class="playlist-item ${pl.editorial ? 'editorial' : ''} ${pl.double_validated ? 'double-validated' : ''} ${isRecent ? 'recently-active' : ''}">
       <a href="${pl.link}" target="_blank" rel="noopener">${pl.name}</a>
       <span class="playlist-followers">${(pl.followers || 0).toLocaleString()} followers</span>
       ${pl.editorial ? '<span class="playlist-badge editorial-badge">Editorial</span>' : ''}
       ${pl.status === 'current' ? '<span class="playlist-badge current-badge">Current</span>' : ''}
+      ${isRecent ? '<span class="playlist-badge active-badge">Active</span>' : ''}
+      ${freshDate ? `<span class="playlist-freshness">added ${_formatFreshness(freshDate)}</span>` : ''}
       ${pl.curator_name ? `<span class="playlist-curator">${pl.curator_name}</span>` : ''}
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+}
+
+function _formatFreshness(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const days = Math.floor((now - d) / (1000 * 60 * 60 * 24));
+    if (days < 0) return 'just now';
+    if (days === 0) return 'today';
+    if (days < 7) return `${days}d ago`;
+    if (days < 30) return `${Math.floor(days / 7)}w ago`;
+    if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+    return `${Math.floor(days / 365)}y ago`;
+  } catch { return ''; }
+}
+
+function _isRecentlyActive(dateStr, withinDays) {
+  if (!dateStr) return false;
+  try {
+    const d = new Date(dateStr);
+    const days = Math.floor((new Date() - d) / (1000 * 60 * 60 * 24));
+    return days >= 0 && days <= withinDays;
+  } catch { return false; }
 }
 
 function renderAllPlaylists(playlists, total) {
@@ -695,20 +730,24 @@ function renderAllPlaylists(playlists, total) {
 
   show(card);
   const countEl = $('#all-playlists-count');
-  if (countEl) countEl.textContent = `${total} playlists across all matches`;
+  if (countEl) countEl.textContent = `${total} unique playlists across all matches`;
 
-  container.innerHTML = playlists.slice(0, 100).map((pl, i) => `
-    <tr class="${pl.double_validated ? 'double-validated-row' : ''}">
+  container.innerHTML = playlists.map((pl, i) => {
+    const freshDate = pl.added_at || pl.last_updated || '';
+    const isRecent = _isRecentlyActive(freshDate, 30);
+    return `
+    <tr class="${pl.double_validated ? 'double-validated-row' : ''} ${isRecent ? 'recently-active-row' : ''}">
       <td>${i + 1}</td>
       <td><a href="${pl.link}" target="_blank" rel="noopener">${pl.name}</a></td>
       <td>${pl.sonic_match || ''}</td>
       <td>${(pl.followers || 0).toLocaleString()}</td>
       <td>${pl.editorial ? 'Editorial' : 'Indie'}</td>
-      <td>${pl.status || ''}</td>
+      <td>${pl.status === 'current' ? '<span class="current-badge-sm">Current</span>' : 'Past'}</td>
+      <td>${freshDate ? (isRecent ? `<span class="active-badge-sm">${_formatFreshness(freshDate)}</span>` : _formatFreshness(freshDate)) : '-'}</td>
       <td>${(pl.score || 0).toFixed(3)}</td>
       <td>${pl.curator_name || ''}</td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 function renderConfidenceBadges(confidenceMap) {

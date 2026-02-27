@@ -973,11 +973,46 @@ def _resolve_isrc_to_cm_track_id(token: str, isrc: str) -> int | None:
 # ---------------------------------------------------------------------------
 # Structured playlist fetching (returns list of dicts instead of strings)
 # ---------------------------------------------------------------------------
-def _fetch_track_playlists_structured(token: str, track_id: int) -> list[dict]:
+def _fetch_track_playlists_structured(token: str, track_id: int,
+                                      max_stale_days: int = 180,
+                                      cache_days: int = 7) -> list[dict]:
     """
     Fetch playlists for a track, returning structured data for scoring.
-    Each dict: {name, playlist_id, link, followers, tags, editorial, curator_name, status}
+    Checks Supabase cache first (valid for cache_days).
+    Filters out stale playlists not updated within max_stale_days.
     """
+    import json as _json
+    from datetime import datetime, timezone
+
+    supa_url = os.getenv('SUPABASE_URL')
+    supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+
+    # --- Check cache ---
+    if supa_url and supa_key:
+        try:
+            project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
+            headers = _supabase_headers(supa_key, project_ref)
+            resp = requests.get(
+                f"{supa_url}/rest/v1/track_playlists_cache"
+                f"?cm_track_id=eq.{track_id}&select=playlists,fetched_at",
+                headers=headers, timeout=10,
+            )
+            if resp.status_code == 200 and resp.json():
+                row = resp.json()[0]
+                fetched_at = row.get('fetched_at', '')
+                if fetched_at:
+                    dt = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
+                    age_days = (datetime.now(timezone.utc) - dt).days
+                    if age_days <= cache_days:
+                        cached = row.get('playlists', [])
+                        if isinstance(cached, str):
+                            cached = _json.loads(cached)
+                        logger.debug(f"Playlist cache hit for track {track_id} ({len(cached)} playlists, {age_days}d old)")
+                        return cached
+        except Exception as e:
+            logger.debug(f"Playlist cache check failed for track {track_id}: {e}")
+
+    # --- Fetch from CM API ---
     results = []
 
     for status in ('current', 'past'):
@@ -996,7 +1031,7 @@ def _fetch_track_playlists_structured(token: str, track_id: int) -> list[dict]:
                 'thisIs': True,
                 'fullyPersonalized': True,
                 'audiobook': False,
-                'limit': 50,
+                'limit': 100,
                 'offset': 0,
                 'sortColumn': 'followers',
             }
@@ -1017,20 +1052,56 @@ def _fetch_track_playlists_structured(token: str, track_id: int) -> list[dict]:
             pl = item.get('playlist', {})
             if not pl or not pl.get('playlist_id') or not pl.get('name'):
                 continue
+            followers = pl.get('followers') or 0
+            last_updated = pl.get('last_updated') or pl.get('updated_at') or ''
+            added_at = item.get('added_at') or ''
+
+            # Filter stale playlists — use best available date
+            best_date = last_updated or added_at
+            if best_date and max_stale_days > 0:
+                try:
+                    dt = datetime.fromisoformat(best_date.replace('Z', '+00:00'))
+                    days_old = (datetime.now(timezone.utc) - dt).days
+                    if days_old > max_stale_days:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
             tags = [t.get('name', '') for t in pl.get('tags', []) if t.get('name')]
             results.append({
                 'name': pl.get('name', ''),
                 'playlist_id': pl.get('playlist_id', ''),
                 'link': f"https://open.spotify.com/playlist/{pl.get('playlist_id')}",
-                'followers': pl.get('followers') or 0,
+                'followers': followers,
                 'tags': tags,
                 'editorial': bool(pl.get('editorial')),
                 'curator_name': pl.get('curator_name') or pl.get('owner_name') or '',
                 'status': status,
+                'last_updated': last_updated,
+                'added_at': added_at,
             })
 
         if status == 'current':
             time.sleep(1.0)
+
+    # --- Write to cache ---
+    if supa_url and supa_key and results:
+        try:
+            project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
+            headers = _supabase_headers(supa_key, project_ref)
+            # Upsert — update if exists, insert if not
+            headers['Prefer'] = 'resolution=merge-duplicates,return=representation'
+            payload = {
+                'cm_track_id': track_id,
+                'playlists': _json.dumps(results),
+                'fetched_at': datetime.now(timezone.utc).isoformat(),
+            }
+            requests.post(
+                f"{supa_url}/rest/v1/track_playlists_cache",
+                json=payload, headers=headers, timeout=10,
+            )
+        except Exception as e:
+            logger.debug(f"Playlist cache write failed for track {track_id}: {e}")
 
     return results
 
