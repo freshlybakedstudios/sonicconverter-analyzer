@@ -1549,19 +1549,23 @@ async def analyze_url(
         except Exception as e:
             print(f"Spotify API failed: {e}")
 
-    # Look up artist in Chartmetric to get genres automatically
+    # Look up track's artist in Chartmetric for genres + related artists
+    # NOTE: Use track's artist for genre/CM ID, but keep user's own tier from registration
+    track_artist_cm_data = None
     if artist_spotify_url:
-        print(f"  URL analysis: looking up artist {artist_name} via CM...")
-        cm_data = lookup_artist_by_spotify(artist_spotify_url)
-        if cm_data:
-            user_cm_id = cm_data.get('cm_id')
-            cm_genres = cm_data.get('genres', '')
+        print(f"  URL analysis: looking up track artist {artist_name} via CM...")
+        track_artist_cm_data = lookup_artist_by_spotify(artist_spotify_url)
+        if track_artist_cm_data:
+            user_cm_id = track_artist_cm_data.get('cm_id')
+            cm_genres = track_artist_cm_data.get('genres', '')
             if cm_genres:
                 print(f"  URL analysis: CM genres = {cm_genres} (overriding dropdown '{genre or 'none'}')")
                 genre = cm_genres
-            if cm_data.get('listeners') and cm_data['listeners'] > 0:
-                lead['monthly_listeners'] = cm_data['listeners']
-            print(f"  URL analysis: {cm_data['name']} — {cm_data.get('tier', '?')} tier, {cm_data.get('listeners', 0):.0f} listeners")
+            # Only set listeners if the user doesn't already have them from registration
+            if not lead.get('monthly_listeners') and track_artist_cm_data.get('listeners'):
+                lead['monthly_listeners'] = track_artist_cm_data['listeners']
+            print(f"  URL analysis: {track_artist_cm_data['name']} — {track_artist_cm_data.get('tier', '?')} tier, "
+                  f"{track_artist_cm_data.get('listeners', 0):.0f} listeners")
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
@@ -1769,6 +1773,9 @@ async def analyze_url(
             'type': 'spotify_url',
             'track_name': track_name,
             'artist_name': artist_name,
+            'artist_genres': genre or '',
+            'artist_tier': track_artist_cm_data.get('tier', '') if track_artist_cm_data else '',
+            'artist_listeners': track_artist_cm_data.get('listeners', 0) if track_artist_cm_data else 0,
             'preview_used': features is not None and preview_url is not None,
         },
         'timing': {},
