@@ -1494,40 +1494,47 @@ async def analyze_url(
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
-    # Wait up to 30s for Mac worker to pick up
-    # (Mac worker polls analysis_jobs for status='pending_features')
-    deadline = time.time() + 30
+    # Strategy: try preview first (fast), then Mac worker (slow)
     features = None
-    while time.time() < deadline:
-        state = job_mgr.get_job_state(job_id)
-        if state and state.get('status') == 'features_ready':
-            features = state.get('features', {})
-            break
-        time.sleep(2)
 
-    # Fallback: download and analyze preview
-    if not features and preview_url:
-        print(f"Mac worker timeout — using Spotify preview for {track_id}")
+    # 1) Try Spotify preview (immediate)
+    if preview_url:
+        print(f"  URL analysis: downloading preview for {track_id}...")
         try:
             preview_resp = requests.get(preview_url, timeout=30)
-            if preview_resp.status_code == 200:
+            if preview_resp.status_code == 200 and len(preview_resp.content) > 1000:
                 tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
                 tmp.write(preview_resp.content)
                 tmp.flush()
                 tmp.close()
                 try:
                     features = extract_features(tmp.name, genre_hint=genre or '')
+                    print(f"  URL analysis: features extracted from preview ({len(preview_resp.content) // 1024}KB)")
                 finally:
                     os.unlink(tmp.name)
         except Exception as e:
-            print(f"Preview download/analysis failed: {e}")
+            print(f"  URL analysis: preview download/analysis failed: {e}")
+    else:
+        print(f"  URL analysis: no preview_url available for {track_id}")
+
+    # 2) Fallback: wait for Mac worker (if preview failed)
+    if not features:
+        print(f"  URL analysis: waiting for Mac worker (up to 30s)...")
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            state = job_mgr.get_job_state(job_id)
+            if state and state.get('status') == 'features_ready':
+                features = state.get('features', {})
+                print(f"  URL analysis: features received from Mac worker")
+                break
+            time.sleep(2)
 
     if not features:
         job_mgr.update_job(job_id, status='error')
         raise HTTPException(
             503,
-            "Could not analyze this track. The Spotify preview may not be available. "
-            "Try uploading the audio file instead."
+            "Could not analyze this track. Spotify preview is not available for this track "
+            "and the local audio worker is offline. Try uploading the audio file instead."
         )
 
     # We have features — now run the normal matching pipeline
