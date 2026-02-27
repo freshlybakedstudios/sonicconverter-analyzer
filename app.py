@@ -1639,8 +1639,12 @@ async def analyze_url(
     features['emotion_summary'] = emo
 
     # Find matches (same logic as /api/analyze)
+    # Use user's own tier if they registered with an artist URL,
+    # otherwise fall back to the track artist's tier
     user_monthly = lead.get('monthly_listeners')
-    user_tier = _listeners_to_tier(user_monthly) if user_monthly else 'micro'
+    if not user_monthly and track_artist_cm_data:
+        user_monthly = track_artist_cm_data.get('listeners', 0)
+    user_tier = _listeners_to_tier(user_monthly) if user_monthly else None
     fetch_n = 20000
 
     all_found = matcher.find_matches(features, genre_hint=genre or '', top_n=fetch_n, threshold=0.55)
