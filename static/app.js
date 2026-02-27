@@ -856,15 +856,29 @@ function appendCuratorEmail(data) {
 
   show(card);
   const curator = data.curator || {};
-  if (!curator.email) return;
+  const countEl = $('#curator-contacts-count');
+  if (countEl && data.progress) countEl.textContent = data.progress;
+
+  // Build social links
+  const links = [];
+  if (curator.instagram_url) links.push(`<a href="${curator.instagram_url}" target="_blank" rel="noopener" title="Instagram" class="social-link">IG</a>`);
+  if (curator.facebook_url) links.push(`<a href="${curator.facebook_url}" target="_blank" rel="noopener" title="Facebook" class="social-link">FB</a>`);
+  if (curator.website_url) links.push(`<a href="${curator.website_url}" target="_blank" rel="noopener" title="Website" class="social-link">Web</a>`);
+  if (curator.groover_url) links.push(`<a href="${curator.groover_url}" target="_blank" rel="noopener" title="Groover" class="social-link social-groover">Groover</a>`);
+  if (curator.submithub_url) links.push(`<a href="${curator.submithub_url}" target="_blank" rel="noopener" title="SubmitHub" class="social-link social-submithub">SubmitHub</a>`);
+  if (curator.submission_url) links.push(`<a href="${curator.submission_url}" target="_blank" rel="noopener" title="Submission" class="social-link social-submit">Submit</a>`);
+
+  const emailCell = curator.email
+    ? `<a href="mailto:${curator.email}">${curator.email}</a>`
+    : '<span class="no-email">—</span>';
 
   const tr = document.createElement('tr');
   tr.innerHTML = `
     <td>${curator.name || ''}</td>
-    <td>${curator.playlist_name || ''}</td>
+    <td><a href="${curator.playlist_link || '#'}" target="_blank" rel="noopener">${curator.playlist_name || ''}</a></td>
     <td>${(curator.followers || 0).toLocaleString()}</td>
-    <td><a href="mailto:${curator.email}">${curator.email}</a></td>
-    <td>${curator.email_source || ''}</td>
+    <td>${emailCell}</td>
+    <td class="social-links-cell">${links.join(' ') || '—'}</td>
   `;
   container.appendChild(tr);
 }
