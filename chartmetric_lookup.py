@@ -1053,6 +1053,8 @@ def _fetch_track_playlists_structured(token: str, track_id: int,
             if not pl or not pl.get('playlist_id') or not pl.get('name'):
                 continue
             followers = pl.get('followers') or 0
+            if followers < 1:
+                continue
             last_updated = pl.get('last_updated') or pl.get('updated_at') or ''
             added_at = item.get('added_at') or ''
 
@@ -1071,11 +1073,13 @@ def _fetch_track_playlists_structured(token: str, track_id: int,
             results.append({
                 'name': pl.get('name', ''),
                 'playlist_id': pl.get('playlist_id', ''),
+                'cm_playlist_id': pl.get('id', ''),
                 'link': f"https://open.spotify.com/playlist/{pl.get('playlist_id')}",
                 'followers': followers,
                 'tags': tags,
                 'editorial': bool(pl.get('editorial')),
                 'curator_name': pl.get('curator_name') or pl.get('owner_name') or '',
+                'cm_curator_id': pl.get('curator_id') or '',
                 'status': status,
                 'last_updated': last_updated,
                 'added_at': added_at,
@@ -1104,6 +1108,91 @@ def _fetch_track_playlists_structured(token: str, track_id: int,
             logger.debug(f"Playlist cache write failed for track {track_id}: {e}")
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Curator contact resolution
+# ---------------------------------------------------------------------------
+def _fetch_curator_contact(token: str, cm_curator_id: int) -> dict:
+    """
+    Fetch curator social URLs and submission email from Chartmetric.
+    Returns {email, instagram_url, facebook_url, website_url, submission_url, ...}
+    """
+    result = {}
+    if not cm_curator_id:
+        return result
+
+    # 1) Get curator profile (may have submission email)
+    def _call_profile():
+        _rate_wait()
+        resp = requests.get(
+            f"https://api.chartmetric.com/api/curator/spotify/{cm_curator_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp.status_code == 404:
+            return {}
+        resp.raise_for_status()
+        return resp.json().get('obj', {})
+
+    try:
+        profile = _retry(_call_profile) or {}
+        raw = profile.get('profile_raw') or {}
+
+        # Check submission fields
+        sub = raw.get('submission') or {}
+        if not sub and isinstance(raw.get('submissions'), list) and raw['submissions']:
+            sub = raw['submissions'][0]
+        if sub.get('email'):
+            result['email'] = sub['email']
+        if sub.get('url'):
+            result['submission_url'] = sub['url']
+        if sub.get('accepting'):
+            result['accepts_submissions'] = True
+
+        result['curator_name'] = profile.get('name') or ''
+    except Exception as e:
+        logger.debug(f"Curator profile fetch failed for {cm_curator_id}: {e}")
+
+    # 2) Get curator social URLs
+    def _call_urls():
+        _rate_wait()
+        resp = requests.get(
+            f"https://api.chartmetric.com/api/curator/spotify/{cm_curator_id}/urls",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        return resp.json().get('obj', [])
+
+    try:
+        urls = _retry(_call_urls) or []
+        for item in urls:
+            domain = (item.get('domain') or '').lower()
+            url_list = item.get('url') or []
+            if isinstance(url_list, str):
+                url_list = [url_list]
+            url = url_list[0] if url_list else ''
+            if not url:
+                continue
+            if domain == 'instagram':
+                result['instagram_url'] = url
+            elif domain == 'facebook':
+                result['facebook_url'] = url
+            elif domain == 'website':
+                result['website_url'] = url
+            elif domain == 'twitter':
+                result['twitter_url'] = url
+            elif domain == 'groover':
+                result['groover_url'] = url
+            elif domain == 'submithub':
+                result['submithub_url'] = url
+    except Exception as e:
+        logger.debug(f"Curator URLs fetch failed for {cm_curator_id}: {e}")
+
+    return result
 
 
 # ---------------------------------------------------------------------------
