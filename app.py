@@ -1413,24 +1413,31 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
 
                     # Step 2: Scraper fallback (IG → FB → website chain)
                     if not curator_info.get('email'):
-                        try:
-                            from curator_scraper import scrape_curator_emails
-                            scrape_result = scrape_curator_emails(
-                                curator_info['name'],
-                                instagram_url=curator_info.get('instagram_url'),
-                                facebook_url=curator_info.get('facebook_url'),
-                                website_url=curator_info.get('website_url'),
-                            )
-                            if scrape_result and scrape_result.get('email'):
-                                curator_info['email'] = scrape_result['email']
-                                curator_info['email_source'] = scrape_result.get('source', 'scraper')
-                                print(f"Enrichment [{job_id[:8]}]: Scraper found email for '{curator_info['name']}': {scrape_result['email']}")
-                                if cm_cid:
-                                    _update_curator_cache(cm_cid, curator_info)
-                        except ImportError:
-                            print(f"Enrichment [{job_id[:8]}]: curator_scraper not available")
-                        except Exception as e:
-                            print(f"Enrichment [{job_id[:8]}]: Scraper error for '{curator_info.get('name', '?')}': {e}")
+                        ig = curator_info.get('instagram_url', '')
+                        fb = curator_info.get('facebook_url', '')
+                        web = curator_info.get('website_url', '')
+                        if ig or fb or web:
+                            print(f"Enrichment [{job_id[:8]}]: Scraper trying '{curator_info['name']}' — ig={bool(ig)}, fb={bool(fb)}, web={bool(web)}")
+                            try:
+                                from curator_scraper import scrape_curator_emails
+                                scrape_result = scrape_curator_emails(
+                                    curator_info['name'],
+                                    instagram_url=ig,
+                                    facebook_url=fb,
+                                    website_url=web,
+                                )
+                                if scrape_result and scrape_result.get('email'):
+                                    curator_info['email'] = scrape_result['email']
+                                    curator_info['email_source'] = scrape_result.get('email_source', 'scraper')
+                                    print(f"Enrichment [{job_id[:8]}]: Scraper found email for '{curator_info['name']}': {scrape_result['email']}")
+                                    if cm_cid:
+                                        _update_curator_cache(cm_cid, curator_info)
+                                else:
+                                    print(f"Enrichment [{job_id[:8]}]: Scraper no email for '{curator_info['name']}'")
+                            except ImportError:
+                                print(f"Enrichment [{job_id[:8]}]: curator_scraper not available")
+                            except Exception as e:
+                                print(f"Enrichment [{job_id[:8]}]: Scraper error for '{curator_info.get('name', '?')}': {e}")
 
                     # Only publish curators with actual contact info
                     has_contact = (curator_info.get('email') or
