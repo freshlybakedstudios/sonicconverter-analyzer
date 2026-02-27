@@ -6,11 +6,15 @@ const API_URL = ''; // Same origin when served by FastAPI; set to ngrok URL for 
 let accessToken = null;
 let selectedFile = null;
 let currentJobId = null;
-let allMatches = [];      // Full match list from server
+let allMatches = [];      // Current view match list
+let tierMatches = [];     // Tier-filtered matches
+let fullPoolMatches = []; // All artists (no tier filter)
 let matchesShown = 20;    // Current pagination offset
 const MATCHES_PER_PAGE = 20;
 let eventSource = null;   // SSE connection
 let inputMode = 'file';   // 'file' or 'url'
+let matchView = 'tier';   // 'tier' or 'all'
+let userTier = '';        // User's tier label
 
 // -------------------------------------------------------
 // Helpers
@@ -563,29 +567,22 @@ function renderResults(data) {
   }
 
   // Matches table with pagination
-  allMatches = matches;
+  tierMatches = matches;
+  fullPoolMatches = data.all_matches || matches;
+  userTier = data.user_tier || '';
+  matchView = 'tier';
+  allMatches = tierMatches;
   matchesShown = MATCHES_PER_PAGE;
-  const totalCount = data.total_match_count || matches.length;
 
-  // Match counter
-  const matchCounter = $('#match-counter');
-  if (matchCounter) {
-    matchCounter.textContent = `Showing ${Math.min(matchesShown, matches.length)} of ${totalCount} matches`;
-    show(matchCounter);
+  // Tier toggle
+  const tierToggle = $('#tier-toggle');
+  if (tierToggle && fullPoolMatches.length > tierMatches.length) {
+    const tierLabel = userTier ? userTier.charAt(0).toUpperCase() + userTier.slice(1) : 'My Tier';
+    $('#tier-btn-mine').textContent = tierLabel;
+    show(tierToggle);
   }
 
-  renderMatchRows(matches.slice(0, MATCHES_PER_PAGE), 0);
-
-  // Show More button
-  const showMoreBtn = $('#show-more-btn');
-  if (showMoreBtn) {
-    if (matches.length > MATCHES_PER_PAGE) {
-      show(showMoreBtn);
-      showMoreBtn.textContent = `Show ${MATCHES_PER_PAGE} More`;
-    } else {
-      hide(showMoreBtn);
-    }
-  }
+  renderMatchView();
 
   // Recommendations
   const recList = $('#rec-list');
@@ -663,10 +660,53 @@ function showMoreMatches() {
   }
 }
 
-// Wire up Show More button
+// Render match table for current view (tier or all)
+function renderMatchView() {
+  const tbody = $('#matches-body');
+  tbody.innerHTML = '';
+  matchesShown = MATCHES_PER_PAGE;
+
+  const totalCount = allMatches.length;
+  const matchCounter = $('#match-counter');
+  if (matchCounter) {
+    const label = matchView === 'tier' && userTier
+      ? `Showing ${Math.min(matchesShown, totalCount)} of ${totalCount} ${userTier} matches`
+      : `Showing ${Math.min(matchesShown, totalCount)} of ${totalCount} matches (all tiers)`;
+    matchCounter.textContent = label;
+    show(matchCounter);
+  }
+
+  renderMatchRows(allMatches.slice(0, MATCHES_PER_PAGE), 0);
+
+  const showMoreBtn = $('#show-more-btn');
+  if (showMoreBtn) {
+    if (allMatches.length > MATCHES_PER_PAGE) {
+      show(showMoreBtn);
+      showMoreBtn.textContent = `Show ${MATCHES_PER_PAGE} More`;
+    } else {
+      hide(showMoreBtn);
+    }
+  }
+}
+
+function switchMatchView(view) {
+  matchView = view;
+  allMatches = view === 'tier' ? tierMatches : fullPoolMatches;
+  const btnMine = $('#tier-btn-mine');
+  const btnAll = $('#tier-btn-all');
+  if (btnMine) btnMine.classList.toggle('active', view === 'tier');
+  if (btnAll) btnAll.classList.toggle('active', view === 'all');
+  renderMatchView();
+}
+
+// Wire up Show More and Tier Toggle buttons
 document.addEventListener('DOMContentLoaded', () => {
   const btn = $('#show-more-btn');
   if (btn) btn.addEventListener('click', showMoreMatches);
+  const btnMine = $('#tier-btn-mine');
+  const btnAll = $('#tier-btn-all');
+  if (btnMine) btnMine.addEventListener('click', () => switchMatchView('tier'));
+  if (btnAll) btnAll.addEventListener('click', () => switchMatchView('all'));
 });
 
 // -------------------------------------------------------
@@ -688,11 +728,20 @@ function appendPlaylistData(data) {
 
   // Make the parent match row clickable to toggle
   const matchRow = document.querySelector(`tr[data-match-key="${matchKey}"]`);
+  // Render playlists — dedupe by playlist_id, show all
+  const seen = new Set();
+  const deduped = [];
+  const sorted = [...playlists].sort((a, b) => (b.score || 0) - (a.score || 0));
+  for (const pl of sorted) {
+    const pid = pl.playlist_id || pl.name;
+    if (!seen.has(pid)) { seen.add(pid); deduped.push(pl); }
+  }
+
   if (matchRow && !matchRow.classList.contains('has-playlists')) {
     matchRow.classList.add('has-playlists');
     const badge = document.createElement('span');
     badge.className = 'playlist-count-badge';
-    badge.textContent = `${playlists.length} playlists`;
+    badge.textContent = `${deduped.length} playlists`;
     const artistCell = matchRow.querySelector('.match-artist');
     if (artistCell) artistCell.appendChild(badge);
 
@@ -704,14 +753,6 @@ function appendPlaylistData(data) {
     plRow.classList.add('hidden');
   }
 
-  // Render playlists — dedupe by playlist_id, show all
-  const seen = new Set();
-  const deduped = [];
-  const sorted = [...playlists].sort((a, b) => (b.score || 0) - (a.score || 0));
-  for (const pl of sorted) {
-    const pid = pl.playlist_id || pl.name;
-    if (!seen.has(pid)) { seen.add(pid); deduped.push(pl); }
-  }
   container.innerHTML = deduped.map(pl => {
     const freshDate = pl.added_at || pl.last_updated || '';
     const isRecent = _isRecentlyActive(freshDate, 30);

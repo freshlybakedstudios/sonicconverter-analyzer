@@ -910,8 +910,8 @@ async def analyze(
                 total_boost = genre_boost + pronoun_boost
                 flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
 
-            # Sort by tier (highest first), then boosted similarity
-            flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            # Sort by sonic similarity (highest first), then tier as tiebreaker
+            flattery_candidates.sort(key=lambda x: (x[1], x[0]), reverse=True)
 
             # Debug: show top candidates with pronoun info
             if flattery_candidates:
@@ -1082,6 +1082,8 @@ async def analyze(
                 'emotion_4_score': features.get('emotion_4_score', 0),
             },
             'matches': matches,
+            'all_matches': all_matches[:500],
+            'user_tier': user_tier or '',
             'recommendations': recs,
             'genre_alignment': genre_alignment,
             'timing': {
@@ -1287,105 +1289,89 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             _sse_publish(job_id, 'confidence', {'confidence_map': confidence_map})
             print(f"Enrichment [{job_id[:8]}]: {len(confidence_map)} double-validated matches")
 
-        # --- Phase 2: Playlists + Credits (fast — no curator resolution here) ---
+        # --- Phase 2: Playlists + Credits + Curators (batched, 10 artists at a time) ---
         sorted_matches = sorted(matches, key=lambda m: m.get('similarity', 0), reverse=True)
         total = len(sorted_matches)
         all_playlists = []
+        seen_curator_ids = set()
+        curator_count = 0
+        BATCH_SIZE = 10
 
-        for idx, m in enumerate(sorted_matches):
-            isrc = m.get('isrc') or ''
-            match_key = str(m.get('artist_id', m.get('name', '')))
-            if not isrc:
-                job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
-                continue
+        for batch_start in range(0, total, BATCH_SIZE):
+            batch = sorted_matches[batch_start:batch_start + BATCH_SIZE]
+            batch_playlists = []
 
-            try:
-                # Resolve ISRC → CM track ID
-                cm_track_id = _resolve_isrc_to_cm_track_id(token, isrc)
-                if not cm_track_id:
+            # --- Batch step A: Playlists + Credits for this batch ---
+            for idx_in_batch, m in enumerate(batch):
+                idx = batch_start + idx_in_batch
+                isrc = m.get('isrc') or ''
+                match_key = str(m.get('artist_id', m.get('name', '')))
+                if not isrc:
                     job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
                     continue
 
-                # Fetch structured playlists
-                playlists = _fetch_track_playlists_structured(token, cm_track_id)
-
-                # Extract credits from track metadata (piggyback)
                 try:
-                    credits = _extract_track_credits(token, cm_track_id)
-                    if credits and (credits.get('producers') or credits.get('writers')):
-                        job_mgr.update_job(job_id, credits={match_key: credits})
-                        _sse_publish(job_id, 'credits', {
+                    cm_track_id = _resolve_isrc_to_cm_track_id(token, isrc)
+                    if not cm_track_id:
+                        job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
+                        continue
+
+                    playlists = _fetch_track_playlists_structured(token, cm_track_id)
+
+                    try:
+                        credits = _extract_track_credits(token, cm_track_id)
+                        if credits and (credits.get('producers') or credits.get('writers')):
+                            job_mgr.update_job(job_id, credits={match_key: credits})
+                            _sse_publish(job_id, 'credits', {
+                                'match_key': match_key,
+                                'artist_name': m.get('name', ''),
+                                'credits': credits,
+                            })
+                    except Exception as e:
+                        print(f"Enrichment [{job_id[:8]}]: Credits failed for {isrc}: {e}")
+
+                    if playlists:
+                        similarity = m.get('similarity', 0)
+                        conf_boost = 0.5 if match_key in confidence_map else 0.0
+                        for pl in playlists:
+                            pl['sonic_match'] = m.get('name', '')
+                            pl['sonic_similarity'] = similarity
+                            pl['score'] = _compute_playlist_score(
+                                similarity,
+                                pl.get('followers', 0),
+                                pl.get('editorial', False),
+                                pl.get('status') == 'current',
+                                confidence_boost=conf_boost,
+                                added_at=pl.get('added_at', ''),
+                            )
+                            pl['double_validated'] = match_key in confidence_map
+                        batch_playlists.extend(playlists)
+                        all_playlists.extend(playlists)
+
+                        job_mgr.update_job(job_id, playlists={match_key: playlists})
+                        _sse_publish(job_id, 'playlists', {
                             'match_key': match_key,
                             'artist_name': m.get('name', ''),
-                            'credits': credits,
+                            'playlists': playlists,
+                            'progress': f'{idx+1}/{total}',
                         })
+
+                    job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
+
                 except Exception as e:
-                    print(f"Enrichment [{job_id[:8]}]: Credits failed for {isrc}: {e}")
+                    print(f"Enrichment [{job_id[:8]}]: Playlist failed for {isrc}: {e}")
+                    job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
 
-                if playlists:
-                    # Score playlists
-                    similarity = m.get('similarity', 0)
-                    conf_boost = 0.5 if match_key in confidence_map else 0.0
-                    for pl in playlists:
-                        pl['sonic_match'] = m.get('name', '')
-                        pl['sonic_similarity'] = similarity
-                        pl['score'] = _compute_playlist_score(
-                            similarity,
-                            pl.get('followers', 0),
-                            pl.get('editorial', False),
-                            pl.get('status') == 'current',
-                            confidence_boost=conf_boost,
-                            added_at=pl.get('added_at', ''),
-                        )
-                        pl['double_validated'] = match_key in confidence_map
-                    all_playlists.extend(playlists)
-
-                    job_mgr.update_job(job_id, playlists={match_key: playlists})
-                    _sse_publish(job_id, 'playlists', {
-                        'match_key': match_key,
-                        'artist_name': m.get('name', ''),
-                        'playlists': playlists,
-                        'progress': f'{idx+1}/{total}',
-                    })
-
-                job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
-
-            except Exception as e:
-                print(f"Enrichment [{job_id[:8]}]: Playlist failed for {isrc}: {e}")
-                job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
-
-        # Dedupe playlists by playlist_id, keeping highest-scored entry
-        seen_pl_ids = {}
-        for pl in all_playlists:
-            pid = pl.get('playlist_id', '')
-            if not pid:
-                continue
-            existing = seen_pl_ids.get(pid)
-            if not existing or (pl.get('score', 0) > existing.get('score', 0)):
-                seen_pl_ids[pid] = pl
-        deduped_playlists = sorted(seen_pl_ids.values(),
-                                    key=lambda p: p.get('score', 0), reverse=True)
-
-        job_mgr.update_job(job_id, all_playlists=deduped_playlists)
-        _sse_publish(job_id, 'all_playlists', {
-            'playlists': deduped_playlists,
-            'total': len(deduped_playlists),
-        })
-        print(f"Enrichment [{job_id[:8]}]: {len(deduped_playlists)} unique playlists (from {len(all_playlists)} total)")
-
-        # --- Phase 5: Curator contacts (after all playlists are done) ---
-        # Runs as separate phase so playlist discovery isn't slowed down.
-        try:
-            curators_to_resolve = []
-            seen_curator_ids = set()
-            for pl in deduped_playlists:
+            # --- Batch step B: Curator contacts for this batch's playlists ---
+            batch_curators = []
+            for pl in batch_playlists:
                 cm_cid = pl.get('cm_curator_id')
                 curator_name = pl.get('curator_name', '')
                 ckey = str(cm_cid) if cm_cid else curator_name
                 if not ckey or ckey in seen_curator_ids:
                     continue
                 seen_curator_ids.add(ckey)
-                curators_to_resolve.append({
+                batch_curators.append({
                     'name': curator_name,
                     'cm_curator_id': cm_cid,
                     'playlist_name': pl.get('name', ''),
@@ -1393,14 +1379,13 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     'followers': pl.get('followers', 0),
                 })
 
-            print(f"Enrichment [{job_id[:8]}]: Resolving {len(curators_to_resolve)} curators...")
-            curator_count = 0
+            if batch_curators:
+                print(f"Enrichment [{job_id[:8]}]: Batch {batch_start//BATCH_SIZE+1} — resolving {len(batch_curators)} curators...")
 
-            for i, curator_info in enumerate(curators_to_resolve):
+            for curator_info in batch_curators:
                 try:
                     cm_cid = curator_info.get('cm_curator_id')
 
-                    # Step 1: CM curator API (social URLs + submission email)
                     if cm_cid:
                         contact = _fetch_curator_contact(token, cm_cid)
                         if contact:
@@ -1411,7 +1396,6 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                   f"fb={'yes' if contact.get('facebook_url') else 'no'}, "
                                   f"web={'yes' if contact.get('website_url') else 'no'}")
 
-                    # Step 2: Scraper fallback (IG → FB → website chain)
                     if not curator_info.get('email'):
                         ig = curator_info.get('instagram_url', '')
                         fb = curator_info.get('facebook_url', '')
@@ -1439,7 +1423,6 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                             except Exception as e:
                                 print(f"Enrichment [{job_id[:8]}]: Scraper error for '{curator_info.get('name', '?')}': {e}")
 
-                    # Only publish curators with actual contact info
                     has_contact = (curator_info.get('email') or
                                    curator_info.get('instagram_url') or
                                    curator_info.get('facebook_url') or
@@ -1459,11 +1442,27 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                         })
                 except Exception as e:
                     print(f"Enrichment [{job_id[:8]}]: Curator failed for {curator_info.get('name', '?')}: {e}")
-                job_mgr.update_job(job_id, progress={'curator_emails': f'{i+1}/{len(curators_to_resolve)}'})
 
-            print(f"Enrichment [{job_id[:8]}]: {curator_count} curators with contact info")
-        except Exception as e:
-            print(f"Enrichment [{job_id[:8]}]: Curator resolution failed: {e}")
+            print(f"Enrichment [{job_id[:8]}]: Batch {batch_start//BATCH_SIZE+1} done — {curator_count} curators so far")
+
+        # Dedupe playlists by playlist_id, keeping highest-scored entry
+        seen_pl_ids = {}
+        for pl in all_playlists:
+            pid = pl.get('playlist_id', '')
+            if not pid:
+                continue
+            existing = seen_pl_ids.get(pid)
+            if not existing or (pl.get('score', 0) > existing.get('score', 0)):
+                seen_pl_ids[pid] = pl
+        deduped_playlists = sorted(seen_pl_ids.values(),
+                                    key=lambda p: p.get('score', 0), reverse=True)
+
+        job_mgr.update_job(job_id, all_playlists=deduped_playlists)
+        _sse_publish(job_id, 'all_playlists', {
+            'playlists': deduped_playlists,
+            'total': len(deduped_playlists),
+        })
+        print(f"Enrichment [{job_id[:8]}]: {len(deduped_playlists)} unique playlists, {curator_count} curators with contact info")
 
         # Done
         job_mgr.update_job(job_id, status='complete')
@@ -1810,6 +1809,9 @@ async def analyze_url(
         foreign = cand_families - user_families
         return bool(foreign) and bool(user_families)
 
+    # Save unfiltered matches for flattery (uses looser filtering)
+    all_matches_unfiltered = list(all_found)
+
     all_found = [m for m in all_found if not has_foreign(m)]
 
     # Tier filtering for display table
@@ -1846,17 +1848,22 @@ async def analyze_url(
     recs = _generate_recommendations(features, found_matches,
                                       gems_by_artist=gems_by_artist)
 
-    # Flattery matches — higher-tier artists from unfiltered pool
+    # Flattery matches — higher-tier artists from unfiltered pool (before genre filter)
     flattery_matches = []
-    if user_tier and all_found:
+    if user_tier and all_matches_unfiltered:
         tier_order_map = {t: i for i, t in enumerate(TIER_RANGES.keys())}
         user_tier_num = tier_order_map.get(user_tier, 0)
         flattery_candidates = []
-        for m in all_found:
+        seen_artists = set()
+        for m in all_matches_unfiltered:
             cand_tier = m.get('tier', '')
             cand_tier_num = tier_order_map.get(cand_tier, 0)
             if cand_tier_num <= user_tier_num:
                 continue
+            aid = m.get('artist_id')
+            if aid in seen_artists:
+                continue
+            seen_artists.add(aid)
             total_boost = 0
             cand_genres = []
             for g in m.get('artist_genres', []):
@@ -1868,14 +1875,19 @@ async def analyze_url(
             cand_families = _genre_families(*cand_genres)
             if user_families and cand_families:
                 shared = cand_families & user_families
-                if shared:
-                    total_boost += 0.05 * len(shared)
-                else:
+                if not shared:
                     continue  # No genre overlap, skip
+                # Exclusive families: strong genre identities that shouldn't cross-contaminate
+                EXCLUSIVE_FAMILIES = {'electronic', 'metal', 'hip-hop', 'country', 'classical', 'jazz', 'latin'}
+                foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - user_families
+                if foreign_exclusive:
+                    continue
+                total_boost += 0.05 * len(shared)
             cand_pronoun = m.get('pronoun_title', 'They')
             flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
 
-        flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        # Sort by sonic similarity (highest first), then tier as tiebreaker
+        flattery_candidates.sort(key=lambda x: (x[1], x[0]), reverse=True)
         for _, _, m, _ in flattery_candidates[:20]:
             flattery_matches.append(m)
 
@@ -1917,6 +1929,8 @@ async def analyze_url(
             'emotion_4_score': features.get('emotion_4_score', 0),
         },
         'matches': found_matches,
+        'all_matches': all_found[:500],
+        'user_tier': user_tier or '',
         'recommendations': recs,
         'source': {
             'type': 'spotify_url',
