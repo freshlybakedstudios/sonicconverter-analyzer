@@ -2017,6 +2017,13 @@ async def analyze_url(
 
         # Sort by tier (highest first), then sonic similarity as tiebreaker
         flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+
+        if flattery_candidates:
+            print(f"  Flattery: {len(flattery_candidates)} total candidates from {len(all_matches_unfiltered)} unfiltered pool")
+            print(f"  Flattery: user families = {user_families}, user tier = {user_tier} (num={user_tier_num})")
+            for i, (tn, sc, m, _) in enumerate(flattery_candidates[:10]):
+                print(f"    {i+1}. {m.get('name','?')[:25]:<25} tier={m.get('tier','?'):<12} sim={m.get('similarity',0):.1%} boosted={sc:.1%}")
+
         for _, _, m, _ in flattery_candidates[:20]:
             flattery_matches.append(m)
 
