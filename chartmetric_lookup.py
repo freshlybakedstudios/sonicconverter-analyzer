@@ -1281,6 +1281,92 @@ def _fetch_related_artists(token: str, cm_id: int, limit: int = 50) -> list[dict
 
 
 # ---------------------------------------------------------------------------
+# Upsert extracted audio features into gems_complete_analysis
+# ---------------------------------------------------------------------------
+def _upsert_gems_features(isrc: str, features: dict, genre: str = '',
+                           secondary_genre: str = ''):
+    """
+    Insert extracted audio features into gems_complete_analysis.
+    Uses INSERT with ON CONFLICT DO NOTHING so we never overwrite
+    richer data from the full GEMS pipeline.
+    """
+    if not isrc or not features:
+        return
+
+    supa_url = os.getenv('SUPABASE_URL')
+    supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+    if not supa_url or not supa_key:
+        return
+
+    # Map extract_features() keys → gems_complete_analysis columns
+    # Only include columns that exist in the table
+    record = {'isrc': isrc}
+
+    # Core audio features
+    audio_keys = [
+        'sub_ratio', 'bass_ratio', 'low_mid_ratio', 'mid_ratio',
+        'high_mid_ratio', 'presence_ratio', 'air_ratio',
+        'lufs_integrated', 'loudness_range', 'energy', 'dynamic_range',
+        'crest_factor', 'compression_amount', 'attack_time',
+        'brightness', 'brightness_variance', 'spectral_rolloff',
+        'spectral_complexity', 'spectral_flux',
+        'key', 'scale', 'key_strength', 'zcr', 'dissonance',
+        'bpm', 'beat_strength', 'onset_rate', 'danceability',
+    ]
+    for k in audio_keys:
+        v = features.get(k)
+        if v is not None:
+            record[k] = v
+
+    # Emotions
+    for i in range(1, 5):
+        ek = f'emotion_{i}'
+        esk = f'emotion_{i}_score'
+        if features.get(ek):
+            record[ek] = features[ek]
+        if features.get(esk) is not None:
+            record[esk] = features[esk]
+
+    # Genre
+    if genre:
+        # Split "Pop, Rock" into primary + secondary
+        parts = [g.strip() for g in genre.split(',') if g.strip()]
+        if parts:
+            record['primary_genre'] = parts[0]
+        if len(parts) > 1:
+            record['secondary_genre'] = ', '.join(parts[1:])
+    if secondary_genre and 'secondary_genre' not in record:
+        record['secondary_genre'] = secondary_genre
+
+    # Timestamp
+    record['analyzed_at'] = datetime.now(timezone.utc).isoformat()
+
+    try:
+        project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
+        headers = _supabase_headers(supa_key, project_ref)
+        # ON CONFLICT DO NOTHING — don't overwrite existing (richer) data
+        headers['Prefer'] = 'resolution=ignore-duplicates,return=representation'
+
+        resp = requests.post(
+            f"{supa_url}/rest/v1/gems_complete_analysis",
+            json=record,
+            headers=headers,
+            timeout=30,
+        )
+        if resp.status_code in (200, 201):
+            if resp.json():
+                logger.info(f"GEMS upsert: inserted new record for ISRC {isrc}")
+            else:
+                logger.info(f"GEMS upsert: ISRC {isrc} already exists (skipped)")
+        elif resp.status_code == 409:
+            logger.info(f"GEMS upsert: ISRC {isrc} already exists (conflict)")
+        else:
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error(f"GEMS upsert failed for ISRC {isrc}: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Track Credits (producers/writers)
 # ---------------------------------------------------------------------------
 def _extract_track_credits(token: str, cm_track_id: int) -> dict:
