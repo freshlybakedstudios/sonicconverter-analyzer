@@ -730,7 +730,8 @@ function renderAllPlaylists(playlists, total) {
 
   show(card);
   const countEl = $('#all-playlists-count');
-  if (countEl) countEl.textContent = `${total} unique playlists across all matches`;
+  const recentCount = playlists.filter(pl => _isRecentlyActive(pl.added_at || pl.last_updated || '', 90)).length;
+  if (countEl) countEl.textContent = `${total} unique playlists found across wider pool — ${recentCount} active in last 90 days`;
 
   container.innerHTML = playlists.map((pl, i) => {
     const freshDate = pl.added_at || pl.last_updated || '';
