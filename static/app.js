@@ -500,34 +500,63 @@ function renderResults(data) {
     hide(convCard);
   }
 
-  // Trajectory targets (flattery matches)
+  // Trajectory targets (flattery matches) with Show More
   const flatteryCard = $('#flattery-card');
   const flatteryList = $('#flattery-list');
   if (flatteryMatches.length > 0) {
     flatteryList.innerHTML = '';
-    flatteryMatches.forEach((m, i) => {
-      const trackLink = m.track_url
-        ? `<a href="${m.track_url}" target="_blank" rel="noopener">${m.track_name || 'Listen'}</a>`
-        : (m.track_name || '');
-      const artistLink = m.spotify_url
-        ? `<a href="${m.spotify_url}" target="_blank" rel="noopener">${m.name}</a>`
-        : m.name;
-      const sim = (m.similarity * 100).toFixed(1);
-      const tier = (m.tier || '').charAt(0).toUpperCase() + (m.tier || '').slice(1);
-      const listeners = m.listeners ? Math.round(m.listeners).toLocaleString() : '';
-      const listenerStr = listeners ? `<span class="flattery-listeners">${listeners} listeners</span>` : '';
-      const div = document.createElement('div');
-      div.className = 'flattery-match';
-      div.innerHTML = `
-        <div class="flattery-rank">${i + 1}</div>
-        <div class="flattery-info">
-          <div class="flattery-name">${artistLink} <span class="flattery-tier">${tier}</span></div>
-          <div class="flattery-track">${trackLink} ${listenerStr}</div>
-        </div>
-        <div class="flattery-sim">${sim}%</div>
-      `;
-      flatteryList.appendChild(div);
-    });
+    const FLATTERY_PAGE = 3;
+    let flatteryShown = 0;
+
+    function renderFlatteryBatch() {
+      const end = Math.min(flatteryShown + FLATTERY_PAGE, flatteryMatches.length);
+      for (let i = flatteryShown; i < end; i++) {
+        const m = flatteryMatches[i];
+        const trackLink = m.track_url
+          ? `<a href="${m.track_url}" target="_blank" rel="noopener">${m.track_name || 'Listen'}</a>`
+          : (m.track_name || '');
+        const artistLink = m.spotify_url
+          ? `<a href="${m.spotify_url}" target="_blank" rel="noopener">${m.name}</a>`
+          : m.name;
+        const sim = (m.similarity * 100).toFixed(1);
+        const tier = (m.tier || '').charAt(0).toUpperCase() + (m.tier || '').slice(1);
+        const listeners = m.listeners ? Math.round(m.listeners).toLocaleString() : '';
+        const listenerStr = listeners ? `<span class="flattery-listeners">${listeners} listeners</span>` : '';
+        const div = document.createElement('div');
+        div.className = 'flattery-match';
+        div.innerHTML = `
+          <div class="flattery-rank">${i + 1}</div>
+          <div class="flattery-info">
+            <div class="flattery-name">${artistLink} <span class="flattery-tier">${tier}</span></div>
+            <div class="flattery-track">${trackLink} ${listenerStr}</div>
+          </div>
+          <div class="flattery-sim">${sim}%</div>
+        `;
+        flatteryList.appendChild(div);
+      }
+      flatteryShown = end;
+      updateFlatteryShowMore();
+    }
+
+    function updateFlatteryShowMore() {
+      let btn = $('#flattery-show-more');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'flattery-show-more';
+        btn.className = 'btn-secondary';
+        btn.style.cssText = 'margin-top:12px;width:100%';
+        btn.onclick = renderFlatteryBatch;
+        flatteryList.parentElement.appendChild(btn);
+      }
+      if (flatteryShown < flatteryMatches.length) {
+        btn.textContent = `Show ${Math.min(FLATTERY_PAGE, flatteryMatches.length - flatteryShown)} More`;
+        btn.style.display = '';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+
+    renderFlatteryBatch();
     show(flatteryCard);
   } else {
     hide(flatteryCard);
