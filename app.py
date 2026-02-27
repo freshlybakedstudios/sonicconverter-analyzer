@@ -1436,9 +1436,10 @@ async def analyze_url(
     else:
         track_id = spotify_url.split('track/')[1].split('?')[0].split('/')[0]
 
-    # Create a pending job
+    # Create a pending job — store the Spotify URL so Mac worker can play it
     job_id = job_mgr.create_job(token, {}, [])
-    job_mgr.update_job(job_id, status='pending_features')
+    job_mgr.update_job(job_id, status='pending_features',
+                       spotify_url=spotify_url)
 
     # Try to get Spotify preview URL + artist info via Spotify Web API
     preview_url = None
