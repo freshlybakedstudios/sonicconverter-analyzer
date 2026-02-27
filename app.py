@@ -1369,12 +1369,20 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                             'followers': pl.get('followers', 0),
                         }
                         try:
+                            # Step 1: CM curator API (social URLs + submission email)
                             if cm_cid:
                                 contact = _fetch_curator_contact(token, cm_cid)
                                 if contact:
                                     curator_info.update(contact)
+                                    print(f"Enrichment [{job_id[:8]}]: CM curator {cm_cid} ({curator_name}): "
+                                          f"email={'yes' if contact.get('email') else 'no'}, "
+                                          f"ig={'yes' if contact.get('instagram_url') else 'no'}, "
+                                          f"fb={'yes' if contact.get('facebook_url') else 'no'}, "
+                                          f"web={'yes' if contact.get('website_url') else 'no'}")
+                            else:
+                                print(f"Enrichment [{job_id[:8]}]: No CM curator ID for '{curator_name}'")
 
-                            # Scraper fallback if no email from CM
+                            # Step 2: Scraper fallback (IG → FB → website chain)
                             if not curator_info.get('email'):
                                 try:
                                     from curator_scraper import scrape_curator_emails
@@ -1387,20 +1395,29 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                     if scrape_result and scrape_result.get('email'):
                                         curator_info['email'] = scrape_result['email']
                                         curator_info['email_source'] = scrape_result.get('source', 'scraper')
+                                        print(f"Enrichment [{job_id[:8]}]: Scraper found email for '{curator_name}': {scrape_result['email']}")
                                         # Update cache with scraped email
                                         if cm_cid:
                                             _update_curator_cache(cm_cid, curator_info)
                                 except ImportError:
-                                    pass
+                                    print(f"Enrichment [{job_id[:8]}]: curator_scraper not available")
 
-                            # Publish any curator with contact info
-                            curator_count += 1
-                            job_mgr.update_job(job_id,
-                                               curator_emails={curator_info['name']: curator_info})
-                            _sse_publish(job_id, 'curator_emails', {
-                                'curator': curator_info,
-                                'progress': f'{curator_count} curators',
-                            })
+                            # Only publish curators with actual contact info
+                            has_contact = (curator_info.get('email') or
+                                           curator_info.get('instagram_url') or
+                                           curator_info.get('facebook_url') or
+                                           curator_info.get('website_url') or
+                                           curator_info.get('groover_url') or
+                                           curator_info.get('submithub_url') or
+                                           curator_info.get('submission_url'))
+                            if has_contact:
+                                curator_count += 1
+                                job_mgr.update_job(job_id,
+                                                   curator_emails={curator_info['name']: curator_info})
+                                _sse_publish(job_id, 'curator_emails', {
+                                    'curator': curator_info,
+                                    'progress': f'{curator_count} curators',
+                                })
                         except Exception as e:
                             print(f"Enrichment [{job_id[:8]}]: Curator failed for {curator_name}: {e}")
 
