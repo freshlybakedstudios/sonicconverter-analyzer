@@ -1107,10 +1107,11 @@ async def analyze(
         except Exception:
             pass
 
-        # Kick off background enrichment (playlists, related artists, credits, curator emails)
+        # Kick off background enrichment using the FULL genre-filtered pool
+        # (not tier-filtered) — playlists don't care about artist size
         enrichment_pool.submit(
             _run_background_enrichment,
-            job_id, matches, user_cm_id,
+            job_id, all_matches, user_cm_id,
         )
 
         return result
@@ -1635,6 +1636,9 @@ async def analyze_url(
     total_match_count = len(found_matches)
     new_job_id = job_mgr.create_job(token, features, found_matches)
 
+    print(f"  URL analysis: {len(found_matches)} tier-filtered matches, "
+          f"{len(all_found)} total genre-filtered for enrichment")
+
     result = {
         'job_id': new_job_id,
         'total_match_count': total_match_count,
@@ -1668,10 +1672,11 @@ async def analyze_url(
         'timing': {},
     }
 
-    # Kick off background enrichment
+    # Kick off background enrichment using FULL genre-filtered pool
+    # (not tier-filtered) — playlists don't care about artist size
     enrichment_pool.submit(
         _run_background_enrichment,
-        new_job_id, found_matches, user_cm_id,
+        new_job_id, all_found, user_cm_id,
     )
 
     return result
