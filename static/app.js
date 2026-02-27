@@ -135,14 +135,14 @@ function handleFile(file) {
   updateAnalyzeButton();
 }
 
-// Enable analyze button only when input AND genre are ready
+// Enable analyze button only when input is ready (genre optional for URL mode)
 function updateAnalyzeButton() {
   const btn = $('#analyze-btn');
   const hasGenre = !!$('#genre-select').value;
   if (inputMode === 'url') {
     const urlEl = $('#spotify-track-url');
     const hasUrl = urlEl && urlEl.value.trim().includes('spotify');
-    btn.disabled = !(hasUrl && hasGenre);
+    btn.disabled = !hasUrl;  // Genre optional — CM provides it
   } else {
     const hasFile = !!selectedFile;
     btn.disabled = !(hasFile && hasGenre);
@@ -168,16 +168,19 @@ function setInputMode(mode) {
   const fileZone = $('#upload-zone');
   const urlInput = $('#url-input-zone');
 
+  const genreLabel = document.querySelector('.genre-picker label');
   if (mode === 'file') {
     fileToggle && fileToggle.classList.add('active');
     urlToggle && urlToggle.classList.remove('active');
     fileZone && show(fileZone);
     urlInput && hide(urlInput);
+    if (genreLabel) genreLabel.textContent = 'Genre';
   } else {
     fileToggle && fileToggle.classList.remove('active');
     urlToggle && urlToggle.classList.add('active');
     fileZone && hide(fileZone);
     urlInput && show(urlInput);
+    if (genreLabel) genreLabel.textContent = 'Genre (optional — auto-detected from Spotify)';
   }
   updateAnalyzeButton();
 }
@@ -198,18 +201,20 @@ $('#analyze-btn').addEventListener('click', analyzeTrack);
 async function analyzeTrack() {
   if (!accessToken) return;
   const genre = $('#genre-select').value;
-  if (!genre) {
-    alert('Please select a genre before analyzing.');
-    return;
-  }
 
-  if (inputMode === 'file' && !selectedFile) return;
-  if (inputMode === 'url') {
+  if (inputMode === 'file') {
+    if (!selectedFile) return;
+    if (!genre) {
+      alert('Please select a genre before analyzing.');
+      return;
+    }
+  } else {
     const urlVal = ($('#spotify-track-url') || {}).value || '';
     if (!urlVal.includes('spotify.com/track/') && !urlVal.includes('spotify:track:')) {
       alert('Please enter a valid Spotify track URL');
       return;
     }
+    // Genre is optional for URL mode — CM will provide it
   }
 
   // Show loading
