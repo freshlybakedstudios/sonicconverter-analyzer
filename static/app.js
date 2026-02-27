@@ -580,6 +580,7 @@ function renderResults(data) {
   // Matches table with pagination
   storedPlaylists = {};
   storedConfidence = {};
+  seenCurators.clear();
   sseComplete = false;
   tierMatches = matches;
   fullPoolMatches = data.all_matches || matches;
@@ -955,6 +956,7 @@ function updateCreditsSummary() {
   }
 }
 
+const seenCurators = new Set();
 function appendCuratorEmail(data) {
   const container = $('#curator-emails-body');
   const card = $('#curator-emails-card');
@@ -962,6 +964,11 @@ function appendCuratorEmail(data) {
 
   show(card);
   const curator = data.curator || {};
+
+  // Dedup — SSE reconnect replays all curators
+  const curatorKey = `${curator.name}::${curator.playlist_name}`;
+  if (seenCurators.has(curatorKey)) return;
+  seenCurators.add(curatorKey);
   const countEl = $('#curator-contacts-count');
   if (countEl && data.progress) countEl.textContent = data.progress;
 
