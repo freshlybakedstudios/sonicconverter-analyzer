@@ -15,6 +15,8 @@ let eventSource = null;   // SSE connection
 let inputMode = 'file';   // 'file' or 'url'
 let matchView = 'tier';   // 'tier' or 'all'
 let userTier = '';        // User's tier label
+let storedPlaylists = {}; // match_key -> playlist SSE data (preserved across re-renders)
+let storedConfidence = {}; // match_key -> confidence level
 
 // -------------------------------------------------------
 // Helpers
@@ -297,6 +299,7 @@ function startSSE(jobId) {
 
   eventSource.addEventListener('playlists', (e) => {
     const data = JSON.parse(e.data);
+    storedPlaylists[data.match_key] = data;
     appendPlaylistData(data);
     updateEnrichmentProgress('playlists', data.progress);
   });
@@ -308,7 +311,8 @@ function startSSE(jobId) {
 
   eventSource.addEventListener('confidence', (e) => {
     const data = JSON.parse(e.data);
-    renderConfidenceBadges(data.confidence_map);
+    storedConfidence = data.confidence_map || {};
+    renderConfidenceBadges(storedConfidence);
   });
 
   eventSource.addEventListener('related_artists', (e) => {
@@ -567,6 +571,8 @@ function renderResults(data) {
   }
 
   // Matches table with pagination
+  storedPlaylists = {};
+  storedConfidence = {};
   tierMatches = matches;
   fullPoolMatches = data.all_matches || matches;
   userTier = data.user_tier || '';
@@ -646,6 +652,9 @@ function showMoreMatches() {
   renderMatchRows(nextBatch, matchesShown);
   matchesShown += nextBatch.length;
 
+  // Re-apply enrichment to newly rendered rows
+  _reapplyEnrichment();
+
   const matchCounter = $('#match-counter');
   if (matchCounter) {
     matchCounter.textContent = `Showing ${matchesShown} of ${allMatches.length} matches`;
@@ -678,6 +687,9 @@ function renderMatchView() {
 
   renderMatchRows(allMatches.slice(0, MATCHES_PER_PAGE), 0);
 
+  // Re-apply stored enrichment data (playlists + confidence)
+  _reapplyEnrichment();
+
   const showMoreBtn = $('#show-more-btn');
   if (showMoreBtn) {
     if (allMatches.length > MATCHES_PER_PAGE) {
@@ -686,6 +698,17 @@ function renderMatchView() {
     } else {
       hide(showMoreBtn);
     }
+  }
+}
+
+function _reapplyEnrichment() {
+  // Re-apply playlists to visible rows
+  for (const [matchKey, data] of Object.entries(storedPlaylists)) {
+    appendPlaylistData(data);
+  }
+  // Re-apply confidence badges
+  if (Object.keys(storedConfidence).length > 0) {
+    renderConfidenceBadges(storedConfidence);
   }
 }
 
