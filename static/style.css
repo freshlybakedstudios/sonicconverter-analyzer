@@ -976,6 +976,13 @@ body {
   color: var(--text-secondary);
   opacity: 0.4;
 }
+.curator-contacts-table a {
+  color: var(--accent-light);
+  text-decoration: none;
+}
+.curator-contacts-table a:hover {
+  color: var(--accent);
+}
 .curator-contacts-table th:last-child,
 .curator-contacts-table td:last-child {
   min-width: 140px;
