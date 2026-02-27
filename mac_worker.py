@@ -152,39 +152,71 @@ def _get_track_info(track_id: str) -> dict | None:
     return None
 
 
-def _ensure_device_active():
-    """Make sure Spotify has an active device."""
+def _ensure_device_active() -> str | None:
+    """Make sure Spotify has an active device. Returns device_id or None."""
     token = _get_spotify_token()
     if not token:
-        return False
+        return None
 
     headers = {'Authorization': f'Bearer {token}'}
-    resp = requests.get('https://api.spotify.com/v1/me/player/devices', headers=headers, timeout=10)
-    if resp.status_code != 200:
-        return False
 
-    devices = resp.json().get('devices', [])
+    def _get_devices():
+        r = requests.get('https://api.spotify.com/v1/me/player/devices', headers=headers, timeout=10)
+        return r.json().get('devices', []) if r.status_code == 200 else []
+
+    devices = _get_devices()
     if not devices:
         print("No Spotify devices found — opening Spotify...")
         subprocess.run(['open', '-a', 'Spotify'], check=False)
         time.sleep(8)
-        # Retry
-        resp = requests.get('https://api.spotify.com/v1/me/player/devices', headers=headers, timeout=10)
-        devices = resp.json().get('devices', []) if resp.status_code == 200 else []
+        devices = _get_devices()
 
-    return len(devices) > 0
+    if not devices:
+        return None
+
+    # Prefer the computer/desktop device
+    for dev in devices:
+        if dev.get('type', '').lower() in ('computer', 'desktop'):
+            dev_id = dev['id']
+            print(f"  Using device: {dev['name']} ({dev['type']})")
+            # Transfer playback to this device to make it active
+            requests.put(
+                'https://api.spotify.com/v1/me/player',
+                headers={**headers, 'Content-Type': 'application/json'},
+                json={'device_ids': [dev_id], 'play': False},
+                timeout=10,
+            )
+            time.sleep(1)
+            return dev_id
+
+    # Fallback: use first device
+    dev = devices[0]
+    dev_id = dev['id']
+    print(f"  Using device: {dev['name']} ({dev.get('type', '?')})")
+    requests.put(
+        'https://api.spotify.com/v1/me/player',
+        headers={**headers, 'Content-Type': 'application/json'},
+        json={'device_ids': [dev_id], 'play': False},
+        timeout=10,
+    )
+    time.sleep(1)
+    return dev_id
 
 
-def _play_track(track_id: str) -> bool:
-    """Play a track via Spotify Web API."""
+def _play_track(track_id: str, device_id: str = None) -> bool:
+    """Play a track via Spotify Web API, targeting specific device."""
     token = _get_spotify_token()
     if not token:
         return False
 
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
 
+    url = 'https://api.spotify.com/v1/me/player/play'
+    if device_id:
+        url += f'?device_id={device_id}'
+
     resp = requests.put(
-        'https://api.spotify.com/v1/me/player/play',
+        url,
         headers=headers,
         json={'uris': [f'spotify:track:{track_id}']},
         timeout=10,
@@ -379,6 +411,16 @@ def process_job(job: dict, loopback_device: int):
     """Process a single pending_features job using GEMS-style capture."""
     job_id = job['id']
     spotify_url = job.get('spotify_url', '')
+    # Fallback: check progress field (older jobs stored URL there)
+    if not spotify_url:
+        progress = job.get('progress')
+        if isinstance(progress, str):
+            try:
+                progress = json.loads(progress)
+            except (json.JSONDecodeError, TypeError):
+                progress = {}
+        if isinstance(progress, dict):
+            spotify_url = progress.get('spotify_url', '')
 
     if not spotify_url:
         print(f"[{job_id[:8]}] No spotify_url in job, skipping")
@@ -412,13 +454,14 @@ def process_job(job: dict, loopback_device: int):
         return
 
     # Ensure Spotify is active
-    if not _ensure_device_active():
+    device_id = _ensure_device_active()
+    if not device_id:
         print(f"[{job_id[:8]}] No Spotify device available")
         update_job(job_id, 'error')
         return
 
     # Play the track
-    if not _play_track(track_id):
+    if not _play_track(track_id, device_id):
         print(f"[{job_id[:8]}] Failed to start playback")
         update_job(job_id, 'error')
         return
