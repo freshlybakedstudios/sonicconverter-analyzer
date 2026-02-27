@@ -1142,18 +1142,41 @@ def _sse_publish(job_id: str, event: str, data: dict):
 
 def _compute_playlist_score(sonic_similarity: float, followers: int,
                             is_editorial: bool, is_current: bool,
-                            confidence_boost: float = 0.0) -> float:
-    """Playlist ranking formula from the plan."""
+                            confidence_boost: float = 0.0,
+                            added_at: str = '') -> float:
+    """Playlist ranking — recency weighted heavily over follower count."""
     import math as _math
+    from datetime import datetime, timezone
+
     follower_score = _math.log10(max(followers, 1)) / 6.0
     editorial_bonus = 1.0 if is_editorial else 0.0
-    recency_bonus = 1.0 if is_current else 0.5
+    recency_bonus = 1.0 if is_current else 0.3
+
+    # Freshness boost based on when track was added to playlist
+    freshness_bonus = 0.0
+    if added_at:
+        try:
+            added = datetime.fromisoformat(added_at.replace('Z', '+00:00'))
+            days_ago = (datetime.now(timezone.utc) - added).days
+            if days_ago <= 30:
+                freshness_bonus = 1.0   # Added in last month — very active
+            elif days_ago <= 90:
+                freshness_bonus = 0.7   # Last 3 months — still active
+            elif days_ago <= 180:
+                freshness_bonus = 0.4   # Last 6 months — somewhat active
+            elif days_ago <= 365:
+                freshness_bonus = 0.1   # Last year — borderline
+            # Older than 1 year = 0.0
+        except (ValueError, TypeError):
+            pass
+
     return (
-        0.35 * sonic_similarity +
-        0.20 * confidence_boost +
-        0.25 * min(follower_score, 1.0) +
-        0.10 * editorial_bonus +
-        0.10 * recency_bonus
+        0.25 * sonic_similarity +
+        0.15 * confidence_boost +
+        0.10 * min(follower_score, 1.0) +
+        0.05 * editorial_bonus +
+        0.10 * recency_bonus +
+        0.35 * freshness_bonus        # Recency is king
     )
 
 
@@ -1271,6 +1294,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                             pl.get('editorial', False),
                             pl.get('status') == 'current',
                             confidence_boost=conf_boost,
+                            added_at=pl.get('added_at', ''),
                         )
                         pl['double_validated'] = match_key in confidence_map
                     all_playlists.extend(playlists)
@@ -1289,11 +1313,21 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 print(f"Enrichment [{job_id[:8]}]: Playlist failed for {isrc}: {e}")
                 job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
 
-        # Send aggregated ranked playlists
-        all_playlists.sort(key=lambda p: p.get('score', 0), reverse=True)
+        # Dedupe playlists by playlist_id, keeping highest-scored entry
+        seen_pl_ids = {}
+        for pl in all_playlists:
+            pid = pl.get('playlist_id', '')
+            if not pid:
+                continue
+            existing = seen_pl_ids.get(pid)
+            if not existing or (pl.get('score', 0) > existing.get('score', 0)):
+                seen_pl_ids[pid] = pl
+        deduped_playlists = sorted(seen_pl_ids.values(),
+                                    key=lambda p: p.get('score', 0), reverse=True)
+
         _sse_publish(job_id, 'all_playlists', {
-            'playlists': all_playlists[:200],  # Top 200 ranked
-            'total': len(all_playlists),
+            'playlists': deduped_playlists,
+            'total': len(deduped_playlists),
         })
 
         # --- Phase 5: Curator emails ---
@@ -1302,7 +1336,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             # Collect unique curators from playlists
             curators_to_scrape = []
             seen_curators = set()
-            for pl in all_playlists[:50]:  # Top 50 playlists
+            for pl in deduped_playlists[:50]:  # Top 50 playlists
                 curator = pl.get('curator_name', '')
                 if curator and curator not in seen_curators:
                     seen_curators.add(curator)
@@ -1334,7 +1368,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         # Done
         job_mgr.update_job(job_id, status='complete')
         _sse_publish(job_id, 'complete', {'status': 'complete'})
-        print(f"Enrichment [{job_id[:8]}]: Complete — {len(all_playlists)} playlists found")
+        print(f"Enrichment [{job_id[:8]}]: Complete — {len(deduped_playlists)} unique playlists (from {len(all_playlists)} total)")
 
     except Exception as e:
         print(f"Enrichment [{job_id[:8]}]: Fatal error: {e}")
