@@ -1083,7 +1083,7 @@ async def analyze(
                 'emotion_4_score': features.get('emotion_4_score', 0),
             },
             'matches': matches,
-            'all_matches': all_matches[:2000],
+            'all_matches': all_matches[:5000],
             'total_all_matches': len(all_matches),
             'user_tier': user_tier or '',
             'recommendations': recs,
@@ -1470,6 +1470,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                         conf_boost = 0.5 if match_key in confidence_map else 0.0
                         for pl in playlists:
                             pl['sonic_match'] = m.get('name', '')
+                            pl['track_name'] = m.get('track_name', '')
                             pl['sonic_similarity'] = similarity
                             pl['score'] = _compute_playlist_score(
                                 similarity,
@@ -1530,6 +1531,8 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     'playlist_link': pl.get('link', ''),
                     'followers': pl.get('followers', 0),
                     'spotify_user_id': spotify_uid,
+                    'sonic_match': pl.get('sonic_match', ''),
+                    'track_name': pl.get('track_name', ''),
                 })
 
             if batch_curators:
@@ -2122,7 +2125,7 @@ async def analyze_url(
             'emotion_4_score': features.get('emotion_4_score', 0),
         },
         'matches': found_matches,
-        'all_matches': all_found[:2000],
+        'all_matches': all_found[:5000],
         'total_all_matches': len(all_found),
         'user_tier': user_tier or '',
         'recommendations': recs,
