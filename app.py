@@ -1436,7 +1436,7 @@ async def analyze_url(
     else:
         track_id = spotify_url.split('track/')[1].split('?')[0].split('/')[0]
 
-    # Create a pending job — store the Spotify URL so Mac worker can play it
+    # Create a pending job — store the Spotify URL so Mac worker can find it
     job_id = job_mgr.create_job(token, {}, [])
     job_mgr.update_job(job_id, status='pending_features',
                        spotify_url=spotify_url)
@@ -1520,15 +1520,25 @@ async def analyze_url(
 
     # 2) Fallback: wait for Mac worker (if preview failed)
     if not features:
-        print(f"  URL analysis: waiting for Mac worker (up to 30s)...")
-        deadline = time.time() + 30
+        print(f"  URL analysis: waiting for Mac worker (up to 90s)...")
+        deadline = time.time() + 90
         while time.time() < deadline:
-            state = job_mgr.get_job_state(job_id)
-            if state and state.get('status') == 'features_ready':
-                features = state.get('features', {})
-                print(f"  URL analysis: features received from Mac worker")
-                break
-            time.sleep(2)
+            # Poll Supabase directly — Mac worker updates DB, not our in-memory cache
+            if job_mgr._supabase:
+                try:
+                    resp = job_mgr._supabase.table('analysis_jobs').select('status,features').eq('id', job_id).execute()
+                    if resp.data:
+                        row = resp.data[0]
+                        if row.get('status') == 'features_ready':
+                            f = row.get('features', {})
+                            if isinstance(f, str):
+                                f = json.loads(f)
+                            features = f
+                            print(f"  URL analysis: features received from Mac worker")
+                            break
+                except Exception as e:
+                    print(f"  URL analysis: poll error: {e}")
+            time.sleep(3)
 
     if not features:
         job_mgr.update_job(job_id, status='error')
