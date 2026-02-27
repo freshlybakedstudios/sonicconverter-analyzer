@@ -1082,7 +1082,7 @@ async def analyze(
                 'emotion_4_score': features.get('emotion_4_score', 0),
             },
             'matches': matches,
-            'all_matches': all_matches[:500],
+            'all_matches': all_matches[:2000],
             'user_tier': user_tier or '',
             'recommendations': recs,
             'genre_alignment': genre_alignment,
@@ -2065,7 +2065,7 @@ async def analyze_url(
             'emotion_4_score': features.get('emotion_4_score', 0),
         },
         'matches': found_matches,
-        'all_matches': all_found[:500],
+        'all_matches': all_found[:2000],
         'user_tier': user_tier or '',
         'recommendations': recs,
         'source': {
