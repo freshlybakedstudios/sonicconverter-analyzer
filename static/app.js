@@ -9,6 +9,7 @@ let currentJobId = null;
 let allMatches = [];      // Current view match list
 let tierMatches = [];     // Tier-filtered matches
 let fullPoolMatches = []; // All artists (no tier filter)
+let totalAllMatches = 0;  // Real total before cap
 let matchesShown = 20;    // Current pagination offset
 const MATCHES_PER_PAGE = 20;
 let eventSource = null;   // SSE connection
@@ -582,6 +583,7 @@ function renderResults(data) {
   sseComplete = false;
   tierMatches = matches;
   fullPoolMatches = data.all_matches || matches;
+  totalAllMatches = data.total_all_matches || fullPoolMatches.length;
   userTier = data.user_tier || '';
   matchView = 'tier';
   allMatches = tierMatches;
@@ -685,9 +687,13 @@ function renderMatchView() {
   const totalCount = allMatches.length;
   const matchCounter = $('#match-counter');
   if (matchCounter) {
-    const label = matchView === 'tier' && userTier
-      ? `Showing ${Math.min(matchesShown, totalCount)} of ${totalCount} ${userTier} matches`
-      : `Showing ${Math.min(matchesShown, totalCount)} of ${totalCount} matches (all tiers)`;
+    let label;
+    if (matchView === 'tier' && userTier) {
+      label = `Showing ${Math.min(matchesShown, totalCount)} of ${totalCount} ${userTier} matches`;
+    } else {
+      const realTotal = totalAllMatches > totalCount ? ` (${totalAllMatches.toLocaleString()} total)` : '';
+      label = `Showing ${Math.min(matchesShown, totalCount)} of ${totalCount.toLocaleString()} matches${realTotal}`;
+    }
     matchCounter.textContent = label;
     show(matchCounter);
   }

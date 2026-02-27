@@ -1084,6 +1084,7 @@ async def analyze(
             },
             'matches': matches,
             'all_matches': all_matches[:2000],
+            'total_all_matches': len(all_matches),
             'user_tier': user_tier or '',
             'recommendations': recs,
             'genre_alignment': genre_alignment,
@@ -2122,6 +2123,7 @@ async def analyze_url(
         },
         'matches': found_matches,
         'all_matches': all_found[:2000],
+        'total_all_matches': len(all_found),
         'user_tier': user_tier or '',
         'recommendations': recs,
         'source': {
