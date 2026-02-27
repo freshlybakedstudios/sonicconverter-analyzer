@@ -104,7 +104,7 @@ class JobManager:
             try:
                 row = {'updated_at': now}
                 for key, val in kwargs.items():
-                    if key in ('status',):
+                    if key in ('status', 'spotify_url'):
                         row[key] = val
                     elif key == 'progress':
                         # Merge progress into existing

@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS analysis_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     token TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'enriching',
+    spotify_url TEXT,
     features JSONB DEFAULT '{}',
     matches JSONB DEFAULT '[]',
     playlists JSONB DEFAULT '{}',
