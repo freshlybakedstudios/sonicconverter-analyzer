@@ -969,6 +969,10 @@ body {
   background: rgba(0, 206, 209, 0.2);
   color: #00cec9;
 }
+.social-spotify {
+  background: rgba(30, 215, 96, 0.2);
+  color: #1ed760;
+}
 .social-links-cell {
   white-space: nowrap;
 }
