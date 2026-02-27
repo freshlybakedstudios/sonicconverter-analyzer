@@ -95,6 +95,8 @@ class JobManager:
                     self._mem[job_id].setdefault('curator_emails', {}).update(val)
                 elif key == 'confidence_map' and isinstance(val, dict):
                     self._mem[job_id].setdefault('confidence_map', {}).update(val)
+                elif key == 'all_playlists' and isinstance(val, list):
+                    self._mem[job_id]['all_playlists'] = val
                 else:
                     self._mem[job_id][key] = val
             self._mem[job_id]['updated_at'] = now
