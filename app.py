@@ -931,7 +931,7 @@ async def analyze(
                     shared = user_families & cand_families
                     print(f"    {i+1}. {name[:20]:<20} {tier:<12} {score:.1%} | shared: {shared}")
 
-            for _, _, m, _ in flattery_candidates[:3]:
+            for _, _, m, _ in flattery_candidates[:20]:
                 flattery_matches.append(m)
 
         if flattery_matches:
