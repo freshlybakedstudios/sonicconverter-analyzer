@@ -1149,6 +1149,38 @@ def _sse_publish(job_id: str, event: str, data: dict):
             pass
 
 
+def _update_curator_cache(cm_curator_id: int, curator_info: dict):
+    """Write scraped email back to curator cache so we don't re-scrape."""
+    try:
+        supa_url = os.getenv('SUPABASE_URL')
+        supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+        if not supa_url or not supa_key:
+            return
+        from datetime import timezone
+        project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
+        headers = {
+            'apikey': supa_key,
+            'Authorization': f"Bearer {supa_key}",
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates,return=representation',
+        }
+        # Merge email into existing cached data
+        cache_data = {k: v for k, v in curator_info.items()
+                      if k not in ('name', 'cm_curator_id', 'playlist_name',
+                                   'playlist_link', 'followers')}
+        payload = {
+            'curator_key': str(cm_curator_id),
+            'contact_data': json.dumps(cache_data),
+            'fetched_at': datetime.now(timezone.utc).isoformat(),
+        }
+        requests.post(
+            f"{supa_url}/rest/v1/curator_contacts_cache",
+            json=payload, headers=headers, timeout=10,
+        )
+    except Exception as e:
+        print(f"Curator cache update failed for {cm_curator_id}: {e}")
+
+
 def _compute_playlist_score(sonic_similarity: float, followers: int,
                             is_editorial: bool, is_current: bool,
                             confidence_boost: float = 0.0,
@@ -1355,6 +1387,9 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                     if scrape_result and scrape_result.get('email'):
                                         curator_info['email'] = scrape_result['email']
                                         curator_info['email_source'] = scrape_result.get('source', 'scraper')
+                                        # Update cache with scraped email
+                                        if cm_cid:
+                                            _update_curator_cache(cm_cid, curator_info)
                                 except ImportError:
                                     pass
 
