@@ -980,10 +980,18 @@ function appendCuratorEmail(data) {
     ? `<a href="mailto:${curator.email}">${curator.email}</a>`
     : '<span class="no-email">—</span>';
 
+  // Reference artist/track that appeared on this playlist
+  const refArtist = curator.sonic_match || '';
+  const refTrack = curator.track_name || '';
+  const refCell = refTrack && refArtist
+    ? `${refArtist} — ${refTrack}`
+    : refArtist || refTrack || '—';
+
   const tr = document.createElement('tr');
   tr.innerHTML = `
     <td>${curator.name || ''}</td>
     <td><a href="${curator.playlist_link || '#'}" target="_blank" rel="noopener">${curator.playlist_name || ''}</a></td>
+    <td class="ref-artist-cell">${refCell}</td>
     <td>${(curator.followers || 0).toLocaleString()}</td>
     <td>${emailCell}</td>
     <td class="social-links-cell">${links.join(' ') || '—'}</td>
