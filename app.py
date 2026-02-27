@@ -1599,11 +1599,6 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                             except Exception as e:
                                 print(f"Enrichment [{job_id[:8]}]: Scraper error for '{curator_info.get('name', '?')}': {e}")
 
-                    # Step 4: Spotify profile link as last-resort contact
-                    sp_uid = curator_info.get('spotify_user_id', '')
-                    if sp_uid and sp_uid != 'spotify':
-                        curator_info['spotify_profile_url'] = f"https://open.spotify.com/user/{sp_uid}"
-
                     has_contact = (curator_info.get('email') or
                                    curator_info.get('instagram_url') or
                                    curator_info.get('facebook_url') or
@@ -1611,8 +1606,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                    curator_info.get('twitter_url') or
                                    curator_info.get('groover_url') or
                                    curator_info.get('submithub_url') or
-                                   curator_info.get('submission_url') or
-                                   curator_info.get('spotify_profile_url'))
+                                   curator_info.get('submission_url'))
                     if not has_contact:
                         print(f"Enrichment [{job_id[:8]}]: No contact info for curator '{curator_info.get('name', '?')}' (cm_id={cm_cid}) — skipped")
                     if has_contact:
