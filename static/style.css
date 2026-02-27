@@ -941,6 +941,45 @@ body {
 .recently-active-row {
   background: rgba(76, 175, 80, 0.05);
 }
+.social-link {
+  display: inline-block;
+  padding: 2px 6px;
+  margin: 1px 2px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-decoration: none;
+  background: rgba(255,255,255,0.08);
+  color: var(--text-secondary);
+  transition: background 0.15s;
+}
+.social-link:hover {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+}
+.social-groover {
+  background: rgba(108, 92, 231, 0.2);
+  color: #a29bfe;
+}
+.social-submithub {
+  background: rgba(253, 121, 168, 0.2);
+  color: #fd79a8;
+}
+.social-submit {
+  background: rgba(0, 206, 209, 0.2);
+  color: #00cec9;
+}
+.social-links-cell {
+  white-space: nowrap;
+}
+.no-email {
+  color: var(--text-secondary);
+  opacity: 0.4;
+}
+.curator-contacts-table th:last-child,
+.curator-contacts-table td:last-child {
+  min-width: 140px;
+}
 .csv-download-btn {
   font-size: 0.75rem;
   padding: 4px 12px;
