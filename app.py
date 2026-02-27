@@ -43,6 +43,7 @@ from chartmetric_lookup import (
     _extract_track_credits,
     _fetch_curator_contact,
     _upsert_gems_features,
+    _lookup_gems_features,
 )
 from email_sender import send_results_email
 from job_manager import JobManager
@@ -1882,11 +1883,17 @@ async def analyze_url(
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
-    # Strategy: try preview first (fast), then Mac worker (slow)
+    # Strategy: cached features first, then preview, then Mac worker
     features = None
 
+    # 0) Check gems_complete_analysis cache (deterministic results on repeat scans)
+    if track_isrc:
+        features = _lookup_gems_features(track_isrc)
+        if features:
+            print(f"  URL analysis: using cached features for ISRC {track_isrc}")
+
     # 1) Try Spotify preview (immediate)
-    if preview_url:
+    if not features and preview_url:
         print(f"  URL analysis: downloading preview for {track_id}...")
         try:
             preview_resp = requests.get(preview_url, timeout=30)
