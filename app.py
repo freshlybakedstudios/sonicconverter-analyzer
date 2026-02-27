@@ -1108,10 +1108,13 @@ async def analyze(
         except Exception:
             pass
 
-        # Kick off background enrichment using the FULL genre-filtered pool
-        # (not tier-filtered) — playlists don't care about artist size
-        # Cap at top 200 by similarity to keep enrichment manageable
-        enrichment_matches = sorted(all_matches, key=lambda m: m.get('similarity', 0), reverse=True)[:200]
+        # Kick off background enrichment: displayed matches FIRST, then wider pool
+        # This ensures every match the user sees gets playlist data
+        displayed_ids = {str(m.get('artist_id', '')) for m in matches}
+        wider_pool = sorted(all_matches, key=lambda m: m.get('similarity', 0), reverse=True)
+        wider_extra = [m for m in wider_pool if str(m.get('artist_id', '')) not in displayed_ids]
+        enrichment_matches = matches + wider_extra
+        enrichment_matches = enrichment_matches[:200]  # Cap total
         enrichment_pool.submit(
             _run_background_enrichment,
             job_id, enrichment_matches, user_cm_id,
@@ -1788,10 +1791,13 @@ async def analyze_url(
     if flattery_matches:
         result['flattery_matches'] = flattery_matches
 
-    # Kick off background enrichment using FULL genre-filtered pool
-    # (not tier-filtered) — playlists don't care about artist size
-    # Cap at top 200 by similarity to keep enrichment manageable
-    enrichment_matches = sorted(all_found, key=lambda m: m.get('similarity', 0), reverse=True)[:200]
+    # Kick off background enrichment: displayed matches FIRST, then wider pool
+    # This ensures every match the user sees gets playlist data
+    displayed_ids = {str(m.get('artist_id', '')) for m in found_matches}
+    wider_pool = sorted(all_found, key=lambda m: m.get('similarity', 0), reverse=True)
+    wider_extra = [m for m in wider_pool if str(m.get('artist_id', '')) not in displayed_ids]
+    enrichment_matches = found_matches + wider_extra
+    enrichment_matches = enrichment_matches[:200]  # Cap total
     enrichment_pool.submit(
         _run_background_enrichment,
         new_job_id, enrichment_matches, user_cm_id,
