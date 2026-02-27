@@ -42,6 +42,7 @@ from chartmetric_lookup import (
     _fetch_related_artists,
     _extract_track_credits,
     _fetch_curator_contact,
+    _upsert_gems_features,
 )
 from email_sender import send_results_email
 from job_manager import JobManager
@@ -1637,6 +1638,7 @@ async def analyze_url(
     track_name = ''
     artist_name = ''
     artist_spotify_url = ''
+    track_isrc = ''
     cm_data = None
     user_cm_id = None
 
@@ -1659,6 +1661,7 @@ async def analyze_url(
                     track_data = track_resp.json()
                     preview_url = track_data.get('preview_url')
                     track_name = track_data.get('name', '')
+                    track_isrc = (track_data.get('external_ids') or {}).get('isrc', '')
                     artists = track_data.get('artists', [])
                     artist_name = ', '.join(a['name'] for a in artists)
                     # Get primary artist's Spotify URL for CM lookup
@@ -1915,6 +1918,11 @@ async def analyze_url(
 
     if flattery_matches:
         result['flattery_matches'] = flattery_matches
+
+    # Upsert analyzed track's audio features into gems_complete_analysis
+    # (Artist upsert already handled by lookup_artist_by_spotify above)
+    if track_isrc and features:
+        enrichment_pool.submit(_upsert_gems_features, track_isrc, features, genre or '')
 
     # Kick off background enrichment: displayed matches FIRST, then wider pool
     # This ensures every match the user sees gets playlist data
