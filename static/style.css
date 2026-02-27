@@ -941,6 +941,21 @@ body {
 .recently-active-row {
   background: rgba(76, 175, 80, 0.05);
 }
+.csv-download-btn {
+  font-size: 0.75rem;
+  padding: 4px 12px;
+  margin-left: 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  vertical-align: middle;
+  font-weight: 500;
+}
+.csv-download-btn:hover {
+  opacity: 0.85;
+}
 .playlist-count-badge {
   display: inline-block;
   margin-left: 8px;
