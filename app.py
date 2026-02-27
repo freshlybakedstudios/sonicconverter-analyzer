@@ -39,6 +39,7 @@ from chartmetric_lookup import (
     _fetch_track_playlists_structured,
     _fetch_related_artists,
     _extract_track_credits,
+    _fetch_curator_contact,
 )
 from email_sender import send_results_email
 from job_manager import JobManager
@@ -1333,40 +1334,72 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             'total': len(deduped_playlists),
         })
 
-        # --- Phase 5: Curator emails ---
+        # --- Phase 5: Curator contacts (CM first, then scraper fallback) ---
         try:
-            from curator_scraper import scrape_curator_emails
-            # Collect unique curators from playlists
-            curators_to_scrape = []
-            seen_curators = set()
+            # Collect unique curators with CM curator IDs from playlists
+            curators_to_resolve = []
+            seen_curator_ids = set()
             for pl in deduped_playlists[:50]:  # Top 50 playlists
-                curator = pl.get('curator_name', '')
-                if curator and curator not in seen_curators:
-                    seen_curators.add(curator)
-                    curators_to_scrape.append({
-                        'name': curator,
-                        'playlist_name': pl.get('name', ''),
-                        'followers': pl.get('followers', 0),
-                    })
+                cm_cid = pl.get('cm_curator_id')
+                curator_name = pl.get('curator_name', '')
+                key = str(cm_cid) if cm_cid else curator_name
+                if not key or key in seen_curator_ids:
+                    continue
+                seen_curator_ids.add(key)
+                curators_to_resolve.append({
+                    'name': curator_name,
+                    'cm_curator_id': cm_cid,
+                    'playlist_name': pl.get('name', ''),
+                    'playlist_link': pl.get('link', ''),
+                    'followers': pl.get('followers', 0),
+                })
 
-            for i, curator_info in enumerate(curators_to_scrape):
+            print(f"Enrichment [{job_id[:8]}]: Resolving {len(curators_to_resolve)} curators...")
+
+            for i, curator_info in enumerate(curators_to_resolve):
                 try:
-                    result = scrape_curator_emails(curator_info['name'])
-                    if result and result.get('email'):
-                        curator_info.update(result)
+                    cm_cid = curator_info.get('cm_curator_id')
+
+                    # Step 1: Try CM curator API (has social URLs + submission email)
+                    if cm_cid:
+                        contact = _fetch_curator_contact(token, cm_cid)
+                        if contact:
+                            curator_info.update(contact)
+
+                    # Step 2: If no email from CM, try scraper with known social URLs
+                    if not curator_info.get('email'):
+                        try:
+                            from curator_scraper import scrape_curator_emails
+                            scrape_result = scrape_curator_emails(
+                                curator_info['name'],
+                                instagram_url=curator_info.get('instagram_url'),
+                                facebook_url=curator_info.get('facebook_url'),
+                                website_url=curator_info.get('website_url'),
+                            )
+                            if scrape_result and scrape_result.get('email'):
+                                curator_info['email'] = scrape_result['email']
+                                curator_info['email_source'] = scrape_result.get('source', 'scraper')
+                        except ImportError:
+                            pass
+
+                    # Publish if we have any contact info
+                    has_contact = (curator_info.get('email') or
+                                   curator_info.get('instagram_url') or
+                                   curator_info.get('submission_url') or
+                                   curator_info.get('website_url'))
+                    if has_contact:
                         job_mgr.update_job(job_id,
                                            curator_emails={curator_info['name']: curator_info})
                         _sse_publish(job_id, 'curator_emails', {
                             'curator': curator_info,
-                            'progress': f'{i+1}/{len(curators_to_scrape)}',
+                            'progress': f'{i+1}/{len(curators_to_resolve)}',
                         })
                 except Exception as e:
-                    print(f"Enrichment [{job_id[:8]}]: Curator scrape failed for {curator_info['name']}: {e}")
-                job_mgr.update_job(job_id, progress={'curator_emails': f'{i+1}/{len(curators_to_scrape)}'})
-        except ImportError:
-            print(f"Enrichment [{job_id[:8]}]: curator_scraper not available, skipping")
+                    print(f"Enrichment [{job_id[:8]}]: Curator failed for {curator_info.get('name', '?')}: {e}")
+                job_mgr.update_job(job_id, progress={'curator_emails': f'{i+1}/{len(curators_to_resolve)}'})
+
         except Exception as e:
-            print(f"Enrichment [{job_id[:8]}]: Curator scraping failed: {e}")
+            print(f"Enrichment [{job_id[:8]}]: Curator resolution failed: {e}")
 
         # Done
         job_mgr.update_job(job_id, status='complete')
