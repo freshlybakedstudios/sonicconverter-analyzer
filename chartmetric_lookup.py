@@ -1113,14 +1113,49 @@ def _fetch_track_playlists_structured(token: str, track_id: int,
 # ---------------------------------------------------------------------------
 # Curator contact resolution
 # ---------------------------------------------------------------------------
-def _fetch_curator_contact(token: str, cm_curator_id: int) -> dict:
+def _fetch_curator_contact(token: str, cm_curator_id: int,
+                           cache_days: int = 30) -> dict:
     """
     Fetch curator social URLs and submission email from Chartmetric.
+    Checks Supabase cache first (valid for cache_days).
     Returns {email, instagram_url, facebook_url, website_url, submission_url, ...}
     """
+    import json as _json
+    from datetime import datetime, timezone
+
     result = {}
     if not cm_curator_id:
         return result
+
+    supa_url = os.getenv('SUPABASE_URL')
+    supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+
+    # --- Check cache ---
+    if supa_url and supa_key:
+        try:
+            project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
+            headers = _supabase_headers(supa_key, project_ref)
+            resp = requests.get(
+                f"{supa_url}/rest/v1/curator_contacts_cache"
+                f"?curator_key=eq.{cm_curator_id}&select=contact_data,fetched_at",
+                headers=headers, timeout=10,
+            )
+            if resp.status_code == 200 and resp.json():
+                row = resp.json()[0]
+                fetched_at = row.get('fetched_at', '')
+                if fetched_at:
+                    dt = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
+                    age_days = (datetime.now(timezone.utc) - dt).days
+                    if age_days <= cache_days:
+                        cached = row.get('contact_data', {})
+                        if isinstance(cached, str):
+                            cached = _json.loads(cached)
+                        logger.debug(f"Curator cache hit for {cm_curator_id} ({age_days}d old)")
+                        return cached
+        except Exception as e:
+            logger.debug(f"Curator cache check failed for {cm_curator_id}: {e}")
+
+    # --- Fetch from CM API ---
 
     # 1) Get curator profile (may have submission email)
     def _call_profile():
@@ -1191,6 +1226,24 @@ def _fetch_curator_contact(token: str, cm_curator_id: int) -> dict:
                 result['submithub_url'] = url
     except Exception as e:
         logger.debug(f"Curator URLs fetch failed for {cm_curator_id}: {e}")
+
+    # --- Write to cache ---
+    if supa_url and supa_key and result:
+        try:
+            project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
+            headers = _supabase_headers(supa_key, project_ref)
+            headers['Prefer'] = 'resolution=merge-duplicates,return=representation'
+            payload = {
+                'curator_key': str(cm_curator_id),
+                'contact_data': _json.dumps(result),
+                'fetched_at': datetime.now(timezone.utc).isoformat(),
+            }
+            requests.post(
+                f"{supa_url}/rest/v1/curator_contacts_cache",
+                json=payload, headers=headers, timeout=10,
+            )
+        except Exception as e:
+            logger.debug(f"Curator cache write failed for {cm_curator_id}: {e}")
 
     return result
 
