@@ -1691,23 +1691,32 @@ async def analyze_url(
     if not features:
         print(f"  URL analysis: waiting for Mac worker (up to 90s)...")
         deadline = time.time() + 90
+
+        def _poll_supabase_for_features():
+            """Synchronous Supabase poll — runs in thread to avoid blocking event loop."""
+            if not job_mgr._supabase:
+                return None
+            try:
+                resp = job_mgr._supabase.table('analysis_jobs').select('status,features').eq('id', job_id).execute()
+                if resp.data:
+                    row = resp.data[0]
+                    if row.get('status') == 'features_ready':
+                        f = row.get('features', {})
+                        if isinstance(f, str):
+                            f = json.loads(f)
+                        return f
+            except Exception as e:
+                print(f"  URL analysis: poll error: {e}")
+            return None
+
+        loop = asyncio.get_event_loop()
         while time.time() < deadline:
-            # Poll Supabase directly — Mac worker updates DB, not our in-memory cache
-            if job_mgr._supabase:
-                try:
-                    resp = job_mgr._supabase.table('analysis_jobs').select('status,features').eq('id', job_id).execute()
-                    if resp.data:
-                        row = resp.data[0]
-                        if row.get('status') == 'features_ready':
-                            f = row.get('features', {})
-                            if isinstance(f, str):
-                                f = json.loads(f)
-                            features = f
-                            print(f"  URL analysis: features received from Mac worker")
-                            break
-                except Exception as e:
-                    print(f"  URL analysis: poll error: {e}")
-            time.sleep(3)
+            result = await loop.run_in_executor(None, _poll_supabase_for_features)
+            if result:
+                features = result
+                print(f"  URL analysis: features received from Mac worker")
+                break
+            await asyncio.sleep(3)
 
     if not features:
         job_mgr.update_job(job_id, status='error')
