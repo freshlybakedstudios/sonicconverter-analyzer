@@ -1100,6 +1100,17 @@ def _fetch_track_playlists_structured(token: str, track_id: int,
 
         items = _retry(_call) or []
 
+        # Debug: log first playlist's raw fields to see what CM gives us
+        if items and status == 'current':
+            sample = items[0].get('playlist', {})
+            logger.warning(f"CM playlist raw keys: {list(sample.keys())}")
+            logger.warning(f"CM playlist sample: curator_id={sample.get('curator_id')}, "
+                          f"owner_name={sample.get('owner_name')}, "
+                          f"curator_name={sample.get('curator_name')}, "
+                          f"owner_id={sample.get('owner_id')}, "
+                          f"spotify_owner_id={sample.get('spotify_owner_id')}, "
+                          f"user_id={sample.get('user_id')}")
+
         for item in items:
             pl = item.get('playlist', {})
             if not pl or not pl.get('playlist_id') or not pl.get('name'):
