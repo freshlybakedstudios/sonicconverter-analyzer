@@ -1109,9 +1109,11 @@ async def analyze(
 
         # Kick off background enrichment using the FULL genre-filtered pool
         # (not tier-filtered) — playlists don't care about artist size
+        # Cap at top 200 by similarity to keep enrichment manageable
+        enrichment_matches = sorted(all_matches, key=lambda m: m.get('similarity', 0), reverse=True)[:200]
         enrichment_pool.submit(
             _run_background_enrichment,
-            job_id, all_matches, user_cm_id,
+            job_id, enrichment_matches, user_cm_id,
         )
 
         return result
@@ -1586,6 +1588,19 @@ async def analyze_url(
     # We have features — now run the normal matching pipeline
     job_mgr.update_job(job_id, status='matching', features=features)
 
+    # Run emotion detection on features (same as file upload path)
+    from audio_analyzer import _emotion_detector
+    emo = _emotion_detector.detect(features, genre or '')
+    top_emo = emo.get('emotions', [])
+    for i in range(4):
+        if i < len(top_emo):
+            features[f'emotion_{i+1}'] = top_emo[i][0]
+            features[f'emotion_{i+1}_score'] = top_emo[i][1]
+        else:
+            features[f'emotion_{i+1}'] = 'neutral'
+            features[f'emotion_{i+1}_score'] = 0.0
+    features['emotion_summary'] = emo
+
     # Find matches (same logic as /api/analyze)
     user_monthly = lead.get('monthly_listeners')
     user_tier = _listeners_to_tier(user_monthly) if user_monthly else 'micro'
@@ -1611,7 +1626,7 @@ async def analyze_url(
 
     all_found = [m for m in all_found if not has_foreign(m)]
 
-    # Tier filtering
+    # Tier filtering for display table
     MIN_PEER_MATCHES = 10
     tier_order = list(TIER_RANGES.keys())
     if user_tier:
@@ -1634,10 +1649,55 @@ async def analyze_url(
         found_matches = list(all_found)
 
     total_match_count = len(found_matches)
+
+    # Production recommendations (consensus comparison)
+    gems_by_artist = {}
+    for m in found_matches:
+        isrc = m.get('isrc')
+        aid = str(m.get('artist_id', ''))
+        if isrc and isrc in matcher._gems_by_isrc and aid not in gems_by_artist:
+            gems_by_artist[aid] = matcher._gems_by_isrc[isrc]
+    recs = _generate_recommendations(features, found_matches,
+                                      gems_by_artist=gems_by_artist)
+
+    # Flattery matches — higher-tier artists from unfiltered pool
+    flattery_matches = []
+    if user_tier and all_found:
+        tier_order_map = {t: i for i, t in enumerate(TIER_RANGES.keys())}
+        user_tier_num = tier_order_map.get(user_tier, 0)
+        flattery_candidates = []
+        for m in all_found:
+            cand_tier = m.get('tier', '')
+            cand_tier_num = tier_order_map.get(cand_tier, 0)
+            if cand_tier_num <= user_tier_num:
+                continue
+            total_boost = 0
+            cand_genres = []
+            for g in m.get('artist_genres', []):
+                if g:
+                    cand_genres.append(g)
+            primary = (m.get('primary_genre') or '').strip()
+            if primary:
+                cand_genres.append(primary)
+            cand_families = _genre_families(*cand_genres)
+            if user_families and cand_families:
+                shared = cand_families & user_families
+                if shared:
+                    total_boost += 0.05 * len(shared)
+                else:
+                    continue  # No genre overlap, skip
+            cand_pronoun = m.get('pronoun_title', 'They')
+            flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
+
+        flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        for _, _, m, _ in flattery_candidates[:3]:
+            flattery_matches.append(m)
+
     new_job_id = job_mgr.create_job(token, features, found_matches)
 
     print(f"  URL analysis: {len(found_matches)} tier-filtered matches, "
-          f"{len(all_found)} total genre-filtered for enrichment")
+          f"{len(all_found)} total genre-filtered for enrichment, "
+          f"{len(flattery_matches)} flattery, {len(recs)} recs")
 
     result = {
         'job_id': new_job_id,
@@ -1660,9 +1720,18 @@ async def analyze_url(
             'high_mid_ratio': features.get('high_mid_ratio', 0),
             'presence_ratio': features.get('presence_ratio', 0),
             'air_ratio': features.get('air_ratio', 0),
+            'emotion_summary': features.get('emotion_summary', {}),
+            'emotion_1': features.get('emotion_1', ''),
+            'emotion_1_score': features.get('emotion_1_score', 0),
+            'emotion_2': features.get('emotion_2', ''),
+            'emotion_2_score': features.get('emotion_2_score', 0),
+            'emotion_3': features.get('emotion_3', ''),
+            'emotion_3_score': features.get('emotion_3_score', 0),
+            'emotion_4': features.get('emotion_4', ''),
+            'emotion_4_score': features.get('emotion_4_score', 0),
         },
         'matches': found_matches,
-        'recommendations': [],
+        'recommendations': recs,
         'source': {
             'type': 'spotify_url',
             'track_name': track_name,
@@ -1672,11 +1741,16 @@ async def analyze_url(
         'timing': {},
     }
 
+    if flattery_matches:
+        result['flattery_matches'] = flattery_matches
+
     # Kick off background enrichment using FULL genre-filtered pool
     # (not tier-filtered) — playlists don't care about artist size
+    # Cap at top 200 by similarity to keep enrichment manageable
+    enrichment_matches = sorted(all_found, key=lambda m: m.get('similarity', 0), reverse=True)[:200]
     enrichment_pool.submit(
         _run_background_enrichment,
-        new_job_id, all_found, user_cm_id,
+        new_job_id, enrichment_matches, user_cm_id,
     )
 
     return result
