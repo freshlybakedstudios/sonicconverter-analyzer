@@ -1152,30 +1152,32 @@ def _sse_publish(job_id: str, event: str, data: dict):
             pass
 
 
-def _resolve_curator_id_by_playlist(spotify_playlist_id: str) -> int | None:
-    """Look up cm_curator_id from editorial_playlists table by Spotify playlist ID."""
+def _resolve_curator_id_by_playlist(spotify_playlist_id: str, cm_playlist_id: str = '') -> int | None:
+    """Look up cm_curator_id — first from editorial_playlists table, then CM API."""
     supa_url = os.getenv('SUPABASE_URL')
     supa_key = os.getenv('SUPABASE_SERVICE_KEY')
-    if not supa_url or not supa_key or not spotify_playlist_id:
-        return None
-    try:
-        headers = {
-            'apikey': supa_key,
-            'Authorization': f'Bearer {supa_key}',
-            'Accept': 'application/json',
-        }
-        resp = requests.get(
-            f"{supa_url}/rest/v1/editorial_playlists"
-            f"?playlist_id=eq.{spotify_playlist_id}"
-            f"&select=cm_curator_id&limit=1",
-            headers=headers, timeout=10,
-        )
-        if resp.status_code == 200:
-            rows = resp.json()
-            if rows and rows[0].get('cm_curator_id'):
-                return rows[0]['cm_curator_id']
-    except Exception as e:
-        print(f"Playlist→curator lookup failed for {spotify_playlist_id}: {e}")
+
+    # Step 1: Check editorial_playlists table
+    if supa_url and supa_key and spotify_playlist_id:
+        try:
+            headers = {
+                'apikey': supa_key,
+                'Authorization': f'Bearer {supa_key}',
+                'Accept': 'application/json',
+            }
+            resp = requests.get(
+                f"{supa_url}/rest/v1/editorial_playlists"
+                f"?playlist_id=eq.{spotify_playlist_id}"
+                f"&select=cm_curator_id&limit=1",
+                headers=headers, timeout=10,
+            )
+            if resp.status_code == 200:
+                rows = resp.json()
+                if rows and rows[0].get('cm_curator_id'):
+                    return rows[0]['cm_curator_id']
+        except Exception as e:
+            print(f"Playlist→curator DB lookup failed for {spotify_playlist_id}: {e}")
+
     return None
 
 
@@ -1501,8 +1503,9 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 # Try to resolve curator ID from editorial_playlists table
                 if not cm_cid:
                     spotify_pid = pl.get('playlist_id', '')
+                    cm_pid = pl.get('cm_playlist_id', '')
                     if spotify_pid:
-                        cm_cid = _resolve_curator_id_by_playlist(spotify_pid)
+                        cm_cid = _resolve_curator_id_by_playlist(spotify_pid, cm_pid)
                         if cm_cid:
                             pl['cm_curator_id'] = cm_cid
                 # Fallback: resolve by curator name
