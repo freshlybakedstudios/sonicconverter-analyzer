@@ -1434,6 +1434,52 @@ def _upsert_gems_features(isrc: str, features: dict, genre: str = '',
         logger.error(f"GEMS upsert failed for ISRC {isrc}: {e}")
 
 
+def _lookup_gems_features(isrc: str) -> dict | None:
+    """Look up cached audio features from gems_complete_analysis by ISRC.
+    Returns a features dict compatible with extract_features() output, or None."""
+    if not isrc:
+        return None
+    supa_url = os.getenv('SUPABASE_URL')
+    supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+    if not supa_url or not supa_key:
+        return None
+
+    audio_keys = [
+        'sub_ratio', 'bass_ratio', 'low_mid_ratio', 'mid_ratio',
+        'high_mid_ratio', 'presence_ratio', 'air_ratio',
+        'lufs_integrated', 'loudness_range', 'energy', 'dynamic_range',
+        'crest_factor', 'compression_amount', 'attack_time',
+        'brightness', 'brightness_variance', 'spectral_rolloff',
+        'spectral_complexity', 'spectral_flux',
+        'key', 'scale', 'key_strength', 'zcr', 'dissonance',
+        'bpm', 'beat_strength', 'onset_rate', 'danceability',
+        'emotion_1', 'emotion_1_score', 'emotion_2', 'emotion_2_score',
+        'emotion_3', 'emotion_3_score', 'emotion_4', 'emotion_4_score',
+    ]
+    select_cols = ','.join(audio_keys)
+
+    try:
+        project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
+        headers = _supabase_headers(supa_key, project_ref)
+        resp = requests.get(
+            f"{supa_url}/rest/v1/gems_complete_analysis"
+            f"?isrc=eq.{isrc}&select={select_cols}&limit=1",
+            headers=headers, timeout=10,
+        )
+        if resp.status_code == 200:
+            rows = resp.json()
+            if rows:
+                row = rows[0]
+                # Only return if we have core features (not just an empty row)
+                if row.get('bpm') is not None and row.get('energy') is not None:
+                    features = {k: v for k, v in row.items() if v is not None}
+                    logger.info(f"GEMS cache hit for ISRC {isrc} ({len(features)} features)")
+                    return features
+    except Exception as e:
+        logger.debug(f"GEMS feature lookup failed for {isrc}: {e}")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Track Credits (producers/writers)
 # ---------------------------------------------------------------------------
