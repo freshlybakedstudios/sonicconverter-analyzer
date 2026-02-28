@@ -356,6 +356,7 @@ function startSSE(jobId) {
 }
 
 function updateEnrichmentProgress(type, value) {
+  if (!value) return;
   const el = $(`#enrichment-${type}`);
   if (el) el.textContent = value;
   const statusEl = $('#enrichment-status');
