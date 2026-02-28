@@ -90,6 +90,31 @@ INCOMPATIBLE_GENRE_PAIRS = {
     frozenset(['metal', 'flamenco']),
     frozenset(['metalcore', 'flamenco']),
     frozenset(['hardcore', 'flamenco']),
+    # Metal sub-genre clashes — brutal/death vs softer metal-adjacent
+    frozenset(['death', 'lofi']),
+    frozenset(['death', 'indie']),
+    frozenset(['death', 'pop']),
+    frozenset(['death', 'emo']),
+    frozenset(['death', 'skramz']),
+    frozenset(['brutal', 'lofi']),
+    frozenset(['brutal', 'indie']),
+    frozenset(['brutal', 'pop']),
+    frozenset(['brutal', 'emo']),
+    frozenset(['brutal', 'skramz']),
+    frozenset(['deathcore', 'lofi']),
+    frozenset(['deathcore', 'indie']),
+    frozenset(['deathcore', 'pop']),
+    frozenset(['deathcore', 'emo']),
+    frozenset(['deathcore', 'skramz']),
+    frozenset(['goregrind', 'lofi']),
+    frozenset(['goregrind', 'indie']),
+    frozenset(['goregrind', 'pop']),
+    frozenset(['goregrind', 'emo']),
+    # Metal vs indie/pop
+    frozenset(['metal', 'indie']),
+    frozenset(['metal', 'lofi']),
+    frozenset(['metalcore', 'lofi']),
+    frozenset(['metalcore', 'indie']),
 }
 
 # ---------------------------------------------------------------------------
@@ -442,12 +467,12 @@ class TrackMatcher:
                 if target_fams:
                     if not cand_fams:
                         # Candidate has no recognisable genre → penalise
-                        similarity *= 0.88
+                        similarity *= 0.85
                     else:
                         overlap = target_fams & cand_fams
                         if not overlap:
-                            # Completely different family (rock vs metal) → 10 % penalty
-                            similarity *= 0.90
+                            # Completely different family (rock vs metal) → 18% penalty
+                            similarity *= 0.82
                         elif cand_fams - target_fams:
                             # Crossover — shares a family but also has a foreign one
                             similarity *= 0.96
