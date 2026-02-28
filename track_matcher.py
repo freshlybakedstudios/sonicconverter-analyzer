@@ -526,13 +526,13 @@ class TrackMatcher:
                     profile.get('primary_genre', ''),
                     profile.get('secondary_genre', ''),
                 )
+                _EXTREME = {'black', 'death', 'brutal', 'doom', 'thrash',
+                            'deathcore', 'goregrind', 'grind', 'sludge'}
+                is_extreme = bool(target_genre_words & _EXTREME)
                 if target_fams:
                     if not cand_fams:
                         # Candidate has no recognisable genre → heavy penalty
-                        # Extreme genres (metal, etc.) get steeper penalty
-                        _EXTREME = {'black', 'death', 'brutal', 'doom', 'thrash',
-                                    'deathcore', 'goregrind', 'grind', 'sludge'}
-                        if target_genre_words & _EXTREME:
+                        if is_extreme:
                             similarity *= 0.60  # 40% penalty for no-genre vs extreme
                         else:
                             similarity *= 0.75  # 25% penalty for no-genre vs normal
@@ -540,7 +540,7 @@ class TrackMatcher:
                         overlap = target_fams & cand_fams
                         if not overlap:
                             # Completely different family → steep penalty
-                            if target_genre_words & _EXTREME:
+                            if is_extreme:
                                 similarity *= 0.65  # 35% for extreme vs different family
                             else:
                                 similarity *= 0.82  # 18% for normal vs different family
