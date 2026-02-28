@@ -28,7 +28,14 @@ def _normalize(value, min_val, max_val, default=0.5):
 def _genre_words(genre_str: Optional[str]) -> Set[str]:
     if not genre_str or genre_str == 'unknown':
         return set()
-    return {w.strip() for w in genre_str.lower().replace(',', ' ').split() if w.strip()}
+    words = {w.strip() for w in genre_str.lower().replace(',', ' ').split() if w.strip()}
+    # When specific sub-genre qualifiers are present, strip broad parent words
+    # that would cause false matches (e.g. "black metal" shouldn't match "rock")
+    _EXTREME_QUALIFIERS = {'black', 'death', 'brutal', 'doom', 'stoner', 'sludge',
+                           'thrash', 'grind', 'goregrind', 'deathcore'}
+    if words & _EXTREME_QUALIFIERS:
+        words.discard('rock')  # "european rock" etc. is noise for extreme metal
+    return words
 
 
 def _parse_track_genres(genre_str: Optional[str]) -> Set[str]:
@@ -115,6 +122,15 @@ INCOMPATIBLE_GENRE_PAIRS = {
     frozenset(['metal', 'lofi']),
     frozenset(['metalcore', 'lofi']),
     frozenset(['metalcore', 'indie']),
+    # Black metal vs rock/pop/soft
+    frozenset(['black', 'rock']),
+    frozenset(['black', 'pop']),
+    frozenset(['black', 'indie']),
+    frozenset(['black', 'folk']),
+    frozenset(['black', 'acoustic']),
+    frozenset(['black', 'singer-songwriter']),
+    frozenset(['black', 'country']),
+    frozenset(['black', 'lofi']),
     # Metal sub-genre clashes — black metal vs slow/groovy metal
     frozenset(['black', 'stoner']),
     frozenset(['black', 'doom']),
