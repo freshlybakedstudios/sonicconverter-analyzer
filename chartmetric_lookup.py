@@ -1295,8 +1295,8 @@ def _fetch_curator_contact(token: str, cm_curator_id: int,
     except Exception as e:
         logger.debug(f"Curator URLs fetch failed for {cm_curator_id}: {e}")
 
-    # --- Write to cache ---
-    if supa_url and supa_key and result:
+    # --- Write to cache (even empty results, to avoid re-querying) ---
+    if supa_url and supa_key:
         try:
             project_ref = supa_url.split('//', 1)[1].split('.', 1)[0]
             headers = _supabase_headers(supa_key, project_ref)
