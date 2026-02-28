@@ -201,8 +201,13 @@ class GenreAwareEmotionDetector:
             return 'balanced'
         genre_lower = genre.lower()
         for group, genres in self.GENRE_GROUPS.items():
+            # Exact match first
             if genre_lower in genres:
                 return group
+            # Substring match: "black metal" contains "metal" → energy_focused
+            for g in genres:
+                if g in genre_lower:
+                    return group
         return 'balanced'
 
     def _calc_feature_score(self, value, comparison, threshold):

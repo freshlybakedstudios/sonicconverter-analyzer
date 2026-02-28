@@ -115,6 +115,52 @@ INCOMPATIBLE_GENRE_PAIRS = {
     frozenset(['metal', 'lofi']),
     frozenset(['metalcore', 'lofi']),
     frozenset(['metalcore', 'indie']),
+    # Metal sub-genre clashes — black metal vs slow/groovy metal
+    frozenset(['black', 'stoner']),
+    frozenset(['black', 'doom']),
+    frozenset(['black', 'sludge']),
+    frozenset(['black', 'groove']),
+    frozenset(['black', 'nu']),
+    frozenset(['black', 'funk']),
+    frozenset(['black', 'hair']),
+    frozenset(['black', 'southern']),
+    frozenset(['black', 'glam']),
+    # Death/brutal vs slow/groovy metal
+    frozenset(['death', 'stoner']),
+    frozenset(['death', 'doom']),
+    frozenset(['death', 'sludge']),
+    frozenset(['death', 'groove']),
+    frozenset(['death', 'nu']),
+    frozenset(['death', 'funk']),
+    frozenset(['death', 'hair']),
+    frozenset(['death', 'glam']),
+    frozenset(['brutal', 'stoner']),
+    frozenset(['brutal', 'doom']),
+    frozenset(['brutal', 'sludge']),
+    frozenset(['brutal', 'groove']),
+    frozenset(['brutal', 'nu']),
+    frozenset(['brutal', 'hair']),
+    frozenset(['brutal', 'glam']),
+    frozenset(['deathcore', 'stoner']),
+    frozenset(['deathcore', 'doom']),
+    frozenset(['deathcore', 'sludge']),
+    frozenset(['deathcore', 'groove']),
+    frozenset(['deathcore', 'nu']),
+    frozenset(['deathcore', 'hair']),
+    frozenset(['deathcore', 'glam']),
+    frozenset(['goregrind', 'stoner']),
+    frozenset(['goregrind', 'doom']),
+    frozenset(['goregrind', 'sludge']),
+    frozenset(['goregrind', 'nu']),
+    frozenset(['goregrind', 'hair']),
+    frozenset(['goregrind', 'glam']),
+    # Stoner/doom vs thrash/speed
+    frozenset(['stoner', 'thrash']),
+    frozenset(['stoner', 'speed']),
+    frozenset(['doom', 'thrash']),
+    frozenset(['doom', 'speed']),
+    frozenset(['sludge', 'thrash']),
+    frozenset(['sludge', 'speed']),
 }
 
 # ---------------------------------------------------------------------------
@@ -415,17 +461,17 @@ class TrackMatcher:
             bpm_d = abs((_float(profile.get('bpm')) or 0) - (_float(target_profile.get('bpm')) or 0))
 
             penalty = 0.0
-            if energy_d > 0.18:
-                penalty += (energy_d - 0.18) * 0.6
-            if beat_d > 0.18:
-                penalty += (beat_d - 0.18) * 0.5
-            if dance_d > 0.22:
-                penalty += (dance_d - 0.22) * 0.4
-            if onset_d > 0.22:
-                penalty += (onset_d - 0.22) * 0.4
-            if bpm_d > 28:
-                penalty += (bpm_d - 28) * 0.0015
-            penalty = min(penalty, 0.10)
+            if energy_d > 0.15:
+                penalty += (energy_d - 0.15) * 0.8
+            if beat_d > 0.15:
+                penalty += (beat_d - 0.15) * 0.7
+            if dance_d > 0.18:
+                penalty += (dance_d - 0.18) * 0.5
+            if onset_d > 0.18:
+                penalty += (onset_d - 0.18) * 0.5
+            if bpm_d > 20:
+                penalty += (bpm_d - 20) * 0.003
+            penalty = min(penalty, 0.20)
 
             similarity = max(0.0, similarity - penalty)
             if similarity < threshold:
