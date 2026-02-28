@@ -431,6 +431,12 @@ class TrackMatcher:
         } - {None, ''}
 
         target_genre_words = _genre_words(genre_hint)
+        _EXTREME = {'black', 'death', 'brutal', 'doom', 'thrash',
+                    'deathcore', 'goregrind', 'grind', 'sludge'}
+        is_extreme = bool(target_genre_words & _EXTREME)
+        target_fams = _genre_families(genre_hint)
+        if is_extreme:
+            target_fams.discard('rock')  # CM tags extreme metal with "rock" — strip it
 
         # Pre-filter by emotion overlap (candidates must share at least 1 emotion)
         candidate_isrcs = set()
@@ -519,16 +525,12 @@ class TrackMatcher:
             # Genre family penalty — penalise candidates from a different genre family
             # so that e.g. "art rock" prioritises rock tracks over metal tracks.
             if target_genre_words:
-                target_fams = _genre_families(genre_hint)
                 cand_fams = _genre_families(
                     track_data.get('track_genres', ''),
                     artist_data.get('genres', ''),
                     profile.get('primary_genre', ''),
                     profile.get('secondary_genre', ''),
                 )
-                _EXTREME = {'black', 'death', 'brutal', 'doom', 'thrash',
-                            'deathcore', 'goregrind', 'grind', 'sludge'}
-                is_extreme = bool(target_genre_words & _EXTREME)
                 if target_fams:
                     if not cand_fams:
                         # Candidate has no recognisable genre → heavy penalty
