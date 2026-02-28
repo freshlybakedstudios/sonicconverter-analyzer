@@ -2,7 +2,7 @@
 Curator email scraping via RapidAPI chain:
   Instagram → Facebook → Website contacts
 
-Same RapidAPI endpoints as the main pipeline scrapers.
+Matches the working endpoints from the main pipeline scrapers.
 Populates progressively — returns as soon as an email is found at any stage.
 """
 
@@ -11,12 +11,13 @@ import re
 import time
 import logging
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 
 logger = logging.getLogger(__name__)
 
-# RapidAPI endpoints
+# RapidAPI endpoints (matching working pipeline scripts)
 INSTAGRAM_API_HOST = "instagram-scraper-20251.p.rapidapi.com"
 INSTAGRAM_API_URL = f"https://{INSTAGRAM_API_HOST}/userinfo/"
 INSTAGRAM_RATE = 0.8
@@ -41,7 +42,6 @@ def _extract_emails(text: str) -> list[str]:
     if not text:
         return []
     found = EMAIL_REGEX.findall(text)
-    # Filter out common junk
     junk = {'noreply', 'no-reply', 'support', 'info@example', 'test@', 'admin@'}
     return [
         e for e in found
@@ -61,7 +61,7 @@ def _scrape_instagram(username: str) -> dict:
         time.sleep(INSTAGRAM_RATE)
         resp = requests.get(
             INSTAGRAM_API_URL,
-            params={"username": username},
+            params={"username_or_id": username},
             headers={
                 "X-RapidAPI-Key": api_key,
                 "X-RapidAPI-Host": INSTAGRAM_API_HOST,
@@ -75,30 +75,33 @@ def _scrape_instagram(username: str) -> dict:
         data = resp.json()
         result = {}
 
+        # Response is wrapped in 'data' key
+        user = data.get('data', data)
+
         # Direct email from profile
-        email = data.get('public_email') or data.get('email') or ''
+        email = user.get('public_email') or user.get('email') or ''
         if email:
             result['email'] = email
             result['email_source'] = 'instagram'
 
         # Bio may contain email
-        bio = data.get('biography') or ''
+        bio = user.get('biography') or ''
         bio_emails = _extract_emails(bio)
         if bio_emails and 'email' not in result:
             result['email'] = bio_emails[0]
             result['email_source'] = 'instagram_bio'
 
         # External URL for website scraping
-        ext_url = data.get('external_url') or ''
+        ext_url = user.get('external_url') or ''
         if ext_url:
             result['website'] = ext_url
 
         # Facebook link
-        fb = data.get('facebook_url') or ''
+        fb = user.get('facebook_url') or ''
         if fb:
             result['facebook_url'] = fb
 
-        print(f"  Scraper IG @{username}: email={email or 'none'}, bio_emails={bio_emails}, ext_url={ext_url or 'none'}, keys={list(data.keys())[:10]}")
+        print(f"  Scraper IG @{username}: email={result.get('email', 'none')}, bio_emails={bio_emails}, ext_url={ext_url or 'none'}")
         return result
 
     except Exception as e:
@@ -124,28 +127,32 @@ def _scrape_facebook(page_url: str) -> dict:
             timeout=15,
         )
         if resp.status_code != 200:
+            print(f"  Scraper FB {page_url[:50]}: HTTP {resp.status_code}")
             return {}
 
         data = resp.json()
         result = {}
 
-        email = data.get('email') or ''
+        # Response is wrapped in 'results' key
+        fb_data = data.get('results', data)
+
+        email = fb_data.get('email') or ''
         if email:
             result['email'] = email
             result['email_source'] = 'facebook'
 
         # About text may have email
-        about = data.get('about') or data.get('description') or ''
+        about = fb_data.get('about') or fb_data.get('description') or ''
         about_emails = _extract_emails(about)
         if about_emails and 'email' not in result:
             result['email'] = about_emails[0]
             result['email_source'] = 'facebook_about'
 
-        website = data.get('website') or ''
+        website = fb_data.get('website') or ''
         if website:
             result['website'] = website
 
-        print(f"  Scraper FB {page_url[:50]}: email={email or 'none'}, about_emails={about_emails}, keys={list(data.keys())[:10]}")
+        print(f"  Scraper FB {page_url[:50]}: email={result.get('email', 'none')}, about_emails={about_emails}")
         return result
 
     except Exception as e:
@@ -159,32 +166,58 @@ def _scrape_website(url: str) -> dict:
     if not api_key:
         return {}
 
+    # Extract domain from URL
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc or parsed.path.split('/')[0]
+        if not domain:
+            domain = url
+    except Exception:
+        domain = url
+
     try:
         time.sleep(WEBSITE_RATE)
         resp = requests.get(
             WEBSITE_API_URL,
-            params={"url": url},
+            params={
+                "query": domain,
+                "match_email_domain": "false",
+                "external_matching": "false",
+            },
             headers={
-                "X-RapidAPI-Key": api_key,
-                "X-RapidAPI-Host": WEBSITE_API_HOST,
+                "x-rapidapi-host": WEBSITE_API_HOST,
+                "x-rapidapi-key": api_key,
             },
             timeout=20,
         )
         if resp.status_code != 200:
+            print(f"  Scraper Web {url[:50]}: HTTP {resp.status_code}")
             return {}
 
         data = resp.json()
         result = {}
 
-        # Emails from response
-        emails = data.get('emails') or []
-        if isinstance(emails, list) and emails:
-            filtered = _extract_emails(' '.join(emails))
+        # Response is wrapped in data['data'][0]
+        results_list = data.get('data', [])
+        if results_list and len(results_list) > 0:
+            site_data = results_list[0]
+
+            # Emails are objects with 'value' field
+            raw_emails = site_data.get('emails') or []
+            found_emails = [e.get('value', '') for e in raw_emails if isinstance(e, dict) and e.get('value')]
+            if not found_emails and isinstance(raw_emails, list):
+                # Fallback: maybe plain strings
+                found_emails = [e for e in raw_emails if isinstance(e, str)]
+
+            filtered = _extract_emails(' '.join(found_emails))
             if filtered:
                 result['email'] = filtered[0]
                 result['email_source'] = 'website'
 
-        print(f"  Scraper Web {url[:50]}: raw_emails={emails}, result={result}")
+            print(f"  Scraper Web {domain}: found_emails={found_emails}, filtered={filtered}")
+        else:
+            print(f"  Scraper Web {domain}: no data returned")
+
         return result
 
     except Exception as e:
