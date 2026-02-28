@@ -1565,12 +1565,12 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                   f"fb={'yes' if local.get('facebook_url') else 'no'}, "
                                   f"web={'yes' if local.get('website_url') else 'no'}")
 
-                    # Step 2: CM API fallback (only if NOT found in local table at all)
+                    # Step 2: CM API fallback (if no contact info from local table)
                     has_any_local = (curator_info.get('email') or
                                     curator_info.get('instagram_url') or
                                     curator_info.get('facebook_url') or
                                     curator_info.get('website_url'))
-                    if cm_cid and not has_any_local and local is None:
+                    if cm_cid and not has_any_local:
                         contact = _fetch_curator_contact(token, cm_cid)
                         if contact:
                             curator_info.update(contact)
