@@ -334,6 +334,12 @@ function startSSE(jobId) {
     updateEnrichmentProgress('emails', data.progress);
   });
 
+  eventSource.addEventListener('enrichment_progress', (e) => {
+    const data = JSON.parse(e.data);
+    const msg = `Batch ${data.batch}/${data.total_batches} — ${data.curators_found} curators found`;
+    updateEnrichmentProgress('emails', msg);
+  });
+
   eventSource.addEventListener('complete', () => {
     sseComplete = true;
     const enrichEl = $('#enrichment-status');
