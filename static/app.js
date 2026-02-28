@@ -336,8 +336,9 @@ function startSSE(jobId) {
 
   eventSource.addEventListener('enrichment_progress', (e) => {
     const data = JSON.parse(e.data);
-    const msg = `Batch ${data.batch}/${data.total_batches} — ${data.curators_found} curators found`;
-    updateEnrichmentProgress('emails', msg);
+    const pct = data.total_batches ? Math.round(data.batch / data.total_batches * 100) : 0;
+    const msg = `${pct}% — ${data.curators_found} curators found`;
+    updateEnrichmentProgress('playlists', msg);
   });
 
   eventSource.addEventListener('complete', () => {

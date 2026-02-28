@@ -1427,6 +1427,11 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         curator_count = 0
         BATCH_SIZE = 10
 
+        _sse_publish(job_id, 'enrichment_progress', {
+            'batch': 0, 'total_batches': (total + BATCH_SIZE - 1) // BATCH_SIZE,
+            'curators_found': 0, 'phase': 'playlists',
+        })
+
         for batch_start in range(0, total, BATCH_SIZE):
             batch = sorted_matches[batch_start:batch_start + BATCH_SIZE]
             batch_playlists = []
