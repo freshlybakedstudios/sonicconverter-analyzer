@@ -1441,13 +1441,18 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 idx = batch_start + idx_in_batch
                 isrc = m.get('isrc') or ''
                 match_key = str(m.get('artist_id', m.get('name', '')))
+                artist_name = m.get('name', '?')
+                tier = m.get('tier', '?')
+                print(f"Enrichment [{job_id[:8]}]: [{idx+1}/{total}] {artist_name} (tier={tier}, key={match_key}, isrc={isrc[:12] if isrc else 'none'})")
                 if not isrc:
+                    print(f"Enrichment [{job_id[:8]}]:   -> SKIP (no isrc)")
                     job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
                     continue
 
                 try:
                     cm_track_id = _resolve_isrc_to_cm_track_id(token, isrc)
                     if not cm_track_id:
+                        print(f"Enrichment [{job_id[:8]}]:   -> SKIP (no cm_track_id for {isrc})")
                         job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
                         continue
 
@@ -1470,6 +1475,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     except Exception as e:
                         print(f"Enrichment [{job_id[:8]}]: Credits failed for {isrc}: {e}")
 
+                    print(f"Enrichment [{job_id[:8]}]:   -> {len(playlists) if playlists else 0} playlists for {artist_name}")
                     if playlists:
                         similarity = m.get('similarity', 0)
                         conf_boost = 0.5 if match_key in confidence_map else 0.0
