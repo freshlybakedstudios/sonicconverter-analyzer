@@ -1644,7 +1644,14 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 except Exception as e:
                     print(f"Enrichment [{job_id[:8]}]: Curator failed for {curator_info.get('name', '?')}: {e}")
 
-            print(f"Enrichment [{job_id[:8]}]: Batch {batch_start//BATCH_SIZE+1} done — {curator_count} curators so far")
+            batch_num = batch_start // BATCH_SIZE + 1
+            total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
+            print(f"Enrichment [{job_id[:8]}]: Batch {batch_num}/{total_batches} done — {curator_count} curators so far")
+            _sse_publish(job_id, 'enrichment_progress', {
+                'batch': batch_num,
+                'total_batches': total_batches,
+                'curators_found': curator_count,
+            })
 
         # Dedupe playlists by playlist_id, keeping highest-scored entry
         seen_pl_ids = {}
