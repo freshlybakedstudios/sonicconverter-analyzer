@@ -1543,6 +1543,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     cm_cid = curator_info.get('cm_curator_id')
 
                     # Step 1: Check our local curators table (143K+ records, instant)
+                    local = None
                     if cm_cid:
                         local = _lookup_curator_local(cm_cid)
                         if local:
@@ -1553,16 +1554,15 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                   f"fb={'yes' if local.get('facebook_url') else 'no'}, "
                                   f"web={'yes' if local.get('website_url') else 'no'}")
 
-                    # Step 2: CM API fallback (only if local didn't have contact info)
+                    # Step 2: CM API fallback (only if NOT found in local table at all)
                     has_any_local = (curator_info.get('email') or
                                     curator_info.get('instagram_url') or
                                     curator_info.get('facebook_url') or
                                     curator_info.get('website_url'))
-                    if cm_cid and not has_any_local:
+                    if cm_cid and not has_any_local and local is None:
                         contact = _fetch_curator_contact(token, cm_cid)
                         if contact:
                             curator_info.update(contact)
-                            # Upsert to local curators table for next time
                             _upsert_curator(cm_cid, contact)
                             print(f"Enrichment [{job_id[:8]}]: CM API curator {cm_cid} ({curator_info['name']}): "
                                   f"email={'yes' if contact.get('email') else 'no'}, "
