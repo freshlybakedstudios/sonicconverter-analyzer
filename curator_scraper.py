@@ -69,6 +69,7 @@ def _scrape_instagram(username: str) -> dict:
             timeout=15,
         )
         if resp.status_code != 200:
+            print(f"  Scraper IG @{username}: HTTP {resp.status_code}")
             return {}
 
         data = resp.json()
@@ -97,10 +98,11 @@ def _scrape_instagram(username: str) -> dict:
         if fb:
             result['facebook_url'] = fb
 
+        print(f"  Scraper IG @{username}: email={email or 'none'}, bio_emails={bio_emails}, ext_url={ext_url or 'none'}, keys={list(data.keys())[:10]}")
         return result
 
     except Exception as e:
-        logger.debug(f"Instagram scrape failed for {username}: {e}")
+        print(f"  Scraper IG @{username} FAILED: {e}")
         return {}
 
 
@@ -143,10 +145,11 @@ def _scrape_facebook(page_url: str) -> dict:
         if website:
             result['website'] = website
 
+        print(f"  Scraper FB {page_url[:50]}: email={email or 'none'}, about_emails={about_emails}, keys={list(data.keys())[:10]}")
         return result
 
     except Exception as e:
-        logger.debug(f"Facebook scrape failed for {page_url}: {e}")
+        print(f"  Scraper FB {page_url[:50]} FAILED: {e}")
         return {}
 
 
@@ -181,10 +184,11 @@ def _scrape_website(url: str) -> dict:
                 result['email'] = filtered[0]
                 result['email_source'] = 'website'
 
+        print(f"  Scraper Web {url[:50]}: raw_emails={emails}, result={result}")
         return result
 
     except Exception as e:
-        logger.debug(f"Website scrape failed for {url}: {e}")
+        print(f"  Scraper Web {url[:50]} FAILED: {e}")
         return {}
 
 
