@@ -14,7 +14,13 @@ class GenreAwareEmotionDetector:
 
     GENRE_GROUPS = {
         'bass_heavy': ['hip-hop', 'electronic', 'reggae', 'latin'],
-        'energy_focused': ['rock', 'punk', 'metal'],
+        'extreme_metal': ['black metal', 'death metal', 'brutal death metal',
+                          'melodic death metal', 'technical death metal',
+                          'deathcore', 'goregrind', 'grindcore', 'doom metal',
+                          'sludge metal', 'thrash metal', 'black', 'death',
+                          'brutal', 'doom', 'sludge', 'thrash', 'grind'],
+        'energy_focused': ['rock', 'punk', 'metal', 'metalcore', 'hardcore',
+                           'power metal', 'progressive metal', 'nu metal'],
         'balanced': ['pop', 'r&b', 'country', 'indie'],
         'soft': ['folk', 'jazz', 'classical', 'ambient', 'singer-songwriter', 'gospel', 'world'],
     }
@@ -40,6 +46,51 @@ class GenreAwareEmotionDetector:
             'compression_amount': ('gt', 0.75, 0.15),
             'onset_rate': ('gt', 3.5, 0.15),
             'brightness': ('gt', 2500, 0.1),
+        },
+    }
+
+    EXTREME_METAL_EMOTIONS = {
+        'power': {
+            'lufs_integrated': ('gt', -16, 0.25),
+            'bass_ratio': ('gt', 0.06, 0.2),
+            'energy': ('gt', 0.15, 0.3),
+            'compression_amount': ('gt', 0.5, 0.15),
+            'brightness': ('gt', 1800, 0.1),
+        },
+        'aggressive': {
+            'energy': ('gt', 0.12, 0.3),
+            'lufs_integrated': ('gt', -18, 0.2),
+            'dissonance': ('gt', 0.03, 0.25),
+            'brightness': ('gt', 1500, 0.15),
+            'onset_rate': ('gt', 2, 0.1),
+        },
+        'intense': {
+            'energy': ('gt', 0.15, 0.3),
+            'spectral_complexity': ('gt', 0.04, 0.25),
+            'lufs_integrated': ('gt', -17, 0.2),
+            'compression_amount': ('gt', 0.5, 0.15),
+            'onset_rate': ('gt', 2.5, 0.1),
+        },
+        'dark': {
+            'brightness': ('lt', 2800, 0.3),
+            'bass_ratio': ('gt', 0.06, 0.25),
+            'energy': ('gt', 0.1, 0.2),
+            'lufs_integrated': ('gt', -20, 0.15),
+            'air_ratio': ('lt', 0.15, 0.1),
+        },
+        'brooding': {
+            'energy': ('range', (0.1, 0.7), 0.25),
+            'brightness': ('lt', 2500, 0.2),
+            'bass_ratio': ('gt', 0.08, 0.2),
+            'dissonance': ('gt', 0.03, 0.15),
+            'spectral_complexity': ('gt', 0.03, 0.1),
+        },
+        'tension': {
+            'dissonance': ('gt', 0.04, 0.3),
+            'spectral_complexity': ('gt', 0.04, 0.25),
+            'compression_amount': ('gt', 0.4, 0.15),
+            'onset_rate': ('gt', 2, 0.15),
+            'brightness': ('gt', 1500, 0.1),
         },
     }
 
@@ -229,6 +280,8 @@ class GenreAwareEmotionDetector:
         group = self.get_genre_group(genre_hint)
         if group == 'bass_heavy':
             genre_emotions = self.BASS_HEAVY_EMOTIONS
+        elif group == 'extreme_metal':
+            genre_emotions = self.EXTREME_METAL_EMOTIONS
         elif group == 'energy_focused':
             genre_emotions = self.ENERGY_FOCUSED_EMOTIONS
         elif group == 'soft':
