@@ -1570,7 +1570,28 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                   f"fb={'yes' if contact.get('facebook_url') else 'no'}, "
                                   f"web={'yes' if contact.get('website_url') else 'no'}")
 
-                    # Step 3: Scraper fallback (IG → FB → website chain)
+                    # Step 3: Check name-based cache (for curators without CM ID)
+                    if not curator_info.get('email') and not cm_cid:
+                        try:
+                            supa_url = os.getenv('SUPABASE_URL')
+                            supa_key = os.getenv('SUPABASE_SERVICE_KEY')
+                            if supa_url and supa_key:
+                                cache_resp = requests.get(
+                                    f"{supa_url}/rest/v1/curator_contacts_cache"
+                                    f"?curator_key=eq.{requests.utils.quote(curator_info.get('name', ''))}",
+                                    headers={'apikey': supa_key, 'Authorization': f'Bearer {supa_key}'},
+                                    timeout=10,
+                                )
+                                if cache_resp.status_code == 200 and cache_resp.json():
+                                    cached = json.loads(cache_resp.json()[0].get('contact_data', '{}'))
+                                    if cached.get('email'):
+                                        curator_info['email'] = cached['email']
+                                        curator_info['email_source'] = cached.get('email_source', 'cached')
+                                        print(f"Enrichment [{job_id[:8]}]: Cache hit for '{curator_info['name']}': {cached['email']}")
+                        except Exception:
+                            pass
+
+                    # Step 4: Scraper fallback (IG → FB → website chain)
                     if not curator_info.get('email'):
                         ig = curator_info.get('instagram_url', '')
                         fb = curator_info.get('facebook_url', '')
@@ -1592,6 +1613,9 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                     if cm_cid:
                                         _update_curator_cache(cm_cid, curator_info)
                                         _upsert_curator(cm_cid, curator_info)
+                                    else:
+                                        # No CM ID — store by name so we don't re-scrape
+                                        _update_curator_cache(curator_info.get('name', 'unknown'), curator_info)
                                 else:
                                     print(f"Enrichment [{job_id[:8]}]: Scraper no email for '{curator_info['name']}'")
                             except ImportError:
