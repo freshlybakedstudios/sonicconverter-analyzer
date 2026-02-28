@@ -282,13 +282,21 @@ class GenreAwareEmotionDetector:
 
         all_emotions = {**genre_emotions, **self.UNIVERSAL_EMOTIONS}
 
+        # For extreme metal, suppress soft emotions so they can't outscore
+        # aggression/tension. These emotions exist in the cache but shouldn't
+        # dominate for extreme genres.
+        _SOFT_EMOTIONS = {'tenderness', 'joyfulness', 'peacefulness', 'nostalgia', 'wonder'}
+
         scores = {}
         for emotion, rules in all_emotions.items():
             total = 0.0
             for feat_name, (comp, thresh, weight) in rules.items():
                 val = features.get(feat_name, 0)
                 total += self._calc_feature_score(val, comp, thresh) * weight
-            scores[emotion] = min(1.0, total)
+            score = min(1.0, total)
+            if group == 'extreme_metal' and emotion in _SOFT_EMOTIONS:
+                score *= 0.4  # Cap soft emotions at ~40% of raw score
+            scores[emotion] = score
 
         sorted_emotions = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         top_4 = sorted_emotions[:4]
