@@ -123,8 +123,12 @@ app.add_middleware(
     allow_origins=[
         "https://freshlybakedstudios.com",
         "https://www.freshlybakedstudios.com",
+        "https://analyze.freshlybakedstudios.com",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        "http://localhost:3000",
     ],
     allow_origin_regex=r"https://.*\.up\.railway\.app",
     allow_credentials=True,
@@ -2198,6 +2202,118 @@ async def analyze_url(
     )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Deal Calculator: artist lookup endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/api/deal/lookup")
+async def deal_lookup(
+    spotify_url: str = Form(...),
+):
+    """
+    Look up an artist by Spotify URL and return metrics, peer comparison,
+    and sonic gap data for the deal calculator frontend.
+    """
+    if not spotify_url or 'spotify.com' not in spotify_url:
+        raise HTTPException(400, "Valid Spotify URL required")
+
+    # 1. Look up artist via existing function (upserts fire automatically)
+    artist_data = lookup_artist_by_spotify(spotify_url)
+    if not artist_data:
+        raise HTTPException(404, "Artist not found on Spotify/Chartmetric")
+
+    listeners = artist_data.get('listeners', 0) or 0
+    followers = artist_data.get('followers', 0) or 0
+    tier = artist_data.get('tier') or _listeners_to_tier(int(listeners))
+    conversion_rate = artist_data.get('conversion_rate', 0) or 0
+
+    # 2. Peer comparison: filter GEMS cache by tier
+    peer_comparison = None
+    if matcher.cache and matcher._tiers:
+        tier_conversion_rates = []
+        for artist_id, tier_data in matcher._tiers.items():
+            a_listeners = tier_data.get('listeners', 0) or 0
+            a_tier = _listeners_to_tier(int(a_listeners))
+            if a_tier == tier:
+                a_followers = tier_data.get('followers', 0) or 0
+                if a_listeners > 0:
+                    cr = (a_followers * 0.1) / (a_listeners * 4.3) * 100
+                    if 0 < cr < 100:
+                        tier_conversion_rates.append(cr)
+
+        if tier_conversion_rates:
+            tier_conversion_rates.sort()
+            n = len(tier_conversion_rates)
+            peer_comparison = {
+                'median_conversion': tier_conversion_rates[n // 2],
+                'p25_conversion': tier_conversion_rates[n // 4],
+                'p75_conversion': tier_conversion_rates[3 * n // 4],
+                'tier_count': n,
+            }
+
+    # 3. Sonic gap: check GEMS cache for top track ISRC
+    sonic_gap = None
+    top_track = artist_data.get('top_track')
+    if top_track and top_track.get('isrc'):
+        isrc = top_track['isrc']
+        gems_features = _lookup_gems_features(isrc)
+        if gems_features:
+            # Get high-converter GEMS data for consensus
+            high_converter_gems = []
+            if matcher._gems_list:
+                for row in matcher._gems_list:
+                    row_cr = row.get('conversion_rate', 0)
+                    if row_cr and float(row_cr) > (conversion_rate * 1.5):
+                        high_converter_gems.append(row)
+                    if len(high_converter_gems) >= 50:
+                        break
+
+            if high_converter_gems:
+                consensus = _find_consensus(gems_features, high_converter_gems)
+                sonic_gap = [
+                    {
+                        'feature': c['feature'],
+                        'direction': c['direction'],
+                        'description': f"Consider {'increasing' if c['direction'] == 'higher' else 'decreasing'} {c['feature'].replace('_', ' ')}"
+                    }
+                    for c in consensus[:3]
+                ]
+
+    # 4. Build metrics object for risk assessment
+    meta = artist_data.get('_meta', {})
+    metrics = {
+        'career_stage': artist_data.get('career_stage'),
+        'spotify_monthly_listeners': listeners,
+        'instagram_followers': meta.get('instagram_followers'),
+        'instagram_engagement_rate': meta.get('instagram_engagement_rate'),
+        'tiktok_followers': meta.get('tiktok_followers'),
+        'youtube_subscribers': meta.get('youtube_subscribers'),
+        'shazam_count': meta.get('shazam_count'),
+        'spotify_playlist_reach': meta.get('spotify_playlist_reach'),
+        'spotify_popularity': meta.get('spotify_popularity'),
+    }
+
+    # Send push notification
+    send_pushover_notification(
+        "Deal Calculator Lookup",
+        f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners"
+    )
+
+    return {
+        'name': artist_data.get('name', ''),
+        'genres': artist_data.get('genres', ''),
+        'career_stage': artist_data.get('career_stage', ''),
+        'listeners': listeners,
+        'followers': followers,
+        'tier': tier,
+        'conversion_rate': conversion_rate,
+        'top_track': top_track,
+        'peer_comparison': peer_comparison,
+        'sonic_gap': sonic_gap,
+        'metrics': metrics,
+    }
 
 
 # ---------------------------------------------------------------------------
