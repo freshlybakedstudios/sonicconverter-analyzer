@@ -915,6 +915,81 @@ def lookup_artist_by_spotify(spotify_url: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# Historical listener data from Chartmetric
+# ---------------------------------------------------------------------------
+CM_STAT_SPOTIFY_URL = "https://api.chartmetric.com/api/artist/{artist_id}/stat/spotify"
+
+
+def fetch_listener_history(token: str, cm_id: int, days: int = 365) -> list[dict]:
+    """
+    Fetch monthly listener history from Chartmetric stat/spotify endpoint.
+    Returns list of {date: "YYYY-MM-DD", listeners: number} sorted ascending.
+    Fetches in 90-day chunks (CM API limit), samples one point per month.
+    """
+    until_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    since_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d')
+
+    all_points = []
+    seen_dates = set()
+
+    # Fetch in 90-day chunks
+    chunk_start = datetime.strptime(since_date, '%Y-%m-%d')
+    end_date = datetime.strptime(until_date, '%Y-%m-%d')
+
+    while chunk_start < end_date:
+        chunk_end = min(chunk_start + timedelta(days=90), end_date)
+
+        def _call(s=chunk_start.strftime('%Y-%m-%d'), e=chunk_end.strftime('%Y-%m-%d')):
+            _rate_wait()
+            resp = requests.get(
+                CM_STAT_SPOTIFY_URL.format(artist_id=cm_id),
+                params={'since': s, 'until': e},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            return data.get('obj', {}).get('listeners', [])
+
+        try:
+            chunk_data = _retry(_call) or []
+            for point in chunk_data:
+                ts = point.get('timestp', '')
+                val = point.get('value', 0)
+                date_key = ts[:10] if ts else ''
+                if date_key and date_key not in seen_dates and val and val > 0:
+                    seen_dates.add(date_key)
+                    all_points.append({'date': date_key, 'listeners': int(val)})
+        except Exception as e:
+            logger.warning(f"CM history chunk failed for {cm_id}: {e}")
+
+        chunk_start = chunk_end
+        time.sleep(1.1)  # rate limit between chunks
+
+    if not all_points:
+        return []
+
+    # Sort by date ascending
+    all_points.sort(key=lambda p: p['date'])
+
+    # Sample one point per month (first of each month wins)
+    monthly = []
+    last_month = ''
+    for p in all_points:
+        month_key = p['date'][:7]  # YYYY-MM
+        if month_key != last_month:
+            monthly.append(p)
+            last_month = month_key
+
+    # Always include the last point
+    if all_points and (not monthly or monthly[-1] != all_points[-1]):
+        monthly.append(all_points[-1])
+
+    return monthly
+
+
+# ---------------------------------------------------------------------------
 # ISRC → CM Track ID resolution with Supabase caching
 # ---------------------------------------------------------------------------
 CM_SEARCH_TRACKS_URL = "https://api.chartmetric.com/api/search"
