@@ -2366,11 +2366,13 @@ async def deal_lookup(
                             for c in consensus[:5]
                         ]
 
-                # Conversion opportunity from sonically matched artists
+                # Conversion opportunity from sonically matched artists IN THE SAME TIER
                 match_conversions = [
                     m['conversion_rate'] for m in all_matches
                     if m.get('conversion_rate') is not None and m['conversion_rate'] > 0
+                    and m.get('tier') == tier
                 ]
+                print(f"Deal lookup: {len(match_conversions)} same-tier sonic matches with conversion data (tier={tier})")
                 if match_conversions and conversion_rate and conversion_rate > 0 and listeners > 0:
                     sorted_conv = sorted(match_conversions)
                     peer_top_25 = sorted_conv[int(len(sorted_conv) * 0.75)]
