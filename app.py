@@ -2266,7 +2266,9 @@ async def deal_lookup(
         # Try cached features first
         features = _lookup_gems_features(isrc)
         if features:
-            logger.info(f"Deal lookup: using cached GEMS features for ISRC {isrc}")
+            print(f"Deal lookup: using cached GEMS features for ISRC {isrc}")
+        else:
+            print(f"Deal lookup: no GEMS cache for ISRC {isrc}")
 
     # If no cached features and we have a track Spotify URL, try preview analysis
     if not features and top_track and top_track.get('spotify_url'):
@@ -2278,6 +2280,7 @@ async def deal_lookup(
         if track_id:
             sp_token_id = os.getenv('SPOTIFY_CLIENT_ID')
             sp_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
+            print(f"Deal lookup: Spotify creds present: client_id={'yes' if sp_token_id else 'NO'}, secret={'yes' if sp_secret else 'NO'}")
             if sp_token_id and sp_secret:
                 try:
                     auth_resp = requests.post(
@@ -2286,6 +2289,7 @@ async def deal_lookup(
                         auth=(sp_token_id, sp_secret),
                         timeout=10,
                     )
+                    print(f"Deal lookup: Spotify auth status {auth_resp.status_code}")
                     if auth_resp.status_code == 200:
                         sp_bearer = auth_resp.json()['access_token']
                         track_resp = requests.get(
@@ -2293,11 +2297,14 @@ async def deal_lookup(
                             headers={'Authorization': f'Bearer {sp_bearer}'},
                             timeout=10,
                         )
+                        print(f"Deal lookup: Spotify track status {track_resp.status_code}")
                         if track_resp.status_code == 200:
                             preview_url = track_resp.json().get('preview_url')
+                            print(f"Deal lookup: preview_url={'yes' if preview_url else 'NULL'}")
                             if preview_url:
                                 import tempfile
                                 preview_resp = requests.get(preview_url, timeout=30)
+                                print(f"Deal lookup: preview download {preview_resp.status_code}, {len(preview_resp.content)} bytes")
                                 if preview_resp.status_code == 200 and len(preview_resp.content) > 1000:
                                     tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
                                     tmp.write(preview_resp.content)
@@ -2306,18 +2313,21 @@ async def deal_lookup(
                                     try:
                                         genres_str = artist_data.get('genres', '')
                                         features = extract_features(tmp.name, genre_hint=genres_str)
-                                        logger.info(f"Deal lookup: extracted features from Spotify preview for {track_id}")
+                                        print(f"Deal lookup: extracted features from Spotify preview for {track_id}")
                                         # Cache the features for next time
                                         if top_track.get('isrc'):
                                             _upsert_gems_features(top_track['isrc'], features, genre=genres_str)
                                     except Exception as e:
-                                        logger.error(f"Deal lookup: feature extraction failed: {e}")
+                                        print(f"Deal lookup: feature extraction failed: {e}")
                                     finally:
                                         os.unlink(tmp.name)
                 except Exception as e:
-                    logger.error(f"Deal lookup: Spotify preview analysis failed: {e}")
+                    print(f"Deal lookup: Spotify preview analysis failed: {e}")
+        else:
+            print(f"Deal lookup: could not extract track_id from {track_url}")
 
     # If we have features, run sonic matching to get conversion opportunity + gap
+    print(f"Deal lookup: features={'yes' if features else 'NO'}, gems_list={len(matcher._gems_list) if matcher._gems_list else 0}")
     if features and matcher._gems_list:
         genres_str = artist_data.get('genres', '')
 
@@ -2334,12 +2344,12 @@ async def deal_lookup(
                     features[f'emotion_{i+1}'] = 'neutral'
                     features[f'emotion_{i+1}_score'] = 0.0
         except Exception as e:
-            logger.warning(f"Deal lookup: emotion detection failed: {e}")
+            print(f"Deal lookup: emotion detection failed: {e}")
 
         # Match against GEMS universe
         try:
             all_matches = matcher.find_matches(features, genre_hint=genres_str, top_n=5000, threshold=0.55)
-            logger.info(f"Deal lookup: {len(all_matches)} sonic matches found")
+            print(f"Deal lookup: {len(all_matches)} sonic matches found")
 
             if all_matches:
                 # Sonic gap: consensus vs high-converting matches
@@ -2387,11 +2397,12 @@ async def deal_lookup(
                             'target_conversion': round(peer_top_25, 2),
                             'sonic_peer_count': len(match_conversions),
                         }
-                        logger.info(f"Deal lookup: sonic conversion opportunity — "
-                                    f"current {conversion_rate:.2f}% → target {peer_top_25:.2f}%, "
-                                    f"+{additional_fans} fans, +${additional_revenue}")
+                        print(f"Deal lookup: sonic conversion opportunity — "
+                              f"current {conversion_rate:.2f}% → target {peer_top_25:.2f}%, "
+                              f"+{additional_fans} fans, +${additional_revenue}")
         except Exception as e:
-            logger.error(f"Deal lookup: sonic matching failed: {e}")
+            print(f"Deal lookup: sonic matching failed: {e}")
+            import traceback; traceback.print_exc()
 
     # Fallback: tier-based conversion opportunity if sonic analysis didn't produce one
     if not conversion_opportunity and peer_comparison and conversion_rate and conversion_rate > 0 and listeners > 0:
