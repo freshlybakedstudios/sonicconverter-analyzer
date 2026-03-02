@@ -255,8 +255,27 @@ class TrackMatcher:
         self._tiers = self.cache.get('tiers', {})
         self._emotion_index = self.cache.get('emotion_index', {})
 
+        # Enrich each GEMS row with conversion_rate from tier data
+        # so sonic_gap filtering (row_cr > threshold) actually works
+        enriched = 0
+        for gem in self._gems_list:
+            isrc = gem.get('isrc')
+            if not isrc:
+                continue
+            track_data = self._tracks.get(isrc, {})
+            artist_id = str(track_data.get('artist_id', ''))
+            if not artist_id:
+                continue
+            tier_data = self._tiers.get(artist_id, {})
+            a_listeners = _float(tier_data.get('listeners'), 0)
+            a_followers = _float(tier_data.get('followers'), 0)
+            if a_listeners > 0 and a_followers > 0:
+                cr = round((a_followers * 0.1) / (a_listeners * 4.3) * 100, 2)
+                gem['conversion_rate'] = cr
+                enriched += 1
+
         stats = self.cache.get('stats', {})
-        print(f"  Loaded in {elapsed:.1f}s — {stats.get('total_gems', 0):,} GEMS records")
+        print(f"  Loaded in {elapsed:.1f}s — {stats.get('total_gems', 0):,} GEMS records, {enriched:,} enriched with conversion_rate")
 
     def _build_profile(self, row: Dict) -> Dict:
         """Convert a GEMS cache row into a normalized profile dict."""
