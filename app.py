@@ -2428,6 +2428,26 @@ async def deal_lookup(
 
     catalog_size = artist_data.get('catalog_size', 20)
 
+    # 4b. Cross-platform revenue multiplier (ported from find-deal-ready.js)
+    platform_multiplier = 1.0
+    if stats:
+        if int(float(stats.get('num_am_playlists') or 0)) > 0:
+            platform_multiplier += 0.45   # Apple Music ~15% market
+        if int(float(stats.get('num_az_playlists') or 0)) > 0:
+            platform_multiplier += 0.35   # Amazon ~13% market
+        if int(float(stats.get('youtube_monthly_video_views') or 0)) > 10000:
+            platform_multiplier += 0.25   # YouTube Music ~10%
+        if int(float(stats.get('pandora_listeners_28_day') or 0)) > 0:
+            platform_multiplier += 0.15   # Pandora, mostly US
+        if int(float(stats.get('deezer_fans') or 0)) > 0:
+            platform_multiplier += 0.10   # Deezer ~2% market
+        if int(float(stats.get('soundcloud_plays') or 0)) > 0:
+            platform_multiplier += 0.08   # SoundCloud, small
+        if int(float(stats.get('shazam_count') or 0)) > 500:
+            platform_multiplier += 0.05   # Discoverability signal
+    platform_multiplier = min(platform_multiplier, 3.0)
+    print(f"Deal lookup: platform multiplier = {platform_multiplier:.2f}x for {artist_data.get('name')}")
+
     # 5. Fetch historical listener data from Chartmetric for growth projections
     listener_history = []
     cm_id = artist_data.get('cm_id')
@@ -2463,6 +2483,7 @@ async def deal_lookup(
         'conversion_opportunity': conversion_opportunity,
         'metrics': metrics,
         'listener_history': listener_history,
+        'platform_multiplier': round(platform_multiplier, 2),
     }
 
 
