@@ -37,6 +37,7 @@ from audio_analyzer import extract_features
 from chartmetric_lookup import (
     lookup_artist_by_spotify,
     get_cm_token,
+    fetch_listener_history,
     _resolve_isrc_to_cm_track_id,
     _fetch_track_playlists_structured,
     _fetch_related_artists,
@@ -2427,6 +2428,20 @@ async def deal_lookup(
 
     catalog_size = artist_data.get('catalog_size', 20)
 
+    # 5. Fetch historical listener data from Chartmetric for growth projections
+    listener_history = []
+    cm_id = artist_data.get('cm_id')
+    if cm_id:
+        try:
+            refresh_token = os.getenv('REFRESH_TOKEN')
+            if refresh_token:
+                token = get_cm_token(refresh_token)
+                if token:
+                    listener_history = fetch_listener_history(token, cm_id)
+                    print(f"Deal lookup: {len(listener_history)} historical data points for {artist_data.get('name')}")
+        except Exception as e:
+            print(f"Deal lookup: listener history fetch failed: {e}")
+
     # Send push notification
     send_pushover_notification(
         "Deal Calculator Lookup",
@@ -2447,6 +2462,7 @@ async def deal_lookup(
         'sonic_gap': sonic_gap,
         'conversion_opportunity': conversion_opportunity,
         'metrics': metrics,
+        'listener_history': listener_history,
     }
 
 
