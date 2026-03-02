@@ -2234,10 +2234,10 @@ async def deal_lookup(
     if matcher.cache and matcher._tiers:
         tier_conversion_rates = []
         for artist_id, tier_data in matcher._tiers.items():
-            a_listeners = tier_data.get('listeners', 0) or 0
-            a_tier = _listeners_to_tier(int(a_listeners))
+            a_listeners = int(tier_data.get('listeners', 0) or 0)
+            a_tier = _listeners_to_tier(a_listeners)
             if a_tier == tier:
-                a_followers = tier_data.get('followers', 0) or 0
+                a_followers = int(tier_data.get('followers', 0) or 0)
                 if a_listeners > 0:
                     cr = (a_followers * 0.1) / (a_listeners * 4.3) * 100
                     if 0 < cr < 100:
