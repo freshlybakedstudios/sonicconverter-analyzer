@@ -2270,61 +2270,51 @@ async def deal_lookup(
         else:
             print(f"Deal lookup: no GEMS cache for ISRC {isrc}")
 
-    # If no cached features and we have a track Spotify URL, try preview analysis
+    # If no cached features, use Mac worker to play + record via Spotify desktop
     if not features and top_track and top_track.get('spotify_url'):
         track_url = top_track['spotify_url']
-        track_id = None
-        if 'track/' in track_url:
-            track_id = track_url.split('track/')[1].split('?')[0].split('/')[0]
+        print(f"Deal lookup: no cached features, creating job for Mac worker — {track_url}")
 
-        if track_id:
-            sp_token_id = os.getenv('SPOTIFY_CLIENT_ID')
-            sp_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
-            print(f"Deal lookup: Spotify creds present: client_id={'yes' if sp_token_id else 'NO'}, secret={'yes' if sp_secret else 'NO'}")
-            if sp_token_id and sp_secret:
+        try:
+            # Create a Supabase job so Mac worker picks it up
+            deal_job_id = job_mgr.create_job('deal-lookup', {}, [])
+            job_mgr.update_job(deal_job_id, status='pending_features', spotify_url=track_url)
+            print(f"Deal lookup: created job {deal_job_id}, waiting for Mac worker (up to 90s)...")
+
+            def _poll_deal_features():
+                if not job_mgr._supabase:
+                    return None
                 try:
-                    auth_resp = requests.post(
-                        'https://accounts.spotify.com/api/token',
-                        data={'grant_type': 'client_credentials'},
-                        auth=(sp_token_id, sp_secret),
-                        timeout=10,
-                    )
-                    print(f"Deal lookup: Spotify auth status {auth_resp.status_code}")
-                    if auth_resp.status_code == 200:
-                        sp_bearer = auth_resp.json()['access_token']
-                        track_resp = requests.get(
-                            f'https://api.spotify.com/v1/tracks/{track_id}',
-                            headers={'Authorization': f'Bearer {sp_bearer}'},
-                            timeout=10,
-                        )
-                        print(f"Deal lookup: Spotify track status {track_resp.status_code}")
-                        if track_resp.status_code == 200:
-                            preview_url = track_resp.json().get('preview_url')
-                            print(f"Deal lookup: preview_url={'yes' if preview_url else 'NULL'}")
-                            if preview_url:
-                                import tempfile
-                                preview_resp = requests.get(preview_url, timeout=30)
-                                print(f"Deal lookup: preview download {preview_resp.status_code}, {len(preview_resp.content)} bytes")
-                                if preview_resp.status_code == 200 and len(preview_resp.content) > 1000:
-                                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
-                                    tmp.write(preview_resp.content)
-                                    tmp.flush()
-                                    tmp.close()
-                                    try:
-                                        genres_str = artist_data.get('genres', '')
-                                        features = extract_features(tmp.name, genre_hint=genres_str)
-                                        print(f"Deal lookup: extracted features from Spotify preview for {track_id}")
-                                        # Cache the features for next time
-                                        if top_track.get('isrc'):
-                                            _upsert_gems_features(top_track['isrc'], features, genre=genres_str)
-                                    except Exception as e:
-                                        print(f"Deal lookup: feature extraction failed: {e}")
-                                    finally:
-                                        os.unlink(tmp.name)
+                    resp = job_mgr._supabase.table('analysis_jobs').select('status,features').eq('id', deal_job_id).execute()
+                    if resp.data:
+                        row = resp.data[0]
+                        if row.get('status') == 'features_ready':
+                            f = row.get('features', {})
+                            if isinstance(f, str):
+                                f = json.loads(f)
+                            return f
                 except Exception as e:
-                    print(f"Deal lookup: Spotify preview analysis failed: {e}")
-        else:
-            print(f"Deal lookup: could not extract track_id from {track_url}")
+                    print(f"Deal lookup: poll error: {e}")
+                return None
+
+            loop = asyncio.get_event_loop()
+            deadline = time.time() + 90
+            while time.time() < deadline:
+                result = await loop.run_in_executor(None, _poll_deal_features)
+                if result:
+                    features = result
+                    print(f"Deal lookup: features received from Mac worker")
+                    # Cache for next time
+                    if top_track.get('isrc'):
+                        genres_str = artist_data.get('genres', '')
+                        _upsert_gems_features(top_track['isrc'], features, genre=genres_str)
+                    break
+                await asyncio.sleep(3)
+
+            if not features:
+                print(f"Deal lookup: Mac worker timed out after 90s")
+        except Exception as e:
+            print(f"Deal lookup: Mac worker job failed: {e}")
 
     # If we have features, run sonic matching to get conversion opportunity + gap
     print(f"Deal lookup: features={'yes' if features else 'NO'}, gems_list={len(matcher._gems_list) if matcher._gems_list else 0}")
