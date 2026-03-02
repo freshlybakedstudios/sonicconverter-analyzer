@@ -2253,47 +2253,176 @@ async def deal_lookup(
                 'tier_count': n,
             }
 
-    # 3. Sonic gap: check GEMS cache for top track ISRC
+    # 3. Sonic analysis: run the same pipeline as /api/analyze-url
+    #    Get features (from GEMS cache or Spotify preview), match against GEMS universe,
+    #    compute sonic gap + conversion opportunity from matched higher-converting artists.
     sonic_gap = None
+    conversion_opportunity = None
     top_track = artist_data.get('top_track')
+    features = None
+
     if top_track and top_track.get('isrc'):
         isrc = top_track['isrc']
-        gems_features = _lookup_gems_features(isrc)
-        if gems_features:
-            # Get high-converter GEMS data for consensus
-            high_converter_gems = []
-            if matcher._gems_list:
-                for row in matcher._gems_list:
-                    row_cr = row.get('conversion_rate', 0)
-                    if row_cr and float(row_cr) > (conversion_rate * 1.5):
-                        high_converter_gems.append(row)
-                    if len(high_converter_gems) >= 50:
-                        break
+        # Try cached features first
+        features = _lookup_gems_features(isrc)
+        if features:
+            logger.info(f"Deal lookup: using cached GEMS features for ISRC {isrc}")
 
-            if high_converter_gems:
-                consensus = _find_consensus(gems_features, high_converter_gems)
-                sonic_gap = [
-                    {
-                        'feature': c['feature'],
-                        'direction': c['direction'],
-                        'description': f"Consider {'increasing' if c['direction'] == 'higher' else 'decreasing'} {c['feature'].replace('_', ' ')}"
-                    }
-                    for c in consensus[:3]
+    # If no cached features and we have a track Spotify URL, try preview analysis
+    if not features and top_track and top_track.get('spotify_url'):
+        track_url = top_track['spotify_url']
+        track_id = None
+        if 'track/' in track_url:
+            track_id = track_url.split('track/')[1].split('?')[0].split('/')[0]
+
+        if track_id:
+            sp_token_id = os.getenv('SPOTIFY_CLIENT_ID')
+            sp_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
+            if sp_token_id and sp_secret:
+                try:
+                    auth_resp = requests.post(
+                        'https://accounts.spotify.com/api/token',
+                        data={'grant_type': 'client_credentials'},
+                        auth=(sp_token_id, sp_secret),
+                        timeout=10,
+                    )
+                    if auth_resp.status_code == 200:
+                        sp_bearer = auth_resp.json()['access_token']
+                        track_resp = requests.get(
+                            f'https://api.spotify.com/v1/tracks/{track_id}',
+                            headers={'Authorization': f'Bearer {sp_bearer}'},
+                            timeout=10,
+                        )
+                        if track_resp.status_code == 200:
+                            preview_url = track_resp.json().get('preview_url')
+                            if preview_url:
+                                import tempfile
+                                preview_resp = requests.get(preview_url, timeout=30)
+                                if preview_resp.status_code == 200 and len(preview_resp.content) > 1000:
+                                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+                                    tmp.write(preview_resp.content)
+                                    tmp.flush()
+                                    tmp.close()
+                                    try:
+                                        genres_str = artist_data.get('genres', '')
+                                        features = extract_features(tmp.name, genre_hint=genres_str)
+                                        logger.info(f"Deal lookup: extracted features from Spotify preview for {track_id}")
+                                        # Cache the features for next time
+                                        if top_track.get('isrc'):
+                                            _upsert_gems_features(top_track['isrc'], features, genre=genres_str)
+                                    except Exception as e:
+                                        logger.error(f"Deal lookup: feature extraction failed: {e}")
+                                    finally:
+                                        os.unlink(tmp.name)
+                except Exception as e:
+                    logger.error(f"Deal lookup: Spotify preview analysis failed: {e}")
+
+    # If we have features, run sonic matching to get conversion opportunity + gap
+    if features and matcher._gems_list:
+        genres_str = artist_data.get('genres', '')
+
+        # Run emotion detection
+        try:
+            from audio_analyzer import _emotion_detector
+            emo = _emotion_detector.detect(features, genres_str)
+            top_emo = emo.get('emotions', [])
+            for i in range(4):
+                if i < len(top_emo):
+                    features[f'emotion_{i+1}'] = top_emo[i][0]
+                    features[f'emotion_{i+1}_score'] = top_emo[i][1]
+                else:
+                    features[f'emotion_{i+1}'] = 'neutral'
+                    features[f'emotion_{i+1}_score'] = 0.0
+        except Exception as e:
+            logger.warning(f"Deal lookup: emotion detection failed: {e}")
+
+        # Match against GEMS universe
+        try:
+            all_matches = matcher.find_matches(features, genre_hint=genres_str, top_n=5000, threshold=0.55)
+            logger.info(f"Deal lookup: {len(all_matches)} sonic matches found")
+
+            if all_matches:
+                # Sonic gap: consensus vs high-converting matches
+                high_converter_matches = [
+                    m for m in all_matches
+                    if m.get('conversion_rate') and float(m['conversion_rate']) > (conversion_rate * 1.2)
                 ]
+                if high_converter_matches:
+                    # Get GEMS rows for high converters
+                    high_converter_gems = []
+                    for m in high_converter_matches[:50]:
+                        isrc = m.get('isrc')
+                        if isrc and isrc in matcher._gems_by_isrc:
+                            high_converter_gems.append(matcher._gems_by_isrc[isrc])
+
+                    if high_converter_gems:
+                        consensus = _find_consensus(features, high_converter_gems)
+                        sonic_gap = [
+                            {
+                                'feature': c['feature'],
+                                'direction': c['direction'],
+                                'description': f"Consider {'increasing' if c['direction'] == 'higher' else 'decreasing'} {c['feature'].replace('_', ' ')}"
+                            }
+                            for c in consensus[:5]
+                        ]
+
+                # Conversion opportunity from sonically matched artists
+                match_conversions = [
+                    m['conversion_rate'] for m in all_matches
+                    if m.get('conversion_rate') is not None and m['conversion_rate'] > 0
+                ]
+                if match_conversions and conversion_rate and conversion_rate > 0 and listeners > 0:
+                    sorted_conv = sorted(match_conversions)
+                    peer_top_25 = sorted_conv[int(len(sorted_conv) * 0.75)]
+
+                    if peer_top_25 > conversion_rate:
+                        top25_followers_target = int(round((peer_top_25 / 100) * listeners * 4.3 / 0.1))
+                        current_followers = int(followers) if followers > 0 else 0
+                        additional_fans = max(int(round(top25_followers_target - current_followers)), 0)
+                        additional_revenue = additional_fans * 25  # same as /api/analyze
+
+                        conversion_opportunity = {
+                            'additional_fans': additional_fans,
+                            'additional_revenue': additional_revenue,
+                            'target_conversion': round(peer_top_25, 2),
+                            'sonic_peer_count': len(match_conversions),
+                        }
+                        logger.info(f"Deal lookup: sonic conversion opportunity — "
+                                    f"current {conversion_rate:.2f}% → target {peer_top_25:.2f}%, "
+                                    f"+{additional_fans} fans, +${additional_revenue}")
+        except Exception as e:
+            logger.error(f"Deal lookup: sonic matching failed: {e}")
+
+    # Fallback: tier-based conversion opportunity if sonic analysis didn't produce one
+    if not conversion_opportunity and peer_comparison and conversion_rate and conversion_rate > 0 and listeners > 0:
+        target_cr = peer_comparison['p75_conversion']
+        if target_cr > conversion_rate:
+            current_followers_equiv = conversion_rate * listeners * 4.3 / (0.1 * 100)
+            target_followers_equiv = target_cr * listeners * 4.3 / (0.1 * 100)
+            additional_fans = int(target_followers_equiv - current_followers_equiv)
+            additional_revenue = int(additional_fans * 5 * 12 * 4 / 1000)
+            conversion_opportunity = {
+                'additional_fans': additional_fans,
+                'additional_revenue': additional_revenue,
+                'target_conversion': round(target_cr, 2),
+            }
 
     # 4. Build metrics object for risk assessment
     meta = artist_data.get('_meta', {})
+    stats = meta.get('cm_statistics', {}) if isinstance(meta, dict) else {}
     metrics = {
         'career_stage': artist_data.get('career_stage'),
         'spotify_monthly_listeners': listeners,
-        'instagram_followers': meta.get('instagram_followers'),
-        'instagram_engagement_rate': meta.get('instagram_engagement_rate'),
-        'tiktok_followers': meta.get('tiktok_followers'),
-        'youtube_subscribers': meta.get('youtube_subscribers'),
-        'shazam_count': meta.get('shazam_count'),
-        'spotify_playlist_reach': meta.get('spotify_playlist_reach'),
-        'spotify_popularity': meta.get('spotify_popularity'),
+        'instagram_followers': stats.get('ins_followers'),
+        'instagram_engagement_rate': None,
+        'tiktok_followers': stats.get('tiktok_followers'),
+        'youtube_subscribers': stats.get('ycs_subscribers'),
+        'shazam_count': stats.get('shazam_count'),
+        'spotify_playlist_reach': stats.get('sp_playlist_total_reach'),
+        'spotify_popularity': stats.get('sp_popularity'),
     }
+
+    catalog_size = artist_data.get('catalog_size', 20)
 
     # Send push notification
     send_pushover_notification(
@@ -2309,9 +2438,11 @@ async def deal_lookup(
         'followers': followers,
         'tier': tier,
         'conversion_rate': conversion_rate,
+        'catalog_size': catalog_size,
         'top_track': top_track,
         'peer_comparison': peer_comparison,
         'sonic_gap': sonic_gap,
+        'conversion_opportunity': conversion_opportunity,
         'metrics': metrics,
     }
 

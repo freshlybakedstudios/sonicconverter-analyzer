@@ -409,6 +409,9 @@ def _fetch_top_track(token: str, cm_id: int, artist_name: str = None) -> dict | 
             if selected_release_date:
                 track['selected_release_date'] = selected_release_date
 
+            # Stash catalog size so caller can surface it
+            track['_catalog_size'] = total_available or len(all_tracks)
+
             # Fetch playlist details (always, same as discovery_events_work.py)
             if track_id:
                 try:
@@ -872,6 +875,9 @@ def lookup_artist_by_spotify(spotify_url: str) -> dict | None:
                 'spotify_url': track_spotify or '',
             }
 
+        # Catalog size from track pagination
+        catalog_size = (track_data or {}).get('_catalog_size', 20)
+
         result = {
             'cm_id': cm_id,
             'name': artist_name,
@@ -881,6 +887,7 @@ def lookup_artist_by_spotify(spotify_url: str) -> dict | None:
             'followers': followers,
             'tier': _listeners_to_tier(listeners),
             'conversion_rate': conversion_rate,
+            'catalog_size': catalog_size,
             'top_track': top_track_info,
             '_meta': meta,
             '_urls': artist_urls,
