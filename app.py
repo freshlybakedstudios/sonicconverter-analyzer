@@ -2488,6 +2488,178 @@ async def deal_lookup(
 
 
 # ---------------------------------------------------------------------------
+# Deal Calculator: lead capture
+# ---------------------------------------------------------------------------
+
+@app.post("/api/deal/lead")
+async def deal_lead_capture(data: dict):
+    """
+    Save contact info + optional artist data for lead tracking.
+    Fires a Pushover notification.
+    """
+    name = data.get('name', '').strip()
+    email = data.get('email', '').strip()
+    step = data.get('step', 'unknown')
+
+    if not email:
+        raise HTTPException(400, "Email required")
+
+    # Save to Supabase
+    if supabase:
+        try:
+            row = {
+                'name': name,
+                'email': email,
+                'step': step,
+                'artist_name': data.get('artist_name'),
+                'created_at': datetime.utcnow().isoformat(),
+            }
+            supabase.table('deal_leads').insert(row).execute()
+        except Exception as e:
+            print(f"Deal lead save error: {e}")
+
+    # Push notification
+    send_pushover_notification(
+        "Deal Calculator Lead",
+        f"{name}\n{email}\nStep: {step}"
+    )
+
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Deal Calculator: Stripe checkout
+# ---------------------------------------------------------------------------
+
+import stripe as stripe_lib
+
+stripe_lib.api_key = os.getenv('STRIPE_SECRET_KEY', '')
+
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://freshlybakedstudios.com')
+
+
+@app.post("/api/deal/checkout")
+async def deal_checkout(data: dict):
+    """
+    Create a Stripe Checkout Session for a deal deposit or full payment.
+    Returns the hosted checkout URL.
+    """
+    if not stripe_lib.api_key:
+        raise HTTPException(500, "Payment system not configured")
+
+    email = data.get('email', '')
+    name = data.get('name', '')
+    artist_name = data.get('artist_name') or 'Unknown Artist'
+    services = data.get('services', [])
+    track_count = data.get('track_count', 1)
+    total = data.get('total', 0)
+    deposit_amount = data.get('deposit_amount', 0)
+    split_percent = data.get('split_percent', 0)
+
+    if deposit_amount <= 0:
+        raise HTTPException(400, "Invalid deposit amount")
+
+    # Build line item description
+    service_names = ', '.join(s.get('label', '') for s in services)
+    description = f"{service_names} — {track_count} track{'s' if track_count > 1 else ''}"
+    if split_percent > 0:
+        description += f" | {split_percent}% backend"
+
+    is_deposit = deposit_amount < total
+
+    try:
+        session = stripe_lib.checkout.Session.create(
+            mode='payment',
+            customer_email=email,
+            line_items=[{
+                'price_data': {
+                    'currency': 'usd',
+                    'product_data': {
+                        'name': f"{'50% Deposit' if is_deposit else 'Full Payment'} — Freshly Baked Studios",
+                        'description': description,
+                    },
+                    'unit_amount': deposit_amount * 100,  # Stripe uses cents
+                },
+                'quantity': 1,
+            }],
+            metadata={
+                'artist_name': artist_name,
+                'customer_name': name,
+                'services': service_names,
+                'track_count': str(track_count),
+                'total': str(total),
+                'deposit': str(deposit_amount),
+                'split_percent': str(split_percent),
+            },
+            success_url=f"{FRONTEND_URL}/deal-calculator?step=confirmed&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{FRONTEND_URL}/deal-calculator?step=book",
+        )
+
+        # Save to Supabase
+        if supabase:
+            try:
+                supabase.table('deal_leads').insert({
+                    'name': name,
+                    'email': email,
+                    'step': 'checkout_started',
+                    'artist_name': artist_name,
+                    'metadata': {
+                        'session_id': session.id,
+                        'deposit_amount': deposit_amount,
+                        'total': total,
+                        'services': service_names,
+                    },
+                    'created_at': datetime.utcnow().isoformat(),
+                }).execute()
+            except Exception as e:
+                print(f"Deal checkout save error: {e}")
+
+        # Push notification
+        send_pushover_notification(
+            "Deal Checkout Started!",
+            f"{name} ({artist_name})\n${deposit_amount:,} of ${total:,}\n{service_names}"
+        )
+
+        return {"url": session.url, "session_id": session.id}
+
+    except stripe_lib.error.StripeError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/deal/checkout/status")
+async def deal_checkout_status(session_id: str):
+    """
+    Verify a Stripe Checkout Session after payment redirect.
+    """
+    if not stripe_lib.api_key:
+        raise HTTPException(500, "Payment system not configured")
+
+    try:
+        session = stripe_lib.checkout.Session.retrieve(session_id)
+
+        # Update lead status on completion
+        if session.status == 'complete' and supabase:
+            try:
+                send_pushover_notification(
+                    "PAYMENT RECEIVED!",
+                    f"{session.customer_details.name or session.customer_email}\n"
+                    f"${session.amount_total / 100:,.0f}\n"
+                    f"Session: {session_id[:8]}..."
+                )
+            except Exception as e:
+                print(f"Deal payment notification error: {e}")
+
+        return {
+            "status": session.status,
+            "customer_email": session.customer_details.email if session.customer_details else '',
+            "amount_total": session.amount_total,
+        }
+
+    except stripe_lib.error.StripeError as e:
+        raise HTTPException(400, str(e))
+
+
+# ---------------------------------------------------------------------------
 # Static files + SPA fallback
 # ---------------------------------------------------------------------------
 static_dir = Path(__file__).resolve().parent / 'static'
