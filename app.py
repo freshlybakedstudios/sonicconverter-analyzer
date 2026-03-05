@@ -2555,9 +2555,14 @@ async def deal_checkout(data: dict):
     total = data.get('total', 0)
     deposit_amount = data.get('deposit_amount', 0)
     split_percent = data.get('split_percent', 0)
+    contract_text = data.get('contract_text', '')
+    contract_agreed = data.get('contract_agreed', False)
 
     if deposit_amount <= 0:
         raise HTTPException(400, "Invalid deposit amount")
+
+    if not contract_agreed:
+        raise HTTPException(400, "Contract agreement is required")
 
     # Build line item description
     service_names = ', '.join(s.get('label', '') for s in services)
@@ -2571,6 +2576,7 @@ async def deal_checkout(data: dict):
         session = stripe_lib.checkout.Session.create(
             mode='payment',
             customer_email=email,
+            payment_method_types=['card', 'affirm', 'klarna'],
             line_items=[{
                 'price_data': {
                     'currency': 'usd',
@@ -2590,12 +2596,13 @@ async def deal_checkout(data: dict):
                 'total': str(total),
                 'deposit': str(deposit_amount),
                 'split_percent': str(split_percent),
+                'contract_agreed': 'true',
             },
             success_url=f"{FRONTEND_URL}/deal-calculator?step=confirmed&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{FRONTEND_URL}/deal-calculator?step=book",
         )
 
-        # Save to Supabase
+        # Save to Supabase (including contract text and agreement timestamp)
         if supabase:
             try:
                 supabase.table('deal_leads').insert({
@@ -2608,6 +2615,9 @@ async def deal_checkout(data: dict):
                         'deposit_amount': deposit_amount,
                         'total': total,
                         'services': service_names,
+                        'contract_agreed': True,
+                        'contract_agreed_at': datetime.utcnow().isoformat(),
+                        'contract_text': contract_text,
                     },
                     'created_at': datetime.utcnow().isoformat(),
                 }).execute()
@@ -2637,17 +2647,36 @@ async def deal_checkout_status(session_id: str):
     try:
         session = stripe_lib.checkout.Session.retrieve(session_id)
 
-        # Update lead status on completion
-        if session.status == 'complete' and supabase:
+        # On successful payment: notify + email contract
+        if session.status == 'complete':
+            customer_email = session.customer_details.email if session.customer_details else ''
+            customer_name = session.metadata.get('customer_name', '')
+
             try:
                 send_pushover_notification(
                     "PAYMENT RECEIVED!",
-                    f"{session.customer_details.name or session.customer_email}\n"
+                    f"{session.customer_details.name or customer_email}\n"
                     f"${session.amount_total / 100:,.0f}\n"
                     f"Session: {session_id[:8]}..."
                 )
             except Exception as e:
                 print(f"Deal payment notification error: {e}")
+
+            # Email the contract to the artist
+            if customer_email and supabase:
+                try:
+                    # Fetch the contract text from the lead record
+                    result = supabase.table('deal_leads').select('metadata').eq(
+                        'email', customer_email
+                    ).eq('step', 'checkout_started').order(
+                        'created_at', desc=True
+                    ).limit(1).execute()
+
+                    if result.data and result.data[0].get('metadata', {}).get('contract_text'):
+                        contract_text = result.data[0]['metadata']['contract_text']
+                        _send_contract_email(customer_name or customer_email, customer_email, contract_text)
+                except Exception as e:
+                    print(f"Contract email error: {e}")
 
         return {
             "status": session.status,
@@ -2657,6 +2686,60 @@ async def deal_checkout_status(session_id: str):
 
     except stripe_lib.error.StripeError as e:
         raise HTTPException(400, str(e))
+
+
+def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
+    """Send the signed contract to the artist via SendGrid."""
+    api_key = os.getenv('SENDGRID_API_KEY')
+    if not api_key:
+        print("SENDGRID_API_KEY not set — skipping contract email")
+        return False
+
+    # Convert contract text to HTML (preserve formatting)
+    contract_html = contract_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
+
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                max-width:700px;margin:0 auto;background:#141213;color:#eee;padding:32px;border-radius:12px">
+
+      <div style="text-align:center;margin-bottom:24px">
+        <img src="https://storage.googleapis.com/fbs-static-assets/axd-logo.png" alt="Freshly Baked Studios" style="width:180px;height:auto;margin-bottom:16px">
+        <h1 style="color:#fff;margin:0;font-size:24px">Your Production Agreement</h1>
+        <p style="color:#888;margin:4px 0 0">Freshly Baked Studios</p>
+      </div>
+
+      <p style="color:#ccc">Hey {name},</p>
+      <p style="color:#ccc">Thank you for your payment! Below is a copy of the Music Production Agreement you agreed to. Please save this for your records.</p>
+      <p style="color:#ccc;font-size:13px">A formal version will be sent for signature once we collect your legal details during onboarding.</p>
+
+      <div style="background:#1a1818;border:1px solid #3a3636;border-radius:8px;padding:24px;margin:24px 0;font-size:12px;line-height:1.6;color:#ccc;font-family:monospace">
+        {contract_html}
+      </div>
+
+      <p style="color:#666;font-size:11px;text-align:center;margin-top:24px">
+        Freshly Baked Studios &bull; freshlybakedstudios.com
+      </p>
+    </div>
+    """
+
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail, HtmlContent
+
+    message = Mail(
+        from_email='deals@freshlybakedstudios.com',
+        to_emails=email,
+        subject=f'{name}, your production agreement — Freshly Baked Studios',
+        html_content=HtmlContent(html),
+    )
+
+    try:
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        print(f"Contract email sent to {email} — status {response.status_code}")
+        return response.status_code in (200, 201, 202)
+    except Exception as e:
+        print(f"Contract email send failed: {e}")
+        return False
 
 
 # ---------------------------------------------------------------------------
