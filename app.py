@@ -2469,6 +2469,10 @@ async def deal_lookup(
         f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners"
     )
 
+    # Override tier_count with sonic peer count when sonic matching succeeded
+    if conversion_opportunity and conversion_opportunity.get('sonic_peer_count') and peer_comparison:
+        peer_comparison['tier_count'] = conversion_opportunity['sonic_peer_count']
+
     return {
         'name': artist_data.get('name', ''),
         'genres': artist_data.get('genres', ''),
