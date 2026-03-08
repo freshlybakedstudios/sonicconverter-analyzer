@@ -2383,7 +2383,7 @@ async def deal_lookup(
                         top25_followers_target = int(round((peer_top_25 / 100) * listeners * 4.3 / 0.1))
                         current_followers = int(followers) if followers > 0 else 0
                         additional_fans = max(int(round(top25_followers_target - current_followers)), 0)
-                        additional_revenue = additional_fans * 25  # same as /api/analyze
+                        additional_revenue = additional_fans * 1  # ~$1/fan/year (streaming + merch + tickets)
 
                         conversion_opportunity = {
                             'additional_fans': additional_fans,
