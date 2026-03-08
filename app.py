@@ -2375,6 +2375,9 @@ async def deal_lookup(
                     and m.get('tier') == tier
                 ]
                 print(f"Deal lookup: {len(match_conversions)} same-tier sonic matches with conversion data (tier={tier})")
+                # Always override tier_count with sonic peer count when we have sonic matches
+                if match_conversions and peer_comparison:
+                    peer_comparison['tier_count'] = len(match_conversions)
                 if match_conversions and conversion_rate and conversion_rate > 0 and listeners > 0:
                     sorted_conv = sorted(match_conversions)
                     peer_top_25 = sorted_conv[int(len(sorted_conv) * 0.75)]
@@ -2468,10 +2471,6 @@ async def deal_lookup(
         "Deal Calculator Lookup",
         f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners"
     )
-
-    # Override tier_count with sonic peer count when sonic matching succeeded
-    if conversion_opportunity and conversion_opportunity.get('sonic_peer_count') and peer_comparison:
-        peer_comparison['tier_count'] = conversion_opportunity['sonic_peer_count']
 
     return {
         'name': artist_data.get('name', ''),
