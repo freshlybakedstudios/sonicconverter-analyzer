@@ -989,6 +989,55 @@ def fetch_listener_history(token: str, cm_id: int, days: int = 365) -> list[dict
     return monthly
 
 
+def fetch_artist_events(token: str, cm_id: int, lookback_days: int = 730, lookahead_days: int = 365) -> list[dict]:
+    """
+    Fetch past + future events from Chartmetric for an artist.
+    Returns raw event dicts with 'start_date', 'venue_capacity', etc.
+    Past events use status='past', future use status='current'.
+    """
+    CM_EVENTS_URL = "https://api.chartmetric.com/api/artist/{artist_id}/{status}/events"
+    PAGE_LIMIT = 50
+    MAX_PAGES = 10
+    all_events = []
+
+    for status, from_days, to_days in [
+        ("past", lookback_days, 0),
+        ("current", 0, -abs(lookahead_days)),
+    ]:
+        offset = 0
+        pages = 0
+        while pages < MAX_PAGES:
+            def _call(o=offset):
+                _rate_wait()
+                resp = requests.get(
+                    CM_EVENTS_URL.format(artist_id=cm_id, status=status),
+                    params={
+                        'fromDaysAgo': from_days,
+                        'toDaysAgo': to_days,
+                        'limit': PAGE_LIMIT,
+                        'offset': o,
+                    },
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=30,
+                )
+                if resp.status_code != 200:
+                    return {}
+                return resp.json() or {}
+
+            try:
+                page = _retry(_call) or {}
+            except Exception:
+                break
+            page_items = page.get('obj') or []
+            all_events.extend(page_items)
+            if len(page_items) < PAGE_LIMIT:
+                break
+            offset += PAGE_LIMIT
+            pages += 1
+
+    return all_events
+
+
 # ---------------------------------------------------------------------------
 # ISRC → CM Track ID resolution with Supabase caching
 # ---------------------------------------------------------------------------
