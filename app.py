@@ -2466,6 +2466,48 @@ async def deal_lookup(
         except Exception as e:
             print(f"Deal lookup: listener history fetch failed: {e}")
 
+    # Fetch upcoming events from Supabase
+    upcoming_events = None
+    if cm_id and supabase:
+        today_iso = datetime.now().strftime('%Y-%m-%d')
+        try:
+            events_resp = supabase.table('artist_events') \
+                .select('start_date,venue_capacity,event_type,is_headliner,price_low,price_high,venue_name,city,country_code') \
+                .eq('artist_id', str(cm_id)) \
+                .gte('start_date', today_iso) \
+                .execute()
+
+            if events_resp.data:
+                events = events_resp.data
+                from datetime import timedelta
+                now = datetime.now()
+                d30 = (now + timedelta(days=30)).strftime('%Y-%m-%d')
+                d90 = (now + timedelta(days=90)).strftime('%Y-%m-%d')
+
+                capacities = [e['venue_capacity'] for e in events if e.get('venue_capacity')]
+                prices = []
+                for e in events:
+                    if e.get('price_low') and e.get('price_high'):
+                        prices.append((e['price_low'] + e['price_high']) / 2)
+                    elif e.get('price_low'):
+                        prices.append(e['price_low'])
+                    elif e.get('price_high'):
+                        prices.append(e['price_high'])
+
+                upcoming_events = {
+                    'total_shows': len(events),
+                    'next_30_days': len([e for e in events if e['start_date'] <= d30]),
+                    'next_90_days': len([e for e in events if e['start_date'] <= d90]),
+                    'headliner_pct': round(len([e for e in events if e.get('is_headliner')]) / len(events) * 100) if events else 0,
+                    'avg_venue_capacity': round(sum(capacities) / len(capacities)) if capacities else 0,
+                    'median_venue_capacity': sorted(capacities)[len(capacities) // 2] if capacities else 0,
+                    'avg_ticket_price': round(sum(prices) / len(prices), 2) if prices else 0,
+                    'countries': list(set(e.get('country_code', '') for e in events if e.get('country_code'))),
+                }
+                print(f"Deal lookup: {len(events)} upcoming events for {artist_data.get('name')}")
+        except Exception as e:
+            print(f"Deal lookup: event fetch failed: {e}")
+
     # Send push notification
     send_pushover_notification(
         "Deal Calculator Lookup",
@@ -2488,6 +2530,7 @@ async def deal_lookup(
         'metrics': metrics,
         'listener_history': listener_history,
         'platform_multiplier': round(platform_multiplier, 2),
+        'upcoming_events': upcoming_events,
     }
 
 
