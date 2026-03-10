@@ -2468,6 +2468,7 @@ async def deal_lookup(
 
     # Fetch upcoming events from Supabase
     upcoming_events = None
+    print(f"Deal lookup: cm_id={cm_id}, supabase={'yes' if supabase else 'no'}")
     if cm_id and supabase:
         today_iso = datetime.now().strftime('%Y-%m-%d')
         try:
