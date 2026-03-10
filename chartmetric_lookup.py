@@ -1007,10 +1007,10 @@ def fetch_artist_events(token: str, cm_id: int, lookback_days: int = 730, lookah
         offset = 0
         pages = 0
         while pages < MAX_PAGES:
-            def _call(o=offset):
+            def _call(o=offset, s=status):
                 _rate_wait()
                 resp = requests.get(
-                    CM_EVENTS_URL.format(artist_id=cm_id, status=status),
+                    CM_EVENTS_URL.format(artist_id=cm_id, status=s),
                     params={
                         'fromDaysAgo': from_days,
                         'toDaysAgo': to_days,
@@ -1020,8 +1020,7 @@ def fetch_artist_events(token: str, cm_id: int, lookback_days: int = 730, lookah
                     headers={"Authorization": f"Bearer {token}"},
                     timeout=30,
                 )
-                if resp.status_code != 200:
-                    return {}
+                resp.raise_for_status()  # let _retry handle 429s
                 return resp.json() or {}
 
             try:
