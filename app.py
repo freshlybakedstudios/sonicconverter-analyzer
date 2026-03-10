@@ -38,6 +38,7 @@ from chartmetric_lookup import (
     lookup_artist_by_spotify,
     get_cm_token,
     fetch_listener_history,
+    fetch_artist_events,
     _resolve_isrc_to_cm_track_id,
     _fetch_track_playlists_structured,
     _fetch_related_artists,
@@ -2455,6 +2456,7 @@ async def deal_lookup(
     # 5. Fetch historical listener data from Chartmetric for growth projections
     listener_history = []
     cm_id = artist_data.get('cm_id')
+    token = None
     if cm_id:
         try:
             refresh_token = os.getenv('REFRESH_TOKEN')
@@ -2466,46 +2468,58 @@ async def deal_lookup(
         except Exception as e:
             print(f"Deal lookup: listener history fetch failed: {e}")
 
-    # Fetch upcoming events from Supabase
+    # Fetch past + future events from Chartmetric to estimate annual touring activity
     upcoming_events = None
-    print(f"Deal lookup: cm_id={cm_id}, supabase={'yes' if supabase else 'no'}")
-    if cm_id and supabase:
-        today_iso = datetime.now().strftime('%Y-%m-%d')
+    if cm_id and token:
         try:
-            events_resp = supabase.table('artist_events') \
-                .select('start_date,venue_capacity,event_type,is_headliner,price_low,price_high,venue_name,city,country_code') \
-                .eq('artist_id', str(cm_id)) \
-                .gte('start_date', today_iso) \
-                .execute()
-
-            if events_resp.data:
-                events = events_resp.data
+            raw_events = fetch_artist_events(token, cm_id, lookback_days=730, lookahead_days=365)
+            if raw_events:
                 from datetime import timedelta
                 now = datetime.now()
+                today_iso = now.strftime('%Y-%m-%d')
                 d30 = (now + timedelta(days=30)).strftime('%Y-%m-%d')
                 d90 = (now + timedelta(days=90)).strftime('%Y-%m-%d')
 
-                capacities = [e['venue_capacity'] for e in events if e.get('venue_capacity')]
+                # Parse dates and compute time span for annualization
+                dates = [e.get('start_date', '')[:10] for e in raw_events if e.get('start_date')]
+                dates = [d for d in dates if d]
+                future_events = [e for e in raw_events if (e.get('start_date') or '') >= today_iso]
+
+                # Annualize: shows_per_year = total events / span in years
+                if dates:
+                    earliest = min(dates)
+                    latest = max(dates)
+                    span_days = (datetime.strptime(latest, '%Y-%m-%d') - datetime.strptime(earliest, '%Y-%m-%d')).days
+                    span_years = max(span_days / 365.25, 0.25)  # floor at 3 months
+                    shows_per_year = round(len(raw_events) / span_years)
+                else:
+                    shows_per_year = len(raw_events)
+
+                capacities = [e['venue_capacity'] for e in raw_events if e.get('venue_capacity')]
                 prices = []
-                for e in events:
-                    if e.get('price_low') and e.get('price_high'):
-                        prices.append((e['price_low'] + e['price_high']) / 2)
-                    elif e.get('price_low'):
-                        prices.append(e['price_low'])
-                    elif e.get('price_high'):
-                        prices.append(e['price_high'])
+                for e in raw_events:
+                    low = e.get('low_price')
+                    high = e.get('high_price')
+                    if low and high:
+                        prices.append((low + high) / 2)
+                    elif low:
+                        prices.append(low)
+                    elif high:
+                        prices.append(high)
 
                 upcoming_events = {
-                    'total_shows': len(events),
-                    'next_30_days': len([e for e in events if e['start_date'] <= d30]),
-                    'next_90_days': len([e for e in events if e['start_date'] <= d90]),
-                    'headliner_pct': round(len([e for e in events if e.get('is_headliner')]) / len(events) * 100) if events else 0,
+                    'total_shows': shows_per_year,  # annualized
+                    'raw_event_count': len(raw_events),
+                    'future_event_count': len(future_events),
+                    'next_30_days': len([e for e in future_events if (e.get('start_date') or '')[:10] <= d30]),
+                    'next_90_days': len([e for e in future_events if (e.get('start_date') or '')[:10] <= d90]),
+                    'headliner_pct': round(len([e for e in raw_events if e.get('is_headliner')]) / len(raw_events) * 100),
                     'avg_venue_capacity': round(sum(capacities) / len(capacities)) if capacities else 0,
                     'median_venue_capacity': sorted(capacities)[len(capacities) // 2] if capacities else 0,
                     'avg_ticket_price': round(sum(prices) / len(prices), 2) if prices else 0,
-                    'countries': list(set(e.get('country_code', '') for e in events if e.get('country_code'))),
+                    'countries': list(set(e.get('code2', '') for e in raw_events if e.get('code2'))),
                 }
-                print(f"Deal lookup: {len(events)} upcoming events for {artist_data.get('name')}")
+                print(f"Deal lookup: {len(raw_events)} events ({shows_per_year}/yr annualized) for {artist_data.get('name')}")
         except Exception as e:
             print(f"Deal lookup: event fetch failed: {e}")
 
