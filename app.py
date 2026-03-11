@@ -2255,6 +2255,7 @@ async def deal_lookup(
                 'p25_conversion': tier_conversion_rates[n // 4],
                 'p75_conversion': tier_conversion_rates[3 * n // 4],
                 'p95_conversion': tier_conversion_rates[min(n - 1, int(n * 0.95))],
+                'p99_conversion': tier_conversion_rates[min(n - 1, int(n * 0.99))],
                 'tier_count': n,
             }
 
@@ -2385,11 +2386,18 @@ async def deal_lookup(
                     sorted_conv = sorted(match_conversions)
                     peer_top_25 = sorted_conv[int(len(sorted_conv) * 0.75)]
 
-                    # Use p75 as target for below-p75 artists, p95 for above-p75
+                    # Use p75 as target for below-p75, then p95, then p99
                     if peer_top_25 > conversion_rate:
                         target_cr = peer_top_25
                     elif len(sorted_conv) >= 10:
-                        target_cr = sorted_conv[min(len(sorted_conv) - 1, int(len(sorted_conv) * 0.95))]
+                        p95 = sorted_conv[min(len(sorted_conv) - 1, int(len(sorted_conv) * 0.95))]
+                        p99 = sorted_conv[min(len(sorted_conv) - 1, int(len(sorted_conv) * 0.99))]
+                        if p95 > conversion_rate:
+                            target_cr = p95
+                        elif p99 > conversion_rate:
+                            target_cr = p99
+                        else:
+                            target_cr = 0
                     else:
                         target_cr = 0
 
@@ -2419,8 +2427,10 @@ async def deal_lookup(
             target_cr = peer_comparison['p75_conversion']
         elif peer_comparison.get('p95_conversion', 0) > conversion_rate:
             target_cr = peer_comparison['p95_conversion']
+        elif peer_comparison.get('p99_conversion', 0) > conversion_rate:
+            target_cr = peer_comparison['p99_conversion']
         else:
-            target_cr = 0  # above p95 with peer data — no fake numbers
+            target_cr = 0  # above p99 with peer data — no fake numbers
 
         if target_cr > conversion_rate:
             current_followers_equiv = conversion_rate * listeners * 4.3 / (0.1 * 100)
