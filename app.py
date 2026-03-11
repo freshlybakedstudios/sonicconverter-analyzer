@@ -2254,6 +2254,7 @@ async def deal_lookup(
                 'median_conversion': tier_conversion_rates[n // 2],
                 'p25_conversion': tier_conversion_rates[n // 4],
                 'p75_conversion': tier_conversion_rates[3 * n // 4],
+                'p95_conversion': tier_conversion_rates[min(n - 1, int(n * 0.95))],
                 'tier_count': n,
             }
 
@@ -2384,20 +2385,28 @@ async def deal_lookup(
                     sorted_conv = sorted(match_conversions)
                     peer_top_25 = sorted_conv[int(len(sorted_conv) * 0.75)]
 
+                    # Use p75 as target for below-p75 artists, p95 for top performers
                     if peer_top_25 > conversion_rate:
-                        top25_followers_target = int(round((peer_top_25 / 100) * listeners * 4.3 / 0.1))
+                        target_cr = peer_top_25
+                    elif len(sorted_conv) >= 10:
+                        target_cr = sorted_conv[min(len(sorted_conv) - 1, int(len(sorted_conv) * 0.95))]
+                    else:
+                        target_cr = 0
+
+                    if target_cr > conversion_rate:
+                        target_followers = int(round((target_cr / 100) * listeners * 4.3 / 0.1))
                         current_followers = int(followers) if followers > 0 else 0
-                        additional_fans = max(int(round(top25_followers_target - current_followers)), 0)
-                        additional_revenue = additional_fans * 1  # ~$1/fan/year (streaming + merch + tickets)
+                        additional_fans = max(int(round(target_followers - current_followers)), 0)
+                        additional_revenue = additional_fans * 25  # ~$25/fan/year (streaming + merch + tickets)
 
                         conversion_opportunity = {
                             'additional_fans': additional_fans,
                             'additional_revenue': additional_revenue,
-                            'target_conversion': round(peer_top_25, 2),
+                            'target_conversion': round(target_cr, 2),
                             'sonic_peer_count': len(match_conversions),
                         }
                         print(f"Deal lookup: sonic conversion opportunity — "
-                              f"current {conversion_rate:.2f}% → target {peer_top_25:.2f}%, "
+                              f"current {conversion_rate:.2f}% → target {target_cr:.2f}%, "
                               f"+{additional_fans} fans, +${additional_revenue}")
         except Exception as e:
             print(f"Deal lookup: sonic matching failed: {e}")
@@ -2405,12 +2414,17 @@ async def deal_lookup(
 
     # Fallback: tier-based conversion opportunity if sonic analysis didn't produce one
     if not conversion_opportunity and peer_comparison and conversion_rate and conversion_rate > 0 and listeners > 0:
-        target_cr = peer_comparison['p75_conversion']
+        # Use p75 for below-p75 artists, p95 for top performers
+        if peer_comparison['p75_conversion'] > conversion_rate:
+            target_cr = peer_comparison['p75_conversion']
+        else:
+            target_cr = peer_comparison.get('p95_conversion', 0)
+
         if target_cr > conversion_rate:
             current_followers_equiv = conversion_rate * listeners * 4.3 / (0.1 * 100)
             target_followers_equiv = target_cr * listeners * 4.3 / (0.1 * 100)
             additional_fans = int(target_followers_equiv - current_followers_equiv)
-            additional_revenue = int(additional_fans * 5 * 12 * 4 / 1000)
+            additional_revenue = additional_fans * 25  # $25/fan/year
             conversion_opportunity = {
                 'additional_fans': additional_fans,
                 'additional_revenue': additional_revenue,
