@@ -2385,13 +2385,18 @@ async def deal_lookup(
                     sorted_conv = sorted(match_conversions)
                     peer_top_25 = sorted_conv[int(len(sorted_conv) * 0.75)]
 
-                    # Use p75 as target for below-p75 artists, p95 for top performers
+                    # Use p75 as target for below-p75 artists, p95 for above-p75
                     if peer_top_25 > conversion_rate:
                         target_cr = peer_top_25
                     elif len(sorted_conv) >= 10:
                         target_cr = sorted_conv[min(len(sorted_conv) - 1, int(len(sorted_conv) * 0.95))]
                     else:
                         target_cr = 0
+
+                    # For artists above even p95: estimate ~1% relative improvement per sonic gap
+                    gap_count = len(sonic_gap) if sonic_gap else 0
+                    if target_cr <= conversion_rate and gap_count > 0:
+                        target_cr = conversion_rate * (1 + gap_count * 0.01)
 
                     if target_cr > conversion_rate:
                         target_followers = int(round((target_cr / 100) * listeners * 4.3 / 0.1))
@@ -2414,11 +2419,15 @@ async def deal_lookup(
 
     # Fallback: tier-based conversion opportunity if sonic analysis didn't produce one
     if not conversion_opportunity and peer_comparison and conversion_rate and conversion_rate > 0 and listeners > 0:
-        # Use p75 for below-p75 artists, p95 for top performers
+        # Use p75 for below-p75 artists, p95 for above-p75
         if peer_comparison['p75_conversion'] > conversion_rate:
             target_cr = peer_comparison['p75_conversion']
+        elif peer_comparison.get('p95_conversion', 0) > conversion_rate:
+            target_cr = peer_comparison['p95_conversion']
         else:
-            target_cr = peer_comparison.get('p95_conversion', 0)
+            # Above p95: estimate ~1% relative improvement per sonic gap
+            gap_count = len(sonic_gap) if sonic_gap else 5  # default 5 if no sonic data
+            target_cr = conversion_rate * (1 + gap_count * 0.01)
 
         if target_cr > conversion_rate:
             current_followers_equiv = conversion_rate * listeners * 4.3 / (0.1 * 100)
