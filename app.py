@@ -132,6 +132,7 @@ app.add_middleware(
         "http://127.0.0.1:3001",
         "http://localhost:3000",
         "http://localhost:3002",
+        "http://192.168.1.169:3002",
     ],
     allow_origin_regex=r"https://.*\.up\.railway\.app",
     allow_credentials=True,
