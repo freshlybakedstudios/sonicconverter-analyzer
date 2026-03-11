@@ -2393,11 +2393,6 @@ async def deal_lookup(
                     else:
                         target_cr = 0
 
-                    # For artists above even p95: estimate ~1% relative improvement per sonic gap
-                    gap_count = len(sonic_gap) if sonic_gap else 0
-                    if target_cr <= conversion_rate and gap_count > 0:
-                        target_cr = conversion_rate * (1 + gap_count * 0.01)
-
                     if target_cr > conversion_rate:
                         target_followers = int(round((target_cr / 100) * listeners * 4.3 / 0.1))
                         current_followers = int(followers) if followers > 0 else 0
@@ -2425,9 +2420,7 @@ async def deal_lookup(
         elif peer_comparison.get('p95_conversion', 0) > conversion_rate:
             target_cr = peer_comparison['p95_conversion']
         else:
-            # Above p95: estimate ~1% relative improvement per sonic gap
-            gap_count = len(sonic_gap) if sonic_gap else 5  # default 5 if no sonic data
-            target_cr = conversion_rate * (1 + gap_count * 0.01)
+            target_cr = 0  # above p95 with peer data — no fake numbers
 
         if target_cr > conversion_rate:
             current_followers_equiv = conversion_rate * listeners * 4.3 / (0.1 * 100)
