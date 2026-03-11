@@ -2523,16 +2523,28 @@ async def deal_lookup(
                     shows_per_year = len(raw_events)
 
                 capacities = [e['venue_capacity'] for e in raw_events if e.get('venue_capacity')]
+                # Use low_price (face value) and cap at $500 to avoid VIP/resale skew
+                TICKET_PRICE_CAP = 500
                 prices = []
                 for e in raw_events:
                     low = e.get('low_price')
                     high = e.get('high_price')
                     if low and high:
-                        prices.append((low + high) / 2)
+                        prices.append(min(low, TICKET_PRICE_CAP))  # use face value, not avg with VIP
                     elif low:
-                        prices.append(low)
+                        prices.append(min(low, TICKET_PRICE_CAP))
                     elif high:
-                        prices.append(high)
+                        prices.append(min(high, TICKET_PRICE_CAP))
+
+                # Use median to resist outliers
+                median_price = 0
+                if prices:
+                    sorted_prices = sorted(prices)
+                    mid = len(sorted_prices) // 2
+                    if len(sorted_prices) % 2 == 0:
+                        median_price = round((sorted_prices[mid - 1] + sorted_prices[mid]) / 2, 2)
+                    else:
+                        median_price = round(sorted_prices[mid], 2)
 
                 upcoming_events = {
                     'total_shows': shows_per_year,  # annualized
@@ -2543,7 +2555,7 @@ async def deal_lookup(
                     'headliner_pct': round(len([e for e in raw_events if e.get('is_headliner')]) / len(raw_events) * 100),
                     'avg_venue_capacity': round(sum(capacities) / len(capacities)) if capacities else 0,
                     'median_venue_capacity': sorted(capacities)[len(capacities) // 2] if capacities else 0,
-                    'avg_ticket_price': round(sum(prices) / len(prices), 2) if prices else 0,
+                    'avg_ticket_price': median_price,  # median of face-value-capped prices
                     'countries': list(set(e.get('code2', '') for e in raw_events if e.get('code2'))),
                 }
                 print(f"Deal lookup: {len(raw_events)} events ({shows_per_year}/yr annualized) for {artist_data.get('name')}")
@@ -2555,6 +2567,11 @@ async def deal_lookup(
         "Deal Calculator Lookup",
         f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners"
     )
+
+    # Extract image URL from Chartmetric metadata
+    image_url = None
+    _meta = artist_data.get('_meta') or {}
+    image_url = _meta.get('image_url') or _meta.get('cover_url') or None
 
     return {
         'name': artist_data.get('name', ''),
@@ -2573,6 +2590,7 @@ async def deal_lookup(
         'listener_history': listener_history,
         'platform_multiplier': round(platform_multiplier, 2),
         'upcoming_events': upcoming_events,
+        'image_url': image_url,
     }
 
 
@@ -2687,8 +2705,8 @@ async def deal_checkout(data: dict):
                 'split_percent': str(split_percent),
                 'contract_agreed': 'true',
             },
-            success_url=f"{FRONTEND_URL}/deal-calculator?step=confirmed&session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{FRONTEND_URL}/deal-calculator?step=book",
+            success_url=f"{FRONTEND_URL}/rates?step=confirmed&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{FRONTEND_URL}/rates?step=book",
         )
 
         # Save to Supabase (including contract text and agreement timestamp)
@@ -2737,9 +2755,11 @@ async def deal_checkout_status(session_id: str):
         session = stripe_lib.checkout.Session.retrieve(session_id)
 
         # On successful payment: notify + email contract
+        print(f"Checkout status: session.status={session.status} payment_status={session.payment_status}")
         if session.status == 'complete':
             customer_email = session.customer_details.email if session.customer_details else ''
             customer_name = session.metadata.get('customer_name', '')
+            print(f"Payment complete: email={customer_email} name={customer_name}")
 
             try:
                 send_pushover_notification(
@@ -2761,11 +2781,21 @@ async def deal_checkout_status(session_id: str):
                         'created_at', desc=True
                     ).limit(1).execute()
 
+                    print(f"Contract lookup: found={bool(result.data)} rows={len(result.data) if result.data else 0}")
+                    if result.data:
+                        has_contract = bool(result.data[0].get('metadata', {}).get('contract_text'))
+                        print(f"Contract text present: {has_contract}")
+
                     if result.data and result.data[0].get('metadata', {}).get('contract_text'):
                         contract_text = result.data[0]['metadata']['contract_text']
-                        _send_contract_email(customer_name or customer_email, customer_email, contract_text)
+                        sent = _send_contract_email(customer_name or customer_email, customer_email, contract_text)
+                        print(f"Contract email sent: {sent}")
+                    else:
+                        print(f"No contract text found for {customer_email}")
                 except Exception as e:
                     print(f"Contract email error: {e}")
+            else:
+                print(f"Skipping contract email: email={customer_email} supabase={bool(supabase)}")
 
         return {
             "status": session.status,
