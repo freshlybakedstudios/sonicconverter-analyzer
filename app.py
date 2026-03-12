@@ -2480,20 +2480,95 @@ async def deal_lookup(
     platform_multiplier = min(platform_multiplier, 3.0)
     print(f"Deal lookup: platform multiplier = {platform_multiplier:.2f}x for {artist_data.get('name')}")
 
-    # 5. Fetch historical listener data from Chartmetric for growth projections
+    # 5. Fetch historical data — use Supabase snapshots (all platforms) + CM API fallback (Spotify only)
     listener_history = []
+    platform_history = {}  # All platform snapshots from Supabase
     cm_id = artist_data.get('cm_id')
     token = None
-    if cm_id:
+
+    # 5a. Try Supabase artists_history first (has ALL platform data already collected)
+    artist_cm_id = str(cm_id) if cm_id else None
+    if artist_cm_id and supabase:
+        try:
+            result = supabase.table('artists_history') \
+                .select('snapshot_date,sp_monthly_listeners,sp_followers,sp_popularity,sp_playlist_total_reach,'
+                        'tiktok_followers,tiktok_likes,tiktok_track_posts,tiktok_top_video_views,'
+                        'ycs_subscribers,ycs_views,youtube_monthly_video_views,'
+                        'ins_followers,shazam_count,deezer_fans,soundcloud_followers,soundcloud_plays,'
+                        'pandora_listeners_28_day,facebook_followers,cm_artist_score,'
+                        'boomplay_streams,boomplay_favorites,genius_views,songkick_fans') \
+                .eq('artist_id', artist_cm_id) \
+                .order('snapshot_date', desc=False) \
+                .execute()
+
+            if result.data:
+                snapshots = result.data
+                print(f"Deal lookup: {len(snapshots)} Supabase snapshots for {artist_data.get('name')}")
+
+                # Build per-platform history arrays from snapshots
+                PLATFORM_FIELDS = {
+                    'spotify_listeners': 'sp_monthly_listeners',
+                    'spotify_followers': 'sp_followers',
+                    'spotify_popularity': 'sp_popularity',
+                    'spotify_playlist_reach': 'sp_playlist_total_reach',
+                    'tiktok_followers': 'tiktok_followers',
+                    'tiktok_likes': 'tiktok_likes',
+                    'tiktok_track_posts': 'tiktok_track_posts',
+                    'tiktok_top_video_views': 'tiktok_top_video_views',
+                    'youtube_subscribers': 'ycs_subscribers',
+                    'youtube_views': 'ycs_views',
+                    'youtube_monthly_views': 'youtube_monthly_video_views',
+                    'instagram_followers': 'ins_followers',
+                    'shazam_count': 'shazam_count',
+                    'deezer_fans': 'deezer_fans',
+                    'soundcloud_followers': 'soundcloud_followers',
+                    'soundcloud_plays': 'soundcloud_plays',
+                    'pandora_listeners': 'pandora_listeners_28_day',
+                    'facebook_followers': 'facebook_followers',
+                    'cm_artist_score': 'cm_artist_score',
+                    'boomplay_streams': 'boomplay_streams',
+                    'genius_views': 'genius_views',
+                    'songkick_fans': 'songkick_fans',
+                }
+
+                for output_key, db_field in PLATFORM_FIELDS.items():
+                    history = []
+                    for snap in snapshots:
+                        val = snap.get(db_field)
+                        date = snap.get('snapshot_date', '')[:10]
+                        if val and date and float(val) > 0:
+                            history.append({'date': date, 'value': int(float(val))})
+                    if history:
+                        platform_history[output_key] = history
+
+                # Also build listener_history for backward compatibility
+                if 'spotify_listeners' in platform_history:
+                    listener_history = [
+                        {'date': p['date'], 'listeners': p['value']}
+                        for p in platform_history['spotify_listeners']
+                    ]
+
+                print(f"Deal lookup: platform history keys = {list(platform_history.keys())}")
+        except Exception as e:
+            print(f"Deal lookup: Supabase history fetch failed: {e}")
+
+    # 5b. Fallback to Chartmetric API for Spotify listeners if Supabase had nothing
+    if not listener_history and cm_id:
         try:
             refresh_token = os.getenv('REFRESH_TOKEN')
             if refresh_token:
                 token = get_cm_token(refresh_token)
                 if token:
                     listener_history = fetch_listener_history(token, cm_id)
-                    print(f"Deal lookup: {len(listener_history)} historical data points for {artist_data.get('name')}")
+                    print(f"Deal lookup: {len(listener_history)} CM API data points for {artist_data.get('name')}")
+                    # Also add to platform_history
+                    if listener_history:
+                        platform_history['spotify_listeners'] = [
+                            {'date': p['date'], 'value': p['listeners']}
+                            for p in listener_history
+                        ]
         except Exception as e:
-            print(f"Deal lookup: listener history fetch failed: {e}")
+            print(f"Deal lookup: CM listener history fetch failed: {e}")
 
     # Fetch past + future events from Chartmetric to estimate annual touring activity
     upcoming_events = None
@@ -2588,6 +2663,7 @@ async def deal_lookup(
         'conversion_opportunity': conversion_opportunity,
         'metrics': metrics,
         'listener_history': listener_history,
+        'platform_history': platform_history,
         'platform_multiplier': round(platform_multiplier, 2),
         'upcoming_events': upcoming_events,
         'image_url': image_url,
