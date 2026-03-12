@@ -2572,9 +2572,19 @@ async def deal_lookup(
 
     # Fetch past + future events from Chartmetric to estimate annual touring activity
     upcoming_events = None
+    # Ensure we have a CM token for events (may not be set if Supabase had listener data)
+    if cm_id and not token:
+        try:
+            refresh_token = os.getenv('REFRESH_TOKEN')
+            if refresh_token:
+                token = get_cm_token(refresh_token)
+        except Exception:
+            pass
     if cm_id and token:
         try:
+            print(f"Deal lookup: fetching events for cm_id={cm_id} ({artist_data.get('name')})")
             raw_events = fetch_artist_events(token, cm_id, lookback_days=730, lookahead_days=365)
+            print(f"Deal lookup: got {len(raw_events)} raw events for cm_id={cm_id}")
             if raw_events:
                 from datetime import timedelta
                 now = datetime.now()
