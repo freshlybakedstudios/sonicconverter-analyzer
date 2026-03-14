@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 POLL_INTERVAL = 5  # seconds
-SAMPLE_RATE = 44100
+SAMPLE_RATE = 48000
 SAMPLE_DURATION = 4  # seconds per sample point
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')

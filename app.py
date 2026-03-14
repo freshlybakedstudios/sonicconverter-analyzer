@@ -85,6 +85,47 @@ enrichment_pool = ThreadPoolExecutor(max_workers=3)
 sse_subscribers: dict = {}
 _event_loop = None  # Set when the server starts
 
+# ---------------------------------------------------------------------------
+# Resource switching: track web user activity, notify local Mac to pause/resume
+# ---------------------------------------------------------------------------
+_last_api_activity = 0.0          # timestamp of last user-facing API request
+_user_was_active = False          # was a user active in the previous check?
+_IDLE_TIMEOUT = 300               # 5 minutes of no requests = idle
+_LOCAL_WEBHOOK_URL = os.getenv(
+    'LOCAL_PIPELINE_WEBHOOK',
+    'http://localhost:7890/webhook/activity'
+)
+
+def _notify_local_pipeline(event: str):
+    """Fire-and-forget notification to local Mac pipeline manager."""
+    try:
+        requests.post(
+            _LOCAL_WEBHOOK_URL,
+            json={'event': event, 'timestamp': time.time()},
+            timeout=3,
+        )
+    except Exception:
+        pass  # Local machine might not be reachable from Railway
+
+def _check_idle_and_notify():
+    """Background thread: polls activity and notifies local pipeline."""
+    global _user_was_active
+    while True:
+        time.sleep(30)  # check every 30 seconds
+        now = time.time()
+        is_active = (now - _last_api_activity) < _IDLE_TIMEOUT
+
+        if is_active and not _user_was_active:
+            # User just became active
+            print("🌐 Web user active — notifying local pipeline to pause")
+            _notify_local_pipeline('user_active')
+            _user_was_active = True
+        elif not is_active and _user_was_active:
+            # User went idle
+            print("💤 Web user idle — notifying local pipeline to resume")
+            _notify_local_pipeline('user_idle')
+            _user_was_active = False
+
 
 # ---------------------------------------------------------------------------
 # Lifespan: preload cache
@@ -110,6 +151,11 @@ async def lifespan(app: FastAPI):
         job_mgr.set_supabase(supabase)
     else:
         print("⚠️  SUPABASE_URL/SUPABASE_SERVICE_KEY not set - some features disabled")
+
+    # Start resource-switching activity monitor
+    activity_thread = threading.Thread(target=_check_idle_and_notify, daemon=True)
+    activity_thread.start()
+    print("✅ Resource-switching activity monitor started")
 
     print("Ready.")
     yield
@@ -142,11 +188,45 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
+# Middleware: track user-facing API activity for resource switching
+# ---------------------------------------------------------------------------
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+class ActivityTrackingMiddleware(BaseHTTPMiddleware):
+    """Record timestamps of user-facing API requests."""
+    # Paths that indicate a real user (not health checks or internal)
+    USER_PATHS = ('/api/analyze', '/api/deal/', '/api/register')
+
+    async def dispatch(self, request: Request, call_next):
+        global _last_api_activity
+        path = request.url.path
+        if any(path.startswith(p) for p in self.USER_PATHS):
+            _last_api_activity = time.time()
+        return await call_next(request)
+
+app.add_middleware(ActivityTrackingMiddleware)
+
+
+# ---------------------------------------------------------------------------
 # Health check for Railway
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health():
     return {"status": "ok", "cache_loaded": matcher.cache is not None}
+
+@app.get("/api/pipeline/status")
+async def pipeline_status():
+    """Check if a web user is currently active (for local pipeline manager)."""
+    now = time.time()
+    idle_seconds = now - _last_api_activity if _last_api_activity > 0 else float('inf')
+    is_active = idle_seconds < _IDLE_TIMEOUT
+    return {
+        "user_active": is_active,
+        "idle_seconds": round(idle_seconds, 1),
+        "idle_timeout": _IDLE_TIMEOUT,
+        "last_activity": datetime.fromtimestamp(_last_api_activity).isoformat() if _last_api_activity > 0 else None,
+    }
 
 
 # ---------------------------------------------------------------------------
