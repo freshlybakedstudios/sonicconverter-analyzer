@@ -219,11 +219,11 @@ async def health():
 async def pipeline_status():
     """Check if a web user is currently active (for local pipeline manager)."""
     now = time.time()
-    idle_seconds = now - _last_api_activity if _last_api_activity > 0 else float('inf')
-    is_active = idle_seconds < _IDLE_TIMEOUT
+    idle_seconds = now - _last_api_activity if _last_api_activity > 0 else -1
+    is_active = _last_api_activity > 0 and idle_seconds < _IDLE_TIMEOUT
     return {
         "user_active": is_active,
-        "idle_seconds": round(idle_seconds, 1),
+        "idle_seconds": round(idle_seconds, 1) if idle_seconds >= 0 else None,
         "idle_timeout": _IDLE_TIMEOUT,
         "last_activity": datetime.fromtimestamp(_last_api_activity).isoformat() if _last_api_activity > 0 else None,
     }
