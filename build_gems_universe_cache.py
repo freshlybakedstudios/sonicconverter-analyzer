@@ -66,6 +66,7 @@ class UniverseCacheBuilder:
             offset = page * page_size
             query = self.supabase.table('gems_complete_analysis')\
                 .select(','.join(GEMS_COLUMNS))\
+                .order('isrc')\
                 .limit(page_size)\
                 .offset(offset)
 
