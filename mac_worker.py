@@ -472,23 +472,6 @@ def process_job(job: dict, loopback_device: int):
         update_job(job_id, 'error')
         return
 
-    # Pause GEMS/discovery before capturing — they use Spotify and will contaminate audio
-    _paused_for_capture = []
-    try:
-        import subprocess
-        result = subprocess.run(['pm2', 'jlist'], capture_output=True, text=True, timeout=10)
-        running = [p['name'] for p in json.loads(result.stdout)
-                   if p.get('pm2_env', {}).get('status') == 'online'
-                   and p['name'] in ('gems', 'discovery')]
-        if running:
-            print(f"[{job_id[:8]}] Pausing {', '.join(running)} before capture")
-            for name in running:
-                subprocess.run(['pm2', 'stop', name], capture_output=True, timeout=30)
-            _paused_for_capture = running
-            time.sleep(2)  # Let Spotify settle after GEMS stops
-    except Exception as e:
-        print(f"[{job_id[:8]}] Warning: could not pause local scripts: {e}")
-
     # Ensure Spotify is active
     device_id = _ensure_device_active()
     if not device_id:
@@ -529,14 +512,6 @@ def process_job(job: dict, loopback_device: int):
 
     _pause_playback()
 
-    # Resume GEMS/discovery after capture is done
-    if _paused_for_capture:
-        print(f"[{job_id[:8]}] Resuming {', '.join(_paused_for_capture)} after capture")
-        for name in _paused_for_capture:
-            try:
-                subprocess.run(['pm2', 'restart', name], capture_output=True, timeout=30)
-            except Exception:
-                pass
 
     if not audio_samples:
         print(f"[{job_id[:8]}] All samples failed — no audio captured")
@@ -595,6 +570,33 @@ def main():
     print(f"  Polling every {POLL_INTERVAL}s")
 
     import threading
+    import subprocess as _sp
+
+    def _pause_local_scripts():
+        """Stop gems/discovery before audio capture."""
+        paused = []
+        try:
+            result = _sp.run(['pm2', 'jlist'], capture_output=True, text=True, timeout=10)
+            for p in json.loads(result.stdout):
+                if p.get('pm2_env', {}).get('status') == 'online' and p['name'] in ('gems', 'discovery'):
+                    _sp.run(['pm2', 'stop', p['name']], capture_output=True, timeout=30)
+                    paused.append(p['name'])
+            if paused:
+                print(f"  Paused {', '.join(paused)} for capture")
+                time.sleep(2)
+        except Exception as e:
+            print(f"  Warning: could not pause scripts: {e}")
+        return paused
+
+    def _resume_local_scripts(paused):
+        """Resume gems/discovery after capture."""
+        for name in paused:
+            try:
+                _sp.run(['pm2', 'restart', name], capture_output=True, timeout=30)
+            except Exception:
+                pass
+        if paused:
+            print(f"  Resumed {', '.join(paused)}")
 
     while True:
         try:
@@ -604,9 +606,11 @@ def main():
             job = None
 
         if job:
+            # Pause GEMS/discovery BEFORE capture (in main thread, not daemon)
+            paused = _pause_local_scripts()
+
             # Run job with a hard timeout to prevent hangs
-            JOB_TIMEOUT = 120  # 2 minutes max per job
-            result = [None]
+            JOB_TIMEOUT = 120
             def _run():
                 try:
                     process_job(job, loopback_device)
@@ -626,7 +630,9 @@ def main():
                     update_job(job['id'], 'error')
                 except Exception:
                     pass
-                # Thread is daemon, will die when main thread moves on
+
+            # ALWAYS resume after job completes or times out (in main thread)
+            _resume_local_scripts(paused)
 
         time.sleep(POLL_INTERVAL)
 
