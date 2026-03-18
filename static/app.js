@@ -489,35 +489,133 @@ function renderResults(data) {
     hide(genreCallout);
   }
 
-  // Conversion comparison card — show if we have peer data
+  // Where You Stand — conversion comparison card
   const convCard = $('#conversion-card');
   const comp = (userProfile && userProfile.conversion_comparison) || {};
   const hasUserRate = userProfile && userProfile.conversion_rate != null;
 
   if (userProfile && (hasUserRate || comp.peer_median != null)) {
-    // Only show "Your Rate" box if we have their data
+    const cr = userProfile.conversion_rate;
+    const p25 = comp.peer_bottom_25 || 0;
+    const median = comp.peer_median || 0;
+    const p75 = comp.peer_top_25 || 0;
+    const p99 = Math.min(comp.peer_p99 || p75 * 2, p75 * 3);
+    const target = p75; // Top 25% target
+    const fans = userProfile.additional_fans || 0;
+    const atTop = cr >= p75;
+    const scaleMax = Math.max(p99, cr, target) * 1.05;
+    const toPos = v => Math.max(0, Math.min(100, (v / scaleMax) * 100));
+
+    // Stat boxes
     const yoursStat = $('#conv-yours-stat');
     if (hasUserRate) {
-      $('#conv-yours').textContent = userProfile.conversion_rate.toFixed(1) + '%';
+      $('#conv-yours').textContent = cr.toFixed(1) + '%';
       show(yoursStat);
     } else {
       hide(yoursStat);
     }
+    $('#conv-top25').textContent = target.toFixed(1) + '%';
+    $('#conv-fan-gap').textContent = fans > 0 ? '+' + fans.toLocaleString() : '-';
+    $('#conv-fan-gap-label').textContent = atTop ? 'Sonic Upside' : 'Fan Gap';
 
-    $('#conv-median').textContent = comp.peer_median != null ? comp.peer_median.toFixed(1) + '%' : '-';
-    $('#conv-top25').textContent = comp.peer_top_25 != null ? comp.peer_top_25.toFixed(1) + '%' : '-';
+    // Bar: solid fill up to "You"
+    if (hasUserRate) {
+      $('#conv-bar-fill').style.width = toPos(cr) + '%';
+      $('#conv-bar-dot').style.left = toPos(cr) + '%';
 
-    // Fan opportunity — only show if we have their rate
+      // Opportunity zone (striped) from You to Target
+      const oppBar = $('#conv-bar-opportunity');
+      if (target > cr) {
+        oppBar.style.left = toPos(cr) + '%';
+        oppBar.style.width = (toPos(target) - toPos(cr)) + '%';
+        oppBar.style.display = 'block';
+      } else {
+        oppBar.style.display = 'none';
+      }
+    }
+
+    // Tick marks
+    $('#conv-tick-p25').style.left = toPos(p25) + '%';
+    $('#conv-tick-median').style.left = toPos(median) + '%';
+    $('#conv-tick-p75').style.left = toPos(p75) + '%';
+    $('#conv-tick-p99').style.left = toPos(p99) + '%';
+    if (target > cr) {
+      $('#conv-tick-target').style.left = toPos(target) + '%';
+      $('#conv-tick-target').style.display = 'block';
+    } else {
+      $('#conv-tick-target').style.display = 'none';
+    }
+
+    // Fan label on the gap
+    const fanLabel = $('#conv-fan-label');
+    if (hasUserRate && fans > 0 && target > cr) {
+      fanLabel.textContent = '+' + fans.toLocaleString() + ' fans';
+      fanLabel.style.marginLeft = toPos(cr) + '%';
+      fanLabel.style.width = (toPos(target) - toPos(cr)) + '%';
+      show(fanLabel);
+    } else {
+      hide(fanLabel);
+    }
+
+    // Labels below bar
+    const labelsEl = $('#conv-bar-labels');
+    labelsEl.innerHTML = '';
+    const labels = [
+      { pos: toPos(p25), name: 'p25', val: p25.toFixed(2) + '%', cls: '' },
+      { pos: toPos(median), name: 'Median', val: median.toFixed(2) + '%', cls: '' },
+      { pos: toPos(p75), name: 'p75', val: p75.toFixed(2) + '%', cls: '' },
+    ];
+    if (hasUserRate) {
+      labels.push({ pos: toPos(cr), name: 'You', val: cr.toFixed(2) + '%', cls: 'conv-bar-label-you' });
+    }
+    if (target > cr) {
+      labels.push({ pos: toPos(target), name: 'Top 25%', val: target.toFixed(2) + '%', cls: 'conv-bar-label-target' });
+    }
+    labels.push({ pos: toPos(p99), name: 'p99', val: p99.toFixed(2) + '%', cls: '' });
+    for (const l of labels) {
+      const div = document.createElement('div');
+      div.className = 'conv-bar-label ' + l.cls;
+      div.style.left = l.pos + '%';
+      div.innerHTML = `<span>${l.name}</span><span>${l.val}</span>`;
+      labelsEl.appendChild(div);
+    }
+
+    // Contextual text
     const oppEl = $('#conv-opportunity');
-    if (hasUserRate && userProfile.additional_fans > 0) {
-      const fans = userProfile.additional_fans.toLocaleString();
-      const rev = '$' + userProfile.additional_revenue.toLocaleString();
-      oppEl.innerHTML =
-        `Closing the gap to the top 25% of your sonic peers could convert <span class="fan-number">${fans} additional followers</span> from your existing listeners — that's <span class="fan-number">${rev}</span> if each new follower bought a $25 ticket or merch item.`;
+    if (hasUserRate && fans > 0) {
+      if (atTop) {
+        oppEl.innerHTML = `You're already converting at <span class="fan-number">top-performer levels</span> across ${(comp.peer_count || 0).toLocaleString()} artists in your tier. Sonic analysis suggests audio adjustments could still convert an estimated <span class="fan-number">${fans.toLocaleString()} additional listeners into fans</span>.`;
+      } else {
+        oppEl.innerHTML = `Across ${(comp.peer_count || 0).toLocaleString()} artists in your sonic and genre tier, the top 25% convert at <span class="fan-number">${target.toFixed(1)}%</span>. If you closed that gap, that's an estimated <span class="fan-number">${fans.toLocaleString()} additional engaged fans</span> — followers who save, stream repeatedly, and show up. Audio adjustments are one of the biggest levers for improving conversion.`;
+      }
       show(oppEl);
     } else {
       hide(oppEl);
     }
+
+    // Revenue breakdown
+    const revEl = $('#conv-revenue');
+    if (fans > 0) {
+      const MERCH_RATE = 0.23, MERCH_SPEND = 64, STREAMING_PER_FAN = 4;
+      const merchRev = Math.round(fans * MERCH_RATE * MERCH_SPEND);
+      const streamRev = Math.round(fans * STREAMING_PER_FAN);
+      const totalRev = merchRev + streamRev;
+
+      $('#conv-revenue-title').textContent = atTop
+        ? 'Estimated Annual Revenue From Audio Adjustments'
+        : 'Estimated Annual Revenue From Closing the Gap';
+
+      const rowsEl = $('#conv-revenue-rows');
+      rowsEl.innerHTML = `
+        <div class="conv-revenue-row"><span>Merch (23% buy rate × $64 avg spend)</span><span class="conv-revenue-row-val">$${merchRev.toLocaleString()}</span></div>
+        <div class="conv-revenue-row"><span>Streaming ($4/fan/year royalties)</span><span class="conv-revenue-row-val">$${streamRev.toLocaleString()}</span></div>
+      `;
+      $('#conv-revenue-total-val').textContent = '$' + totalRev.toLocaleString() + '/year';
+      show(revEl);
+    } else {
+      hide(revEl);
+    }
+
     show(convCard);
   } else {
     hide(convCard);

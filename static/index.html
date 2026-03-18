@@ -331,25 +331,57 @@
         </div>
       </div>
 
-      <!-- Your Conversion (only shown if Spotify URL provided) -->
+      <!-- Where You Stand (only shown if Spotify URL provided) -->
       <div class="conversion-card hidden" id="conversion-card">
-        <h3>Your Conversion Rate</h3>
+        <h3>Where You Stand</h3>
         <p class="conversion-note">Listener-to-follower conversion compared to your sonic peers</p>
+
+        <!-- Bar visualization -->
+        <div class="conv-bar-wrap">
+          <div class="conv-bar" id="conv-bar">
+            <div class="conv-bar-fill" id="conv-bar-fill"></div>
+            <div class="conv-bar-opportunity" id="conv-bar-opportunity"></div>
+            <div class="conv-bar-tick" id="conv-tick-p25"></div>
+            <div class="conv-bar-tick" id="conv-tick-median"></div>
+            <div class="conv-bar-tick" id="conv-tick-p75"></div>
+            <div class="conv-bar-tick" id="conv-tick-p99"></div>
+            <div class="conv-bar-tick conv-bar-tick-target" id="conv-tick-target"></div>
+            <div class="conv-bar-dot" id="conv-bar-dot"></div>
+          </div>
+          <div class="conv-bar-fan-label hidden" id="conv-fan-label"></div>
+          <div class="conv-bar-labels" id="conv-bar-labels"></div>
+        </div>
+
+        <!-- Stat boxes -->
         <div class="conversion-grid">
           <div class="conversion-stat" id="conv-yours-stat">
             <div class="conversion-value" id="conv-yours">-</div>
-            <div class="conversion-label">Your Rate</div>
+            <div class="conversion-label">You</div>
           </div>
           <div class="conversion-stat">
-            <div class="conversion-value" id="conv-median">-</div>
-            <div class="conversion-label">Peer Median</div>
-          </div>
-          <div class="conversion-stat">
-            <div class="conversion-value" id="conv-top25">-</div>
+            <div class="conversion-value conv-value-green" id="conv-top25">-</div>
             <div class="conversion-label">Top 25%</div>
           </div>
+          <div class="conversion-stat">
+            <div class="conversion-value conv-value-accent" id="conv-fan-gap">-</div>
+            <div class="conversion-label" id="conv-fan-gap-label">Fan Gap</div>
+          </div>
         </div>
+
         <div class="conversion-opportunity hidden" id="conv-opportunity"></div>
+
+        <!-- Revenue breakdown -->
+        <div class="conv-revenue hidden" id="conv-revenue">
+          <div class="conv-revenue-title" id="conv-revenue-title">Estimated Annual Revenue From Closing the Gap</div>
+          <div class="conv-revenue-rows" id="conv-revenue-rows"></div>
+          <div class="conv-revenue-total">
+            <span>Total estimated potential</span>
+            <span id="conv-revenue-total-val">-</span>
+          </div>
+          <p class="conv-sources">
+            Sources: Merch data from <a href="https://www.atvenu.com/post/the-fan-spending-report-what-concertgoers-are-buying-most" target="_blank" rel="noopener noreferrer">atVenu 2025 Fan Spending Report</a>. Fan engagement data from <a href="https://artists.spotify.com/en/fan-study/merch-and-live" target="_blank" rel="noopener noreferrer">Spotify Fan Study</a>. Estimates are illustrative and based on industry averages — individual results vary.
+          </p>
+        </div>
       </div>
 
       <!-- Recommendations -->
