@@ -2487,6 +2487,8 @@ async def deal_lookup(
     if not features and top_track and top_track.get('spotify_url'):
         track_url = top_track['spotify_url']
         print(f"Deal lookup: no cached features, creating job for Mac worker — {track_url}")
+        # Pause local scripts before Mac worker captures audio
+        _notify_local_pipeline('user_active')
 
         try:
             # Create a Supabase job so Mac worker picks it up
