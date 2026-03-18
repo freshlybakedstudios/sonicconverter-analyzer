@@ -56,18 +56,31 @@ def _supabase_headers():
     }
 
 
+_last_poll_log = 0
+
 def poll_pending_jobs():
     """Check for jobs with status='pending_features'."""
+    global _last_poll_log
     try:
         resp = requests.get(
             f"{SUPABASE_URL}/rest/v1/analysis_jobs?status=eq.pending_features&order=created_at.asc&limit=1",
             headers=_supabase_headers(),
             timeout=10,
         )
-        if resp.status_code == 200 and resp.json():
-            return resp.json()[0]
+        if resp.status_code == 200:
+            jobs = resp.json()
+            if jobs:
+                print(f"Found pending job: {jobs[0]['id'][:8]}")
+                return jobs[0]
+        else:
+            print(f"Poll response: {resp.status_code}")
     except Exception as e:
         print(f"Poll error: {e}")
+    # Log heartbeat every 60s so we know it's alive
+    now = time.time()
+    if now - _last_poll_log > 60:
+        _last_poll_log = now
+        print(f"Polling... (no pending jobs)")
     return None
 
 
