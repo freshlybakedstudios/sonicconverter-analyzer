@@ -555,17 +555,40 @@ def main():
     print(f"  Audio device: {sd.query_devices(loopback_device)['name']}")
     print(f"  Polling every {POLL_INTERVAL}s")
 
+    import threading
+
     while True:
-        job = poll_pending_jobs()
+        try:
+            job = poll_pending_jobs()
+        except Exception as e:
+            print(f"Poll exception: {e}")
+            job = None
+
         if job:
-            try:
-                process_job(job, loopback_device)
-            except Exception as e:
-                print(f"Job processing error: {e}")
+            # Run job with a hard timeout to prevent hangs
+            JOB_TIMEOUT = 120  # 2 minutes max per job
+            result = [None]
+            def _run():
+                try:
+                    process_job(job, loopback_device)
+                except Exception as e:
+                    print(f"Job processing error: {e}")
+                    try:
+                        update_job(job['id'], 'error')
+                    except Exception:
+                        pass
+
+            t = threading.Thread(target=_run, daemon=True)
+            t.start()
+            t.join(timeout=JOB_TIMEOUT)
+            if t.is_alive():
+                print(f"[{job['id'][:8]}] Job timed out after {JOB_TIMEOUT}s — moving on")
                 try:
                     update_job(job['id'], 'error')
                 except Exception:
                     pass
+                # Thread is daemon, will die when main thread moves on
+
         time.sleep(POLL_INTERVAL)
 
 
