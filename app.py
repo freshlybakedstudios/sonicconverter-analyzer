@@ -2019,7 +2019,7 @@ async def analyze_url(
                     track_name = track_data.get('name', '')
                     track_isrc = (track_data.get('external_ids') or {}).get('isrc', '')
                     artists = track_data.get('artists', [])
-                    artist_name = artists[0]['name'] if artists else ''
+                    artist_name = ', '.join(a['name'] for a in artists)
                     # Get primary artist's Spotify URL for CM lookup
                     if artists:
                         ext_urls = artists[0].get('external_urls', {})
