@@ -86,6 +86,24 @@ sse_subscribers: dict = {}
 _event_loop = None  # Set when the server starts
 
 # ---------------------------------------------------------------------------
+# Enrichment pause/resume: prioritize user-facing CM calls over background enrichment
+# ---------------------------------------------------------------------------
+_enrichment_gate = threading.Event()
+_enrichment_gate.set()  # Start open (enrichment can run)
+
+def _pause_enrichment():
+    """Pause background enrichment so user-facing CM calls get priority."""
+    if _enrichment_gate.is_set():
+        print("  ⏸️  Pausing enrichment for user-facing CM calls")
+    _enrichment_gate.clear()
+
+def _resume_enrichment():
+    """Resume background enrichment after user-facing CM calls complete."""
+    if not _enrichment_gate.is_set():
+        print("  ▶️  Resuming enrichment")
+    _enrichment_gate.set()
+
+# ---------------------------------------------------------------------------
 # Resource switching: track web user activity, notify local Mac to pause/resume
 # ---------------------------------------------------------------------------
 _last_api_activity = 0.0          # timestamp of last user-facing API request
@@ -706,6 +724,7 @@ async def register(
         'monthly_listeners': monthly_listeners,
         'created_at': time.time(),
     }
+    print(f"Lead saved: {email}, spotify_url={'yes: ' + spotify_url if spotify_url else 'none'}, listeners={monthly_listeners}")
     return {"token": token, "name": name}
 
 
@@ -750,6 +769,9 @@ async def analyze(
 
         # Save original dropdown selection before it gets overwritten
         dropdown_genre = genre or ''
+
+        # Pause enrichment so user-facing CM calls get priority
+        _pause_enrichment()
 
         # If user provided Spotify URL, pull their genre from cache for matching
         spotify_url = lead.get('spotify_url', '')
@@ -1077,17 +1099,22 @@ async def analyze(
             print(f"  User profile: no Spotify match (url={'yes' if spotify_base else 'no'}, monthly_listeners={u_listeners})")
 
         # Build conversion comparison vs matched artists (works with or without Spotify URL)
+        MAX_REASONABLE_CONVERSION = 15.0
         if u_listeners > 0 and matches:
             match_conversions = [
                 m['conversion_rate'] for m in matches
                 if m.get('conversion_rate') is not None
+                and 0 < m['conversion_rate'] <= MAX_REASONABLE_CONVERSION
             ]
             conv_comparison = {}
             if match_conversions:
                 sorted_conv = sorted(match_conversions)
+                n = len(sorted_conv)
                 conv_comparison = {
-                    'peer_median': round(sorted_conv[len(sorted_conv) // 2], 2),
-                    'peer_top_25': round(sorted_conv[int(len(sorted_conv) * 0.75)], 2),
+                    'peer_median': round(sorted_conv[n // 2], 2),
+                    'peer_top_25': round(sorted_conv[int(n * 0.75)], 2),
+                    'peer_bottom_25': round(sorted_conv[n // 4], 2),
+                    'peer_p99': round(sorted_conv[min(n - 1, int(n * 0.99))], 2),
                     'peer_count': len(sorted_conv),
                 }
 
@@ -1210,6 +1237,8 @@ async def analyze(
         wider_extra = [m for m in wider_pool if str(m.get('artist_id', '')) not in displayed_ids]
         enrichment_matches = matches + wider_extra
         enrichment_matches = enrichment_matches[:200]  # Cap total
+        # Resume enrichment gate — user-facing CM calls are done
+        _resume_enrichment()
         enrichment_pool.submit(
             _run_background_enrichment,
             job_id, enrichment_matches, user_cm_id,
@@ -1218,6 +1247,8 @@ async def analyze(
         return result
 
     finally:
+        # Ensure enrichment gate is open even on error paths
+        _resume_enrichment()
         # Clean up temp file
         try:
             os.unlink(tmp_path)
@@ -1521,6 +1552,8 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         })
 
         for batch_start in range(0, total, BATCH_SIZE):
+            # Wait if user-facing CM calls need priority
+            _enrichment_gate.wait()
             batch = sorted_matches[batch_start:batch_start + BATCH_SIZE]
             batch_playlists = []
 
@@ -1775,11 +1808,14 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         job_mgr.update_job(job_id, status='complete')
         _sse_publish(job_id, 'complete', {'status': 'complete'})
         print(f"Enrichment [{job_id[:8]}]: Complete")
+        # Notify resource-switcher that we're done — local scripts can resume
+        _notify_local_pipeline('user_idle')
 
     except Exception as e:
         print(f"Enrichment [{job_id[:8]}]: Fatal error: {e}")
         job_mgr.update_job(job_id, status='error')
         _sse_publish(job_id, 'error', {'error': str(e)})
+        _notify_local_pipeline('user_idle')
 
 
 # ---------------------------------------------------------------------------
@@ -1993,6 +2029,8 @@ async def analyze_url(
 
     # Look up track's artist in Chartmetric for genres + related artists
     # NOTE: Use track's artist for genre/CM ID, but keep user's own tier from registration
+    # Pause enrichment so user-facing CM calls get priority
+    _pause_enrichment()
     track_artist_cm_data = None
     if artist_spotify_url:
         print(f"  URL analysis: looking up track artist {artist_name} via CM...")
@@ -2101,7 +2139,7 @@ async def analyze_url(
     user_monthly = lead.get('monthly_listeners')
     if not user_monthly and track_artist_cm_data:
         user_monthly = track_artist_cm_data.get('listeners', 0)
-    user_tier = _listeners_to_tier(user_monthly) if user_monthly else None
+    user_tier = _listeners_to_tier(user_monthly) if user_monthly else 'micro'
     fetch_n = 20000
 
     all_found = matcher.find_matches(features, genre_hint=genre or '', top_n=fetch_n, threshold=0.55)
@@ -2213,6 +2251,78 @@ async def analyze_url(
 
     new_job_id = job_mgr.create_job(token, features, found_matches)
 
+    # Build user_profile for "Where You Stand" conversion comparison
+    user_profile = None
+    u_listeners = 0
+    u_followers = 0
+    u_conversion = None
+
+    # Get user's artist data from registration spotify_url or CM lookup
+    reg_spotify = lead.get('spotify_url', '')
+    reg_base = reg_spotify.split('?')[0].rstrip('/') if reg_spotify else ''
+    if reg_base:
+        # Try GEMS cache first
+        for aid, adata in matcher._artists.items():
+            cache_url = (adata.get('spotify_url') or '').split('?')[0].rstrip('/')
+            if cache_url == reg_base:
+                u_listeners = float(adata.get('listeners', 0) or 0)
+                u_followers = float(adata.get('followers', 0) or 0)
+                u_conversion = adata.get('conversion_rate')
+                print(f"  User profile (cache): {adata.get('name')}, listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
+                break
+        # Fall back to CM data if cache had zeros
+        if not u_listeners and track_artist_cm_data:
+            u_listeners = float(track_artist_cm_data.get('listeners', 0) or 0)
+            u_followers = float(track_artist_cm_data.get('followers', 0) or 0)
+            u_conversion = track_artist_cm_data.get('conversion_rate')
+            print(f"  User profile (CM): {track_artist_cm_data['name']}, listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
+    # Also try using track_artist_cm_data if no reg URL but we have CM data
+    elif track_artist_cm_data:
+        u_listeners = float(track_artist_cm_data.get('listeners', 0) or 0)
+        u_followers = float(track_artist_cm_data.get('followers', 0) or 0)
+        u_conversion = track_artist_cm_data.get('conversion_rate')
+        print(f"  User profile (CM fallback): {track_artist_cm_data['name']}, listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
+
+    if u_listeners > 0 and all_found:
+        # Filter out anomalous conversion rates (retired artists, bad data)
+        MAX_REASONABLE_CONVERSION = 15.0
+        match_conversions = [
+            m['conversion_rate'] for m in all_found
+            if m.get('conversion_rate') is not None
+            and 0 < m['conversion_rate'] <= MAX_REASONABLE_CONVERSION
+        ]
+        conv_comparison = {}
+        if match_conversions:
+            sorted_conv = sorted(match_conversions)
+            n = len(sorted_conv)
+            conv_comparison = {
+                'peer_median': round(sorted_conv[n // 2], 2),
+                'peer_top_25': round(sorted_conv[int(n * 0.75)], 2),
+                'peer_bottom_25': round(sorted_conv[n // 4], 2),
+                'peer_p99': round(sorted_conv[min(n - 1, int(n * 0.99))], 2),
+                'peer_count': len(sorted_conv),
+            }
+
+        additional_fans = 0
+        additional_revenue = 0
+        peer_top_25 = conv_comparison.get('peer_top_25', 0)
+        if peer_top_25 > 0 and u_listeners > 0:
+            top25_followers_target = int(round((peer_top_25 / 100) * u_listeners * 4.3 / 0.1))
+            current_followers = u_followers if u_followers > 0 else 0
+            additional_fans = max(int(round(top25_followers_target - current_followers)), 0)
+            additional_revenue = additional_fans * 25
+
+        user_profile = {
+            'name': lead.get('name', 'Artist'),
+            'listeners': u_listeners,
+            'followers': u_followers,
+            'conversion_rate': u_conversion,
+            'conversion_comparison': conv_comparison,
+            'additional_fans': additional_fans,
+            'additional_revenue': additional_revenue,
+        }
+        print(f"  User profile built: conversion={u_conversion}, fans_gap={additional_fans}, peers={conv_comparison.get('peer_count', 0)}")
+
     print(f"  URL analysis: {len(found_matches)} tier-filtered matches, "
           f"{len(all_found)} total genre-filtered for enrichment, "
           f"{len(flattery_matches)} flattery, {len(recs)} recs")
@@ -2268,6 +2378,9 @@ async def analyze_url(
     if flattery_matches:
         result['flattery_matches'] = flattery_matches
 
+    if user_profile:
+        result['user_profile'] = user_profile
+
     # Upsert analyzed track's audio features into gems_complete_analysis
     # (Artist upsert already handled by lookup_artist_by_spotify above)
     if track_isrc and features:
@@ -2280,6 +2393,8 @@ async def analyze_url(
     wider_extra = [m for m in wider_pool if str(m.get('artist_id', '')) not in displayed_ids]
     enrichment_matches = found_matches + wider_extra
     enrichment_matches = enrichment_matches[:200]  # Cap total
+    # Resume enrichment gate — user-facing CM calls are done
+    _resume_enrichment()
     enrichment_pool.submit(
         _run_background_enrichment,
         new_job_id, enrichment_matches, user_cm_id,

@@ -1603,6 +1603,18 @@ def _lookup_gems_features(isrc: str) -> dict | None:
                 # Only return if we have core features (not just an empty row)
                 if row.get('bpm') is not None and row.get('energy') is not None:
                     features = {k: v for k, v in row.items() if v is not None}
+                    # Sanity-check numeric features — reject clearly bad extractions
+                    BOUNDS = {
+                        'dynamic_range': (0, 60),
+                        'loudness_range': (0, 40),
+                        'crest_factor': (0, 30),
+                        'lufs_integrated': (-60, 0),
+                    }
+                    for key, (lo, hi) in BOUNDS.items():
+                        val = features.get(key)
+                        if val is not None and (val < lo or val > hi):
+                            logger.warning(f"GEMS cache {isrc}: {key}={val} out of range [{lo},{hi}], dropping")
+                            del features[key]
                     logger.info(f"GEMS cache hit for ISRC {isrc} ({len(features)} features)")
                     return features
     except Exception as e:
