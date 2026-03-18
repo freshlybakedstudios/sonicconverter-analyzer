@@ -479,13 +479,37 @@ def process_job(job: dict, loopback_device: int):
         update_job(job_id, 'error')
         return
 
-    # Play the track
-    if not _play_track(track_id, device_id):
-        print(f"[{job_id[:8]}] Failed to start playback")
+    # Play the track — retry up to 3 times
+    for attempt in range(3):
+        if _play_track(track_id, device_id):
+            time.sleep(2)
+            # Verify playback is actually happening
+            token = _get_spotify_token()
+            if token:
+                try:
+                    state = requests.get(
+                        'https://api.spotify.com/v1/me/player',
+                        headers={'Authorization': f'Bearer {token}'},
+                        timeout=5,
+                    )
+                    if state.status_code == 200:
+                        data = state.json()
+                        if data.get('is_playing'):
+                            break
+                        print(f"[{job_id[:8]}] Playback not active (attempt {attempt+1}/3), retrying...")
+                    else:
+                        print(f"[{job_id[:8]}] Player state check failed: {state.status_code}")
+                except Exception:
+                    pass
+            else:
+                break  # No token, just hope it's playing
+        else:
+            print(f"[{job_id[:8]}] Play API failed (attempt {attempt+1}/3)")
+        time.sleep(2)
+    else:
+        print(f"[{job_id[:8]}] Failed to start playback after 3 attempts")
         update_job(job_id, 'error')
         return
-
-    time.sleep(2)  # Let playback start
 
     # Sample at 3 positions: 25%, 50%, 75%
     sample_points = [
