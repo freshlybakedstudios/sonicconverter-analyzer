@@ -415,6 +415,35 @@ function renderResults(data) {
     return 'Club-ready';
   }
 
+  // Artist card — show when we have artist data from source or user_profile
+  const artistCard = $('#artist-card');
+  const src = data.source || {};
+  const up = userProfile || {};
+  if (src.artist_name || up.name) {
+    const name = src.artist_name || up.name || '';
+    const listeners = up.listeners || src.artist_listeners || 0;
+    const followers = up.followers || 0;
+    const conversion = up.conversion_rate;
+    const genres = src.artist_genres || '';
+    const tier = src.artist_tier || data.user_tier || '';
+
+    $('#artist-card-name').textContent = name;
+    $('#artist-card-tier').textContent = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : '';
+
+    function fmtNum(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return n.toString();
+    }
+    $('#artist-card-listeners').textContent = listeners > 0 ? fmtNum(listeners) : '-';
+    $('#artist-card-followers').textContent = followers > 0 ? fmtNum(followers) : '-';
+    $('#artist-card-conversion').textContent = conversion != null ? conversion.toFixed(2) + '%' : '-';
+    $('#artist-card-genres').textContent = genres || '-';
+    show(artistCard);
+  } else {
+    hide(artistCard);
+  }
+
   // Key stats
   const statsGrid = $('#stats-grid');
   statsGrid.innerHTML = '';
@@ -500,23 +529,11 @@ function renderResults(data) {
     const median = comp.peer_median || 0;
     const p75 = comp.peer_top_25 || 0;
     const p99 = Math.min(comp.peer_p99 || p75 * 2, p75 * 3);
-    const target = p75; // Top 25% target
-    const fans = userProfile.additional_fans || 0;
     const atTop = cr >= p75;
+    const target = atTop && p99 > cr ? p99 : p75; // Target p99 if already above p75
+    const fans = userProfile.additional_fans || 0;
     const scaleMax = Math.max(p99, cr, target) * 1.05;
     const toPos = v => Math.max(0, Math.min(100, (v / scaleMax) * 100));
-
-    // Stat boxes
-    const yoursStat = $('#conv-yours-stat');
-    if (hasUserRate) {
-      $('#conv-yours').textContent = cr.toFixed(1) + '%';
-      show(yoursStat);
-    } else {
-      hide(yoursStat);
-    }
-    $('#conv-top25').textContent = target.toFixed(1) + '%';
-    $('#conv-fan-gap').textContent = fans > 0 ? '+' + fans.toLocaleString() : '-';
-    $('#conv-fan-gap-label').textContent = atTop ? 'Sonic Upside' : 'Fan Gap';
 
     // Bar: solid fill up to "You"
     if (hasUserRate) {
@@ -563,15 +580,21 @@ function renderResults(data) {
     const labels = [
       { pos: toPos(p25), name: 'p25', val: p25.toFixed(2) + '%', cls: '' },
       { pos: toPos(median), name: 'Median', val: median.toFixed(2) + '%', cls: '' },
-      { pos: toPos(p75), name: 'p75', val: p75.toFixed(2) + '%', cls: '' },
     ];
+    // Only show p75 if it won't overlap with the Top 25% target label
+    if (atTop || target !== p75) {
+      labels.push({ pos: toPos(p75), name: 'p75', val: p75.toFixed(2) + '%', cls: '' });
+    }
     if (hasUserRate) {
       labels.push({ pos: toPos(cr), name: 'You', val: cr.toFixed(2) + '%', cls: 'conv-bar-label-you' });
     }
     if (target > cr) {
-      labels.push({ pos: toPos(target), name: 'Top 25%', val: target.toFixed(2) + '%', cls: 'conv-bar-label-target' });
+      const targetName = atTop ? 'Top 1%' : 'Top 25%';
+      labels.push({ pos: toPos(target), name: targetName, val: target.toFixed(2) + '%', cls: 'conv-bar-label-target' });
     }
-    labels.push({ pos: toPos(p99), name: 'p99', val: p99.toFixed(2) + '%', cls: '' });
+    if (!atTop || target !== p99) {
+      labels.push({ pos: toPos(p99), name: 'p99', val: p99.toFixed(2) + '%', cls: '' });
+    }
     for (const l of labels) {
       const div = document.createElement('div');
       div.className = 'conv-bar-label ' + l.cls;
@@ -580,39 +603,64 @@ function renderResults(data) {
       labelsEl.appendChild(div);
     }
 
-    // Contextual text
+    // Combined contextual text + revenue projection
     const oppEl = $('#conv-opportunity');
-    if (hasUserRate && fans > 0) {
-      if (atTop) {
-        oppEl.innerHTML = `You're already converting at <span class="fan-number">top-performer levels</span> across ${(comp.peer_count || 0).toLocaleString()} artists in your tier. Sonic analysis suggests audio adjustments could still convert an estimated <span class="fan-number">${fans.toLocaleString()} additional listeners into fans</span>.`;
+    const revEl = $('#conv-revenue');
+    const REVENUE_PER_LISTENER = 0.13; // ~$0.13/listener/year (Loud & Clear + published artist data)
+    const listeners = (userProfile.listeners || 0);
+
+    if (hasUserRate) {
+      const peerCount = (comp.peer_count || 0).toLocaleString();
+
+      if (fans > 0 && atTop) {
+        oppEl.innerHTML = `You're already in the <span class="fan-number">top 25%</span> of ${peerCount} sonic peers. Reaching the top 1% (${target.toFixed(1)}%) would convert an estimated <span class="fan-number">${fans.toLocaleString()} additional listeners into followers</span> — each one a direct line to your releases, merch drops, and tour dates via Spotify push notifications.`;
+      } else if (fans > 0) {
+        oppEl.innerHTML = `Across ${peerCount} sonic peers, the top 25% convert at <span class="fan-number">${target.toFixed(1)}%</span>. Closing that gap means an estimated <span class="fan-number">${fans.toLocaleString()} new followers</span> — each one receiving push notifications for your releases, merch drops, and tour dates.`;
       } else {
-        oppEl.innerHTML = `Across ${(comp.peer_count || 0).toLocaleString()} artists in your sonic and genre tier, the top 25% convert at <span class="fan-number">${target.toFixed(1)}%</span>. If you closed that gap, that's an estimated <span class="fan-number">${fans.toLocaleString()} additional engaged fans</span> — followers who save, stream repeatedly, and show up. Audio adjustments are one of the biggest levers for improving conversion.`;
+        oppEl.innerHTML = `You're converting at <span class="fan-number">${cr.toFixed(1)}%</span> — above the top 1% of ${peerCount} sonic peers. Your listener-to-follower conversion is exceptional.`;
       }
       show(oppEl);
+
+      // Revenue projection using per-listener rate
+      if (listeners > 0) {
+        function fmtNum(n) {
+          if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+          if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+          return n.toFixed(0);
+        }
+        function fmtRev(n) { return '$' + fmtNum(n); }
+        const currentRev = Math.round(listeners * REVENUE_PER_LISTENER);
+        const projectedRev = Math.round((listeners + fans) * REVENUE_PER_LISTENER);
+
+        $('#conv-revenue-title').textContent = 'Estimated Spotify Revenue';
+        const earningsEl = $('#conv-tier-earnings');
+
+        if (fans > 0) {
+          earningsEl.innerHTML = `
+            <div class="conv-tier-row">
+              <span class="conv-tier-label">Current (${fmtNum(listeners)} listeners)</span>
+              <span class="conv-tier-val">${fmtRev(currentRev)}/year</span>
+            </div>
+            <div class="conv-tier-row">
+              <span class="conv-tier-label">With gap closed (+${fans.toLocaleString()} fans)</span>
+              <span class="conv-tier-val conv-tier-val-projected">${fmtRev(projectedRev)}/year</span>
+            </div>
+          `;
+        } else {
+          earningsEl.innerHTML = `
+            <div class="conv-tier-row">
+              <span class="conv-tier-label">Estimated from ${fmtNum(listeners)} listeners</span>
+              <span class="conv-tier-val">${fmtRev(currentRev)}/year</span>
+            </div>
+          `;
+        }
+        $('#conv-sources').innerHTML = 'Derived from <a href="https://loudandclear.byspotify.com/" target="_blank" rel="noopener noreferrer">Spotify Loud & Clear 2025</a> and <a href="https://andrewsouthworth.com/how-many-monthly-listeners-to-make-a-living-on-spotify/" target="_blank" rel="noopener noreferrer">published artist earnings data</a>. Streaming revenue only — does not include merch, touring, or sync.';
+        show(revEl);
+      } else {
+        hide(revEl);
+      }
     } else {
       hide(oppEl);
-    }
-
-    // Revenue breakdown
-    const revEl = $('#conv-revenue');
-    if (fans > 0) {
-      const MERCH_RATE = 0.23, MERCH_SPEND = 64, STREAMING_PER_FAN = 4;
-      const merchRev = Math.round(fans * MERCH_RATE * MERCH_SPEND);
-      const streamRev = Math.round(fans * STREAMING_PER_FAN);
-      const totalRev = merchRev + streamRev;
-
-      $('#conv-revenue-title').textContent = atTop
-        ? 'Estimated Annual Revenue From Audio Adjustments'
-        : 'Estimated Annual Revenue From Closing the Gap';
-
-      const rowsEl = $('#conv-revenue-rows');
-      rowsEl.innerHTML = `
-        <div class="conv-revenue-row"><span>Merch (23% buy rate × $64 avg spend)</span><span class="conv-revenue-row-val">$${merchRev.toLocaleString()}</span></div>
-        <div class="conv-revenue-row"><span>Streaming ($4/fan/year royalties)</span><span class="conv-revenue-row-val">$${streamRev.toLocaleString()}</span></div>
-      `;
-      $('#conv-revenue-total-val').textContent = '$' + totalRev.toLocaleString() + '/year';
-      show(revEl);
-    } else {
       hide(revEl);
     }
 

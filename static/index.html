@@ -211,18 +211,44 @@
 
     <!-- RESULTS -->
     <section class="section hidden" id="results-section">
+
+      <!-- 1. Artist Card -->
+      <div class="artist-card hidden" id="artist-card">
+        <div class="artist-card-header">
+          <h2 class="artist-card-name" id="artist-card-name"></h2>
+          <span class="artist-card-tier" id="artist-card-tier"></span>
+        </div>
+        <div class="artist-card-stats">
+          <div class="artist-card-stat">
+            <div class="artist-card-stat-label">LISTENERS</div>
+            <div class="artist-card-stat-value" id="artist-card-listeners">-</div>
+          </div>
+          <div class="artist-card-stat">
+            <div class="artist-card-stat-label">FOLLOWERS</div>
+            <div class="artist-card-stat-value" id="artist-card-followers">-</div>
+          </div>
+          <div class="artist-card-stat">
+            <div class="artist-card-stat-label">CONVERSION</div>
+            <div class="artist-card-stat-value" id="artist-card-conversion">-</div>
+          </div>
+          <div class="artist-card-stat">
+            <div class="artist-card-stat-label">GENRES</div>
+            <div class="artist-card-stat-value artist-card-genres" id="artist-card-genres">-</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Sonic Breakdown -->
       <h2>Your Sonic Breakdown</h2>
+      <div class="stats-grid stats-grid-6" id="stats-grid"></div>
 
-      <!-- Key Stats -->
-      <div class="stats-grid" id="stats-grid"></div>
-
-      <!-- EQ Chart -->
+      <!-- 3. Frequency Balance -->
       <div class="result-card">
         <h3>Frequency Balance</h3>
         <div class="eq-chart" id="eq-chart"></div>
       </div>
 
-      <!-- Emotions -->
+      <!-- 4. Emotional Character -->
       <div class="result-card">
         <h3>Emotional Character</h3>
         <div class="emotion-tags" id="emotion-tags"></div>
@@ -235,20 +261,49 @@
         <div class="genre-callout-detail" id="genre-callout-detail"></div>
       </div>
 
-      <!-- Trajectory Targets (flattery matches) -->
+      <!-- 5. Trajectory Targets -->
       <div class="result-card hidden" id="flattery-card">
         <h3>Trajectory Targets</h3>
         <p class="card-sub">Higher-tier artists that match your sonic profile</p>
         <div id="flattery-list"></div>
       </div>
 
-      <!-- Enrichment Status -->
-      <div class="enrichment-status hidden" id="enrichment-status">
-        <div class="enrichment-spinner"></div>
-        <span class="enrichment-progress">Enriching matches with playlist data...</span>
+      <!-- 6. Production Recommendations -->
+      <div class="result-card">
+        <h3>Production Recommendations</h3>
+        <ul class="rec-list" id="rec-list"></ul>
       </div>
 
-      <!-- Matches -->
+      <!-- 7. Where You Stand -->
+      <div class="conversion-card hidden" id="conversion-card">
+        <h3>Where You Stand</h3>
+        <p class="conversion-note">Listener-to-follower conversion compared to your sonic peers</p>
+
+        <div class="conv-bar-wrap">
+          <div class="conv-bar" id="conv-bar">
+            <div class="conv-bar-fill" id="conv-bar-fill"></div>
+            <div class="conv-bar-opportunity" id="conv-bar-opportunity"></div>
+            <div class="conv-bar-tick" id="conv-tick-p25"></div>
+            <div class="conv-bar-tick" id="conv-tick-median"></div>
+            <div class="conv-bar-tick" id="conv-tick-p75"></div>
+            <div class="conv-bar-tick" id="conv-tick-p99"></div>
+            <div class="conv-bar-tick conv-bar-tick-target" id="conv-tick-target"></div>
+            <div class="conv-bar-dot" id="conv-bar-dot"></div>
+          </div>
+          <div class="conv-bar-fan-label hidden" id="conv-fan-label"></div>
+          <div class="conv-bar-labels" id="conv-bar-labels"></div>
+        </div>
+
+        <div class="conversion-opportunity hidden" id="conv-opportunity"></div>
+
+        <div class="conv-revenue hidden" id="conv-revenue">
+          <div class="conv-revenue-title" id="conv-revenue-title">What Top Performers in Your Tier Earn</div>
+          <div class="conv-tier-earnings" id="conv-tier-earnings"></div>
+          <p class="conv-sources" id="conv-sources"></p>
+        </div>
+      </div>
+
+      <!-- 8. Similar Artists -->
       <div class="result-card">
         <h3>Similar Artists</h3>
         <p class="card-sub">From our universe of 140,000+ sonically profiled tracks</p>
@@ -278,7 +333,13 @@
         <button class="btn-secondary hidden" id="show-more-btn" style="margin-top:12px;width:100%">Show 20 More</button>
       </div>
 
-      <!-- All Playlists (aggregated, ranked — wider pool) -->
+      <!-- Enrichment Status -->
+      <div class="enrichment-status hidden" id="enrichment-status">
+        <div class="enrichment-spinner"></div>
+        <span class="enrichment-progress">Enriching matches with playlist data...</span>
+      </div>
+
+      <!-- All Playlists -->
       <div class="result-card hidden" id="all-playlists-card">
         <h3>Playlist Opportunities <button class="csv-download-btn hidden" id="csv-download-btn" title="Download CSV">Download CSV</button></h3>
         <p class="card-sub" id="all-playlists-count">Scanning playlists across all sonically similar artists (wider pool, no tier filter)...</p>
@@ -329,65 +390,6 @@
             <tbody id="curator-emails-body"></tbody>
           </table>
         </div>
-      </div>
-
-      <!-- Where You Stand (only shown if Spotify URL provided) -->
-      <div class="conversion-card hidden" id="conversion-card">
-        <h3>Where You Stand</h3>
-        <p class="conversion-note">Listener-to-follower conversion compared to your sonic peers</p>
-
-        <!-- Bar visualization -->
-        <div class="conv-bar-wrap">
-          <div class="conv-bar" id="conv-bar">
-            <div class="conv-bar-fill" id="conv-bar-fill"></div>
-            <div class="conv-bar-opportunity" id="conv-bar-opportunity"></div>
-            <div class="conv-bar-tick" id="conv-tick-p25"></div>
-            <div class="conv-bar-tick" id="conv-tick-median"></div>
-            <div class="conv-bar-tick" id="conv-tick-p75"></div>
-            <div class="conv-bar-tick" id="conv-tick-p99"></div>
-            <div class="conv-bar-tick conv-bar-tick-target" id="conv-tick-target"></div>
-            <div class="conv-bar-dot" id="conv-bar-dot"></div>
-          </div>
-          <div class="conv-bar-fan-label hidden" id="conv-fan-label"></div>
-          <div class="conv-bar-labels" id="conv-bar-labels"></div>
-        </div>
-
-        <!-- Stat boxes -->
-        <div class="conversion-grid">
-          <div class="conversion-stat" id="conv-yours-stat">
-            <div class="conversion-value" id="conv-yours">-</div>
-            <div class="conversion-label">You</div>
-          </div>
-          <div class="conversion-stat">
-            <div class="conversion-value conv-value-green" id="conv-top25">-</div>
-            <div class="conversion-label">Top 25%</div>
-          </div>
-          <div class="conversion-stat">
-            <div class="conversion-value conv-value-accent" id="conv-fan-gap">-</div>
-            <div class="conversion-label" id="conv-fan-gap-label">Fan Gap</div>
-          </div>
-        </div>
-
-        <div class="conversion-opportunity hidden" id="conv-opportunity"></div>
-
-        <!-- Revenue breakdown -->
-        <div class="conv-revenue hidden" id="conv-revenue">
-          <div class="conv-revenue-title" id="conv-revenue-title">Estimated Annual Revenue From Closing the Gap</div>
-          <div class="conv-revenue-rows" id="conv-revenue-rows"></div>
-          <div class="conv-revenue-total">
-            <span>Total estimated potential</span>
-            <span id="conv-revenue-total-val">-</span>
-          </div>
-          <p class="conv-sources">
-            Sources: Merch data from <a href="https://www.atvenu.com/post/the-fan-spending-report-what-concertgoers-are-buying-most" target="_blank" rel="noopener noreferrer">atVenu 2025 Fan Spending Report</a>. Fan engagement data from <a href="https://artists.spotify.com/en/fan-study/merch-and-live" target="_blank" rel="noopener noreferrer">Spotify Fan Study</a>. Estimates are illustrative and based on industry averages — individual results vary.
-          </p>
-        </div>
-      </div>
-
-      <!-- Recommendations -->
-      <div class="result-card">
-        <h3>Production Recommendations</h3>
-        <ul class="rec-list" id="rec-list"></ul>
       </div>
 
       <!-- CTA -->
