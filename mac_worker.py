@@ -472,6 +472,23 @@ def process_job(job: dict, loopback_device: int):
         update_job(job_id, 'error')
         return
 
+    # Pause GEMS/discovery before capturing — they use Spotify and will contaminate audio
+    _paused_for_capture = []
+    try:
+        import subprocess
+        result = subprocess.run(['pm2', 'jlist'], capture_output=True, text=True, timeout=10)
+        running = [p['name'] for p in json.loads(result.stdout)
+                   if p.get('pm2_env', {}).get('status') == 'online'
+                   and p['name'] in ('gems', 'discovery')]
+        if running:
+            print(f"[{job_id[:8]}] Pausing {', '.join(running)} before capture")
+            for name in running:
+                subprocess.run(['pm2', 'stop', name], capture_output=True, timeout=30)
+            _paused_for_capture = running
+            time.sleep(2)  # Let Spotify settle after GEMS stops
+    except Exception as e:
+        print(f"[{job_id[:8]}] Warning: could not pause local scripts: {e}")
+
     # Ensure Spotify is active
     device_id = _ensure_device_active()
     if not device_id:
@@ -511,6 +528,15 @@ def process_job(job: dict, loopback_device: int):
             print(f"[{job_id[:8]}] Sample {i + 1}/3 at {pos_ms / 1000:.0f}s — silent/failed")
 
     _pause_playback()
+
+    # Resume GEMS/discovery after capture is done
+    if _paused_for_capture:
+        print(f"[{job_id[:8]}] Resuming {', '.join(_paused_for_capture)} after capture")
+        for name in _paused_for_capture:
+            try:
+                subprocess.run(['pm2', 'restart', name], capture_output=True, timeout=30)
+            except Exception:
+                pass
 
     if not audio_samples:
         print(f"[{job_id[:8]}] All samples failed — no audio captured")
