@@ -427,7 +427,8 @@ function renderResults(data) {
     const genres = src.artist_genres || '';
     const tier = src.artist_tier || data.user_tier || '';
 
-    $('#artist-card-name').textContent = name;
+    const trackName = src.track_name || '';
+    $('#artist-card-name').textContent = name + (trackName ? ` — ${trackName}` : '');
     $('#artist-card-tier').textContent = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : '';
 
     function fmtNum(n) {
@@ -736,8 +737,15 @@ function renderResults(data) {
   storedConfidence = {};
   seenCurators.clear();
   sseComplete = false;
-  tierMatches = matches;
-  fullPoolMatches = data.all_matches || matches;
+  // Filter out matches with no genre data
+  function hasGenre(m) {
+    if (m.primary_genre && m.primary_genre.toLowerCase() !== 'unknown') return true;
+    if (m.secondary_genre && m.secondary_genre.toLowerCase() !== 'unknown') return true;
+    if (m.artist_genres && m.artist_genres.length > 0) return true;
+    return false;
+  }
+  tierMatches = matches.filter(hasGenre);
+  fullPoolMatches = (data.all_matches || matches).filter(hasGenre);
   totalAllMatches = data.total_all_matches || fullPoolMatches.length;
   userTier = data.user_tier || '';
   matchView = 'tier';
