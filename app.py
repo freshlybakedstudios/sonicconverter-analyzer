@@ -2644,7 +2644,7 @@ async def deal_lookup(
         if target_cr > conversion_rate:
             current_followers_equiv = conversion_rate * listeners * 4.3 / (0.1 * 100)
             target_followers_equiv = target_cr * listeners * 4.3 / (0.1 * 100)
-            additional_fans = int(target_followers_equiv - current_followers_equiv)
+            additional_fans = max(int(target_followers_equiv - current_followers_equiv), 0)
             additional_revenue = additional_fans * 25  # $25/fan/year
             conversion_opportunity = {
                 'additional_fans': additional_fans,
