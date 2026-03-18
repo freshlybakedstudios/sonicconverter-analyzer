@@ -392,7 +392,7 @@ def extract_features_from_audio(audio: np.ndarray) -> dict:
     features['energy'] = rms
     p95 = np.percentile(np.abs(audio), 95)
     p10 = max(np.percentile(np.abs(audio), 10), 1e-10)
-    features['dynamic_range'] = float(p95 / p10)
+    features['dynamic_range'] = min(float(p95 / p10), 60.0)
     features['crest_factor'] = float(np.max(np.abs(audio)) / max(rms, 1e-10))
     features['compression_amount'] = 1.0 - (features['crest_factor'] / 20.0)
 
