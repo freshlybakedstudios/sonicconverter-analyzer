@@ -2019,7 +2019,7 @@ async def analyze_url(
                     track_name = track_data.get('name', '')
                     track_isrc = (track_data.get('external_ids') or {}).get('isrc', '')
                     artists = track_data.get('artists', [])
-                    artist_name = ', '.join(a['name'] for a in artists)
+                    artist_name = artists[0]['name'] if artists else ''
                     # Get primary artist's Spotify URL for CM lookup
                     if artists:
                         ext_urls = artists[0].get('external_urls', {})
@@ -2049,17 +2049,12 @@ async def analyze_url(
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
-    # Strategy: cached features first, then preview, then Mac worker
+    # Always scan fresh — production recs must be for the specific submitted track
+    # Results still get written to gems_complete_analysis cache, growing the catalog
     features = None
 
-    # 0) Check gems_complete_analysis cache (deterministic results on repeat scans)
-    if track_isrc:
-        features = _lookup_gems_features(track_isrc)
-        if features:
-            print(f"  URL analysis: using cached features for ISRC {track_isrc}")
-
     # 1) Try Spotify preview (immediate)
-    if not features and preview_url:
+    if preview_url:
         print(f"  URL analysis: downloading preview for {track_id}...")
         try:
             preview_resp = requests.get(preview_url, timeout=30)
@@ -2080,6 +2075,11 @@ async def analyze_url(
 
     # 2) Fallback: wait for Mac worker (if preview failed)
     if not features:
+        # CRITICAL: Pause local scripts BEFORE Mac worker captures audio
+        # GEMS uses Spotify playback — if it's running it will contaminate the capture
+        global _last_api_activity
+        _last_api_activity = time.time()
+        _notify_local_pipeline('user_active')
         print(f"  URL analysis: waiting for Mac worker (up to 90s)...")
         deadline = time.time() + 90
 
@@ -2159,6 +2159,13 @@ async def analyze_url(
         cand_families = _genre_families(*cand_genres)
         foreign = cand_families - user_families
         return bool(foreign) and bool(user_families)
+
+    # Exclude self-matches (the artist being analyzed)
+    exclude_artist_id = None
+    if track_artist_cm_data:
+        exclude_artist_id = str(track_artist_cm_data.get('cm_id', ''))
+    if exclude_artist_id:
+        all_found = [m for m in all_found if str(m.get('artist_id', '')) != exclude_artist_id]
 
     # Save unfiltered matches for flattery (uses looser filtering)
     all_matches_unfiltered = list(all_found)
@@ -2306,10 +2313,15 @@ async def analyze_url(
         additional_fans = 0
         additional_revenue = 0
         peer_top_25 = conv_comparison.get('peer_top_25', 0)
-        if peer_top_25 > 0 and u_listeners > 0:
-            top25_followers_target = int(round((peer_top_25 / 100) * u_listeners * 4.3 / 0.1))
+        peer_p99 = conv_comparison.get('peer_p99', 0)
+        # Target p75 if below it, otherwise target p99
+        target_rate = peer_top_25
+        if u_conversion is not None and u_conversion >= peer_top_25 and peer_p99 > u_conversion:
+            target_rate = peer_p99
+        if target_rate > 0 and u_listeners > 0:
+            target_followers = int(round((target_rate / 100) * u_listeners * 4.3 / 0.1))
             current_followers = u_followers if u_followers > 0 else 0
-            additional_fans = max(int(round(top25_followers_target - current_followers)), 0)
+            additional_fans = max(int(round(target_followers - current_followers)), 0)
             additional_revenue = additional_fans * 25
 
         user_profile = {

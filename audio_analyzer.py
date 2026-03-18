@@ -578,7 +578,7 @@ def _extract_core(audio: np.ndarray, sr: int) -> Dict:
 
     p95 = np.percentile(np.abs(audio), 95)
     p10 = np.percentile(np.abs(audio), 10)
-    features['dynamic_range'] = float(p95 / p10) if p10 > 0 else 10.0
+    features['dynamic_range'] = min(float(p95 / p10), 60.0) if p10 > 1e-10 else 10.0
 
     features['crest_factor'] = float(np.max(np.abs(audio)) / features['energy']) if features['energy'] > 0 else 1.0
 

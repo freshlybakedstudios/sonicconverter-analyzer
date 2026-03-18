@@ -360,12 +360,68 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---- ARTIST CARD ---- */
+.artist-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.artist-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.artist-card-name {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+.artist-card-tier {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 20px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.artist-card-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.artist-card-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.artist-card-stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+.artist-card-genres {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 1.4;
+}
+
 /* ---- RESULTS ---- */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
   margin-bottom: 24px;
+}
+.stats-grid-6 {
+  grid-template-columns: repeat(6, 1fr);
 }
 .stat-card {
   background: var(--card);
@@ -786,7 +842,7 @@ body {
   font-weight: 700;
   color: var(--accent-light);
 }
-/* Revenue breakdown */
+/* Tier earnings anchor */
 .conv-revenue {
   margin-top: 16px;
   background: var(--surface);
@@ -800,29 +856,39 @@ body {
   color: var(--text-dim);
   margin-bottom: 12px;
 }
-.conv-revenue-rows { }
-.conv-revenue-row {
+.conv-tier-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+.conv-tier-label {
   font-size: 14px;
   color: var(--text-light);
-  padding: 4px 0;
 }
-.conv-revenue-row-val {
+.conv-tier-val {
+  font-size: 18px;
   font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  margin-left: 16px;
+}
+.conv-tier-val-projected {
   color: var(--accent-light);
 }
-.conv-revenue-total {
-  display: flex;
-  justify-content: space-between;
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
-  margin-top: 8px;
-  font-weight: 700;
-  font-size: 14px;
+.conv-tier-insight {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--card);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-light);
+  line-height: 1.6;
 }
-.conv-revenue-total span:first-child { color: var(--accent-light); }
-.conv-revenue-total span:last-child { color: var(--accent); }
+.conv-tier-insight strong {
+  color: var(--accent-light);
+}
 .conv-sources {
   font-size: 11px;
   color: var(--text-dim);
@@ -1200,6 +1266,8 @@ body {
   .hero { padding: 48px 0 40px; }
   .form-card { padding: 24px 20px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .stats-grid-6 { grid-template-columns: repeat(3, 1fr); }
+  .artist-card-stats { grid-template-columns: repeat(2, 1fr); }
   .result-card { padding: 20px 16px; }
   .match-playlists { padding: 8px 8px 8px 20px; }
   .input-mode-toggle { max-width: 100%; }
