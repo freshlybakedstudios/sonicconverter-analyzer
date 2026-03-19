@@ -2063,8 +2063,28 @@ async def analyze_url(
             user_cm_id = track_artist_cm_data.get('cm_id')
             cm_genres = track_artist_cm_data.get('genres', '')
             if cm_genres:
-                print(f"  URL analysis: CM genres = {cm_genres} (overriding dropdown '{genre or 'none'}')")
-                genre = cm_genres
+                # Sanity check: if user selected a genre from dropdown, only use CM genres
+                # if they share at least one genre family with the user's selection.
+                # CM sometimes returns garbage genres (e.g. hip-hop for death metal artists).
+                if genre:
+                    from track_matcher import _genre_families
+                    user_fams = _genre_families(genre)
+                    cm_fams = _genre_families(cm_genres)
+                    if user_fams and cm_fams and not (user_fams & cm_fams):
+                        # CM genres are completely incompatible — keep user's dropdown + add CM primary only
+                        cm_primary = cm_genres.split(',')[0].strip()
+                        cm_primary_fams = _genre_families(cm_primary)
+                        if cm_primary_fams & user_fams:
+                            genre = cm_primary  # use just the primary
+                            print(f"  URL analysis: CM genres suspect, using primary only: {genre}")
+                        else:
+                            print(f"  URL analysis: CM genres suspect ({cm_genres}), keeping dropdown: {genre}")
+                    else:
+                        print(f"  URL analysis: CM genres = {cm_genres} (overriding dropdown '{genre}')")
+                        genre = cm_genres
+                else:
+                    print(f"  URL analysis: CM genres = {cm_genres} (no dropdown set)")
+                    genre = cm_genres
             # Only set listeners if the user doesn't already have them from registration
             if not lead.get('monthly_listeners') and track_artist_cm_data.get('listeners'):
                 lead['monthly_listeners'] = track_artist_cm_data['listeners']
