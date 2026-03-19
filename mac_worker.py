@@ -227,6 +227,26 @@ def _play_track(track_id: str, device_id: str = None) -> bool:
 
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
 
+    # Force a clean state: pause first, transfer to device, then play
+    # This fixes the issue where GEMS left Spotify in a confused state
+    if device_id:
+        # Explicit transfer to ensure the device is truly active
+        requests.put(
+            'https://api.spotify.com/v1/me/player',
+            headers=headers,
+            json={'device_ids': [device_id], 'play': False},
+            timeout=10,
+        )
+        time.sleep(1)
+
+    # Pause any existing playback
+    requests.put(
+        'https://api.spotify.com/v1/me/player/pause',
+        headers=headers,
+        timeout=5,
+    )
+    time.sleep(0.5)
+
     url = 'https://api.spotify.com/v1/me/player/play'
     if device_id:
         url += f'?device_id={device_id}'
