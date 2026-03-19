@@ -540,7 +540,7 @@ def process_job(job: dict, loopback_device: int):
 
     for i, pos_ms in enumerate(sample_points):
         _seek_to(pos_ms)
-        time.sleep(1.5)  # Let playback settle
+        time.sleep(3)  # Let Spotify fully buffer and settle after seek
 
         mono = _record_sample(loopback_device)
         if mono is not None:
