@@ -187,18 +187,13 @@ def _ensure_device_active() -> str | None:
     if not devices:
         return None
 
-    # Prefer the Spotify desktop app — skip web players (Chrome etc)
-    # Web players don't route audio through Loopback
-    skip_names = ('web player', 'chrome', 'firefox', 'safari', 'edge')
+    # Match GEMS pipeline device selection — prefer MacBook desktop app
+    # This ensures audio routes through Loopback correctly
     for dev in devices:
-        name_lower = dev.get('name', '').lower()
-        if dev.get('type', '').lower() in ('computer', 'desktop'):
-            if any(s in name_lower for s in skip_names):
-                print(f"  Skipping web player: {dev['name']}")
-                continue
+        name = dev.get('name', '')
+        if dev.get('is_active') or 'MacBook' in name:
             dev_id = dev['id']
-            print(f"  Using device: {dev['name']} ({dev['type']})")
-            # Transfer playback to this device to make it active
+            print(f"  Using device: {name} (id: {dev_id})")
             requests.put(
                 'https://api.spotify.com/v1/me/player',
                 headers={**headers, 'Content-Type': 'application/json'},
@@ -208,10 +203,12 @@ def _ensure_device_active() -> str | None:
             time.sleep(1)
             return dev_id
 
-    # Fallback: use first device
-    dev = devices[0]
-    dev_id = dev['id']
-    print(f"  Using device: {dev['name']} ({dev.get('type', '?')})")
+    # Fallback: first non-web device
+    for dev in devices:
+        name_lower = dev.get('name', '').lower()
+        if 'web player' not in name_lower and 'chrome' not in name_lower:
+            dev_id = dev['id']
+            print(f"  Using device (fallback): {dev['name']}")
     requests.put(
         'https://api.spotify.com/v1/me/player',
         headers={**headers, 'Content-Type': 'application/json'},
