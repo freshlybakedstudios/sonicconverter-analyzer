@@ -1552,8 +1552,10 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         })
 
         for batch_start in range(0, total, BATCH_SIZE):
-            # Wait if user-facing CM calls need priority
-            _enrichment_gate.wait()
+            # Wait if user-facing CM calls need priority (max 30s to prevent permanent blocks)
+            if not _enrichment_gate.wait(timeout=30):
+                print(f"Enrichment [{job_id[:8]}]: Gate timeout — forcing resume")
+                _enrichment_gate.set()
             batch = sorted_matches[batch_start:batch_start + BATCH_SIZE]
             batch_playlists = []
 
