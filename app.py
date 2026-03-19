@@ -1503,6 +1503,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
     3. Track credits → piggybacks on playlist resolution
     4. Curator emails → runs after playlists
     """
+    global _last_api_activity
     try:
         refresh_token = os.getenv('REFRESH_TOKEN')
         if not refresh_token:
@@ -1571,6 +1572,9 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         })
 
         for batch_start in range(0, total, BATCH_SIZE):
+            # Keep activity alive so resource-switcher doesn't resume GEMS mid-enrichment
+            _last_api_activity = time.time()
+
             # Brief pause if user-facing CM calls need priority (2s max to prevent blocking)
             if not _enrichment_gate.wait(timeout=2):
                 _enrichment_gate.set()  # Force open — never block enrichment
