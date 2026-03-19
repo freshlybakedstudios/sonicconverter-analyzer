@@ -575,28 +575,34 @@ function renderResults(data) {
       hide(fanLabel);
     }
 
-    // Labels below bar
+    // Labels below bar — collision-aware (higher priority labels kept)
     const labelsEl = $('#conv-bar-labels');
     labelsEl.innerHTML = '';
-    const labels = [
-      { pos: toPos(p25), name: 'p25', val: p25.toFixed(2) + '%', cls: '' },
-      { pos: toPos(median), name: 'Median', val: median.toFixed(2) + '%', cls: '' },
+    const MIN_GAP = 8;
+    const allLabels = [
+      { pos: toPos(p25), name: 'p25', val: p25.toFixed(2) + '%', cls: '', priority: 1 },
+      { pos: toPos(median), name: 'Median', val: median.toFixed(2) + '%', cls: '', priority: 2 },
+      { pos: toPos(p75), name: 'p75', val: p75.toFixed(2) + '%', cls: '', priority: 1 },
     ];
-    // Only show p75 if it won't overlap with the Top 25% target label
-    if (atTop || target !== p75) {
-      labels.push({ pos: toPos(p75), name: 'p75', val: p75.toFixed(2) + '%', cls: '' });
-    }
     if (hasUserRate) {
-      labels.push({ pos: toPos(cr), name: 'You', val: cr.toFixed(2) + '%', cls: 'conv-bar-label-you' });
+      allLabels.push({ pos: toPos(cr), name: 'You', val: cr.toFixed(2) + '%', cls: 'conv-bar-label-you', priority: 5 });
     }
     if (target > cr) {
       const targetName = atTop ? 'Top 1%' : 'Top 25%';
-      labels.push({ pos: toPos(target), name: targetName, val: target.toFixed(2) + '%', cls: 'conv-bar-label-target' });
+      allLabels.push({ pos: toPos(target), name: targetName, val: target.toFixed(2) + '%', cls: 'conv-bar-label-target', priority: 4 });
     }
     if (!atTop || target !== p99) {
-      labels.push({ pos: toPos(p99), name: 'p99', val: p99.toFixed(2) + '%', cls: '' });
+      allLabels.push({ pos: toPos(p99), name: 'p99', val: p99.toFixed(2) + '%', cls: '', priority: 1 });
     }
-    for (const l of labels) {
+    // Sort by priority (highest kept), filter overlaps
+    const sorted = [...allLabels].sort((a, b) => b.priority - a.priority);
+    const kept = [];
+    for (const label of sorted) {
+      if (kept.every(k => Math.abs(k.pos - label.pos) >= MIN_GAP)) {
+        kept.push(label);
+      }
+    }
+    for (const l of kept) {
       const div = document.createElement('div');
       div.className = 'conv-bar-label ' + l.cls;
       div.style.left = l.pos + '%';
