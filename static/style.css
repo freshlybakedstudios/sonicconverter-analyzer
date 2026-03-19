@@ -422,19 +422,23 @@ body {
 }
 .stats-grid-6 {
   grid-template-columns: repeat(6, 1fr);
+  overflow: hidden;
 }
 .stat-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px 16px;
+  padding: 20px 8px;
   text-align: center;
+  overflow: hidden;
+  min-width: 0;
 }
 .stat-value {
-  font-size: 28px;
+  font-size: clamp(16px, 2.5vw, 28px);
   font-weight: 700;
   color: var(--accent-light);
   line-height: 1.2;
+  word-break: break-word;
 }
 .stat-label {
   font-size: 10px;
