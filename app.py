@@ -2051,12 +2051,19 @@ async def analyze_url(
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
-    # Always scan fresh — production recs must be for the specific submitted track
-    # Results still get written to gems_complete_analysis cache, growing the catalog
+    # On Railway (production), use cached features if available — Railway has a 30s proxy timeout
+    # that kills the connection before the Mac worker can finish (90s).
+    # On localhost, always scan fresh for accurate production recs.
     features = None
+    is_local = os.getenv('RAILWAY_ENVIRONMENT') is None
+
+    if not is_local and track_isrc:
+        features = _lookup_gems_features(track_isrc)
+        if features:
+            print(f"  URL analysis: using cached features for ISRC {track_isrc}")
 
     # 1) Try Spotify preview (immediate)
-    if preview_url:
+    if not features and preview_url:
         print(f"  URL analysis: downloading preview for {track_id}...")
         try:
             preview_resp = requests.get(preview_url, timeout=30)
@@ -2072,7 +2079,7 @@ async def analyze_url(
                     os.unlink(tmp.name)
         except Exception as e:
             print(f"  URL analysis: preview download/analysis failed: {e}")
-    else:
+    elif not features:
         print(f"  URL analysis: no preview_url available for {track_id}")
 
     # 2) Fallback: wait for Mac worker (if preview failed)
