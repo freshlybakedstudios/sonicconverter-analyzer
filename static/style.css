@@ -901,6 +901,50 @@ body {
 }
 .conv-sources a:hover { color: var(--accent-light); }
 
+/* Audience Match card */
+.audience-match-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.audience-match-item:last-child { border-bottom: none; }
+.audience-match-rank {
+  width: 28px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.audience-match-info { flex: 1; min-width: 0; }
+.audience-match-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.audience-match-name a {
+  color: var(--accent-light);
+  text-decoration: none;
+}
+.audience-match-name a:hover { text-decoration: underline; }
+.audience-match-tier {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+.audience-match-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.audience-match-emotions {
+  margin-top: 4px;
+}
+
 /* Trajectory Targets (flattery matches) */
 .flattery-match {
   display: flex;

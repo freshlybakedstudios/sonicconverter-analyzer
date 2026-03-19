@@ -1030,6 +1030,17 @@ function renderAllPlaylists(playlists, total) {
 }
 
 function renderConfidenceBadges(confidenceMap) {
+  const audienceCard = $('#audience-match-card');
+  const audienceList = $('#audience-match-list');
+
+  // Find all double-validated matches from the current match data
+  const dvKeys = new Set(
+    Object.entries(confidenceMap)
+      .filter(([, v]) => v === 'double_validated')
+      .map(([k]) => k)
+  );
+
+  // Badge on match table rows
   for (const [key, value] of Object.entries(confidenceMap)) {
     const row = document.querySelector(`tr[data-match-key="${key}"]`);
     if (row && value === 'double_validated') {
@@ -1042,6 +1053,58 @@ function renderConfidenceBadges(confidenceMap) {
         artistCell.appendChild(badge);
       }
       row.classList.add('double-validated-row');
+    }
+  }
+
+  // Build Audience Match card from all match pools
+  if (dvKeys.size > 0 && audienceCard && audienceList) {
+    const allPool = [...(tierMatches || []), ...(fullPoolMatches || [])];
+    const seen = new Set();
+    const dvMatches = [];
+    for (const m of allPool) {
+      const key = String(m.artist_id || m.name || '');
+      if (dvKeys.has(key) && !seen.has(key)) {
+        seen.add(key);
+        dvMatches.push(m);
+      }
+    }
+
+    if (dvMatches.length > 0) {
+      // Sort by similarity descending
+      dvMatches.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+
+      audienceList.innerHTML = '';
+      dvMatches.forEach((m, i) => {
+        const linkUrl = m.track_url || m.spotify_url;
+        const artistLink = linkUrl
+          ? `<a href="${linkUrl}" target="_blank" rel="noopener">${m.name}</a>`
+          : m.name;
+        const allGenres = new Set();
+        if (m.primary_genre && m.primary_genre.toLowerCase() !== 'unknown') allGenres.add(m.primary_genre);
+        if (m.secondary_genre && m.secondary_genre.toLowerCase() !== 'unknown') allGenres.add(m.secondary_genre);
+        (m.artist_genres || []).forEach(g => { if (g) allGenres.add(g); });
+        const genreStr = allGenres.size > 0 ? [...allGenres].join(', ') : '';
+        const emos = (m.emotions || []).filter(e => e && e !== 'neutral').slice(0, 3);
+        const emoTags = emos.map(e => `<span class="mini-tag">${EMOTION_LABELS[e] || e}</span>`).join('');
+        const listeners = m.listeners ? Math.round(m.listeners).toLocaleString() : '';
+
+        const div = document.createElement('div');
+        div.className = 'audience-match-item';
+        div.innerHTML = `
+          <div class="audience-match-rank">${i + 1}</div>
+          <div class="audience-match-info">
+            <div class="audience-match-name">${artistLink} <span class="audience-match-tier">${m.tier || ''}</span></div>
+            <div class="audience-match-meta">
+              ${(m.similarity * 100).toFixed(1)}% sonic match
+              ${listeners ? ` · ${listeners} listeners` : ''}
+              ${genreStr ? ` · ${genreStr}` : ''}
+            </div>
+            <div class="audience-match-emotions">${emoTags}</div>
+          </div>
+        `;
+        audienceList.appendChild(div);
+      });
+      show(audienceCard);
     }
   }
 }
