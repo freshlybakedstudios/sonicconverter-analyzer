@@ -1212,6 +1212,25 @@ async def analyze(
         if user_profile:
             result['user_profile'] = user_profile
 
+        # Include source info for artist card (from CM lookup or GEMS cache)
+        if cm_data:
+            result['source'] = {
+                'type': 'file_upload',
+                'artist_name': cm_data.get('name', ''),
+                'artist_genres': cm_data.get('genres', ''),
+                'artist_tier': cm_data.get('tier', ''),
+                'artist_listeners': cm_data.get('listeners', 0),
+            }
+        elif cached_artist_data:
+            aid, adata = cached_artist_data
+            result['source'] = {
+                'type': 'file_upload',
+                'artist_name': adata.get('name', ''),
+                'artist_genres': adata.get('genres', ''),
+                'artist_tier': user_tier or '',
+                'artist_listeners': float(adata.get('listeners', 0) or 0),
+            }
+
         if flattery_matches:
             result['flattery_matches'] = flattery_matches
 
