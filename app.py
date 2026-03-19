@@ -2003,6 +2003,8 @@ async def analyze_url(
     else:
         track_id = spotify_url.split('track/')[1].split('?')[0].split('/')[0]
 
+    job_id = None  # Created later only if Mac worker is needed
+
     # Job ID created later — only set to pending_features if we actually need Mac worker
 
     # Try to get Spotify preview URL + artist info via Spotify Web API
@@ -2139,7 +2141,8 @@ async def analyze_url(
             await asyncio.sleep(3)
 
     if not features:
-        job_mgr.update_job(job_id, status='error')
+        if job_id:
+            job_mgr.update_job(job_id, status='error')
         raise HTTPException(
             503,
             "Could not analyze this track. Spotify preview is not available for this track "
