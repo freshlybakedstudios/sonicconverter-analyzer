@@ -528,6 +528,16 @@ def process_job(job: dict, loopback_device: int):
         update_job(job_id, 'error')
         return
 
+    # Quick audio routing check (same as GEMS pipeline)
+    try:
+        test_audio = sd.rec(int(0.5 * SAMPLE_RATE), samplerate=SAMPLE_RATE,
+                            channels=2, device=loopback_device, blocking=True)
+        if np.max(np.abs(test_audio)) < 0.001:
+            print(f"[{job_id[:8]}] Audio routing check: no signal, waiting 3s...")
+            time.sleep(3)
+    except Exception:
+        pass
+
     # Sample at 3 positions: 25%, 50%, 75%
     sample_points = [
         int(duration_ms * 0.25),
@@ -540,7 +550,7 @@ def process_job(job: dict, loopback_device: int):
 
     for i, pos_ms in enumerate(sample_points):
         _seek_to(pos_ms)
-        time.sleep(3)  # Let Spotify fully buffer and settle after seek
+        time.sleep(1.5)  # Match GEMS pipeline settle time
 
         mono = _record_sample(loopback_device)
         if mono is not None:
