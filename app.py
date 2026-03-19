@@ -2067,7 +2067,6 @@ async def analyze_url(
                 # if they share at least one genre family with the user's selection.
                 # CM sometimes returns garbage genres (e.g. hip-hop for death metal artists).
                 if genre:
-                    from track_matcher import _genre_families
                     user_fams = _genre_families(genre)
                     cm_fams = _genre_families(cm_genres)
                     if user_fams and cm_fams and not (user_fams & cm_fams):
