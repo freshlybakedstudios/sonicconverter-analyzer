@@ -239,13 +239,13 @@ def _play_track(track_id: str, device_id: str = None) -> bool:
         )
         time.sleep(1)
 
-    # Pause any existing playback
+    # Pause any existing playback and let Spotify fully release the previous track
     requests.put(
         'https://api.spotify.com/v1/me/player/pause',
         headers=headers,
         timeout=5,
     )
-    time.sleep(0.5)
+    time.sleep(3)
 
     url = 'https://api.spotify.com/v1/me/player/play'
     if device_id:
@@ -624,7 +624,7 @@ def main():
                     paused.append(p['name'])
             if paused:
                 print(f"  Paused {', '.join(paused)} for capture")
-                time.sleep(2)
+                time.sleep(5)  # Let Spotify fully release previous GEMS track
         except Exception as e:
             print(f"  Warning: could not pause scripts: {e}")
         return paused
