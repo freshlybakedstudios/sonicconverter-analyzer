@@ -44,7 +44,7 @@ def _parse_track_genres(genre_str: Optional[str]) -> Set[str]:
     lower = genre_str.lower()
     if 'genre id:' in lower or lower in {'others', 'other', 'various'}:
         return set()
-    return {t.strip() for t in lower.replace(',', ' ').split() if t.strip()}
+    return {t.strip() for t in lower.replace(',', ' ').replace('/', ' ').split() if t.strip()}
 
 
 INCOMPATIBLE_GENRE_PAIRS = {
@@ -177,6 +177,43 @@ INCOMPATIBLE_GENRE_PAIRS = {
     frozenset(['doom', 'speed']),
     frozenset(['sludge', 'thrash']),
     frozenset(['sludge', 'speed']),
+    # Extreme metal vs hip-hop/rap/r&b — broad "metal" excluded to allow nu-metal/rap-metal crossovers
+    frozenset(['death', 'hip-hop']),
+    frozenset(['death', 'rap']),
+    frozenset(['death', 'r&b']),
+    frozenset(['death', 'soul']),
+    frozenset(['death', 'k-pop']),
+    frozenset(['death', 'korean']),
+    frozenset(['death', 'reggaeton']),
+    frozenset(['death', 'latin']),
+    frozenset(['deathcore', 'hip-hop']),
+    frozenset(['deathcore', 'rap']),
+    frozenset(['deathcore', 'r&b']),
+    frozenset(['deathcore', 'reggaeton']),
+    frozenset(['brutal', 'hip-hop']),
+    frozenset(['brutal', 'rap']),
+    frozenset(['brutal', 'r&b']),
+    frozenset(['black', 'hip-hop']),
+    frozenset(['black', 'rap']),
+    frozenset(['black', 'r&b']),
+    frozenset(['goregrind', 'hip-hop']),
+    frozenset(['goregrind', 'rap']),
+    frozenset(['goregrind', 'r&b']),
+    frozenset(['thrash', 'hip-hop']),
+    frozenset(['thrash', 'rap']),
+    # Extreme metal vs electronic/dance
+    frozenset(['death', 'house']),
+    frozenset(['death', 'techno']),
+    frozenset(['death', 'trance']),
+    frozenset(['death', 'dance']),
+    frozenset(['brutal', 'house']),
+    frozenset(['brutal', 'techno']),
+    frozenset(['brutal', 'trance']),
+    frozenset(['brutal', 'dance']),
+    frozenset(['black', 'house']),
+    frozenset(['black', 'techno']),
+    frozenset(['black', 'trance']),
+    frozenset(['black', 'dance']),
 }
 
 # ---------------------------------------------------------------------------
