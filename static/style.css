@@ -434,11 +434,11 @@ body {
   min-width: 0;
 }
 .stat-value {
-  font-size: clamp(16px, 2.5vw, 28px);
+  font-size: clamp(14px, 2.2vw, 26px);
   font-weight: 700;
   color: var(--accent-light);
   line-height: 1.2;
-  word-break: break-word;
+  white-space: nowrap;
 }
 .stat-label {
   font-size: 10px;
