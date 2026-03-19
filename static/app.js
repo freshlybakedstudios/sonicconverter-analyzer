@@ -742,6 +742,7 @@ function renderResults(data) {
   storedPlaylists = {};
   storedConfidence = {};
   seenCurators.clear();
+  curatorRows.length = 0;
   sseComplete = false;
   // Filter out matches with no genre data
   function hasGenre(m) {
@@ -1188,6 +1189,7 @@ function updateCreditsSummary() {
 }
 
 const seenCurators = new Set();
+const curatorRows = [];  // accumulate for CSV export
 function appendCuratorEmail(data) {
   const container = $('#curator-emails-body');
   const card = $('#curator-emails-card');
@@ -1200,6 +1202,12 @@ function appendCuratorEmail(data) {
   const curatorKey = `${curator.name}::${curator.playlist_name}`;
   if (seenCurators.has(curatorKey)) return;
   seenCurators.add(curatorKey);
+
+  // Store for CSV export
+  curatorRows.push(curator);
+  const csvBtn = $('#curator-csv-btn');
+  if (csvBtn) csvBtn.classList.remove('hidden');
+
   const countEl = $('#curator-contacts-count');
   if (countEl && data.progress) countEl.textContent = data.progress;
 
@@ -1235,6 +1243,29 @@ function appendCuratorEmail(data) {
   `;
   container.appendChild(tr);
 }
+
+// Curator CSV download
+function downloadCuratorCSV() {
+  if (!curatorRows.length) return;
+  const headers = ['Curator', 'Playlist', 'Reference Artist', 'Followers', 'Email', 'Instagram', 'Facebook', 'Website', 'Groover', 'SubmitHub', 'Submission URL', 'Twitter'];
+  const escape = v => `"${String(v || '').replace(/"/g, '""')}"`;
+  const rows = curatorRows.map(c => {
+    const ref = (c.track_name && c.sonic_match) ? `${c.sonic_match} — ${c.track_name}` : (c.sonic_match || c.track_name || '');
+    return [c.name, c.playlist_name, ref, c.followers || 0, c.email, c.instagram_url, c.facebook_url, c.website_url, c.groover_url, c.submithub_url, c.submission_url, c.twitter_url].map(escape).join(',');
+  });
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'curator_contacts.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+(function() {
+  const btn = document.getElementById('curator-csv-btn');
+  if (btn) btn.addEventListener('click', downloadCuratorCSV);
+})();
 
 // -------------------------------------------------------
 // Floating Pies — Asteroids-style with physics & mouse repel
