@@ -427,11 +427,8 @@ body {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 10px;
+  padding: 20px 16px;
   text-align: center;
-}
-.stats-grid-6 .stat-value {
-  font-size: 18px;
 }
 .stat-value {
   font-size: 28px;
