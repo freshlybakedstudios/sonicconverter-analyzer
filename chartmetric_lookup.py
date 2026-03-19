@@ -844,15 +844,38 @@ def lookup_artist_by_spotify(spotify_url: str) -> dict | None:
         listeners = float(stats.get('sp_monthly_listeners') or 0)
         followers = float(stats.get('sp_followers') or 0)
 
-        # Genres — primary + secondary (same as discovery_events_work.py)
+        # Genres — primary + secondary, filtered for sanity
+        # CM genre_v2 is noisy (e.g. "Korean Hip-Hop" on Cannibal Corpse).
+        # Filter secondaries that are incompatible with the primary.
         genres_list = []
         genres_obj = meta.get('genres', {})
         if isinstance(genres_obj, dict):
             primary = genres_obj.get('primary', {})
-            if primary and primary.get('name'):
-                genres_list.append(primary['name'])
+            primary_name = primary.get('name', '') if primary else ''
+            if primary_name:
+                genres_list.append(primary_name)
+            primary_words = set(primary_name.lower().replace(',', ' ').replace('/', ' ').split()) if primary_name else set()
+            from track_matcher import INCOMPATIBLE_GENRE_PAIRS
             for g in genres_obj.get('secondary', []):
-                if isinstance(g, dict) and g.get('name'):
+                if not isinstance(g, dict) or not g.get('name'):
+                    continue
+                sec_name = g['name']
+                sec_words = set(sec_name.lower().replace(',', ' ').replace('/', ' ').split())
+                # Check if this secondary genre is incompatible with the primary
+                dominated = False
+                if primary_words:
+                    for pair in INCOMPATIBLE_GENRE_PAIRS:
+                        if primary_words & pair and sec_words & pair:
+                            if (primary_words & pair) != (sec_words & pair):
+                                dominated = True
+                                break
+                if not dominated:
+                    genres_list.append(sec_name)
+                else:
+                    logger.info(f"  CM genres: filtered '{sec_name}' (incompatible with '{primary_name}')")
+            # Also include sub-genres (Spotify-sourced, usually reliable)
+            for g in genres_obj.get('sub', []):
+                if isinstance(g, dict) and g.get('name') and g['name'] not in genres_list:
                     genres_list.append(g['name'])
         genres_str = ', '.join(genres_list) if genres_list else ''
 
