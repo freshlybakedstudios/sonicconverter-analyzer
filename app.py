@@ -2446,6 +2446,12 @@ async def analyze_url(
     if track_isrc and features:
         enrichment_pool.submit(_upsert_gems_features, track_isrc, features, genre or '')
 
+    # Send email (non-blocking — don't fail the request if email fails)
+    try:
+        send_results_email(lead['name'], lead['email'], result)
+    except Exception as e:
+        print(f"Email send error (non-fatal): {e}")
+
     # Kick off background enrichment: displayed matches FIRST, then wider pool
     # This ensures every match the user sees gets playlist data
     displayed_ids = {str(m.get('artist_id', '')) for m in found_matches}
