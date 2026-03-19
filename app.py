@@ -2100,12 +2100,24 @@ async def analyze_url(
     elif not features:
         print(f"  URL analysis: no preview_url available for {track_id}")
 
-    # Create job for enrichment tracking (needed regardless of feature source)
+    # Create job for Mac worker — insert directly as pending_features with spotify_url
     if not features:
-        # Create as pending_features — Mac worker will pick this up
-        job_id = job_mgr.create_job(token, {}, [])
-        job_mgr.update_job(job_id, status='pending_features',
-                           spotify_url=spotify_url)
+        job_id = str(__import__('uuid').uuid4())
+        now = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
+        if job_mgr._supabase:
+            try:
+                job_mgr._supabase.table('analysis_jobs').insert({
+                    'id': job_id, 'token': token, 'status': 'pending_features',
+                    'spotify_url': spotify_url,
+                    'features': '{}', 'matches': '[]', 'playlists': '{}',
+                    'related_artists': '[]', 'credits': '{}', 'curator_emails': '{}',
+                    'confidence_map': '{}', 'progress': '{}',
+                    'created_at': now, 'updated_at': now,
+                }).execute()
+                print(f"  URL analysis: created pending_features job {job_id[:8]}")
+            except Exception as e:
+                print(f"  URL analysis: job create failed: {e}")
+        job_mgr._mem[job_id] = {'id': job_id, 'status': 'pending_features', 'spotify_url': spotify_url}
         # CRITICAL: Pause local scripts BEFORE Mac worker captures audio
         # GEMS uses Spotify playback — if it's running it will contaminate the capture
         global _last_api_activity
