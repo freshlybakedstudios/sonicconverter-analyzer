@@ -1984,10 +1984,7 @@ async def analyze_url(
     else:
         track_id = spotify_url.split('track/')[1].split('?')[0].split('/')[0]
 
-    # Create a pending job — store the Spotify URL so Mac worker can find it
-    job_id = job_mgr.create_job(token, {}, [])
-    job_mgr.update_job(job_id, status='pending_features',
-                       spotify_url=spotify_url)
+    # Job ID created later — only set to pending_features if we actually need Mac worker
 
     # Try to get Spotify preview URL + artist info via Spotify Web API
     preview_url = None
@@ -2082,8 +2079,12 @@ async def analyze_url(
     elif not features:
         print(f"  URL analysis: no preview_url available for {track_id}")
 
-    # 2) Fallback: wait for Mac worker (if preview failed)
+    # Create job for enrichment tracking (needed regardless of feature source)
     if not features:
+        # Create as pending_features — Mac worker will pick this up
+        job_id = job_mgr.create_job(token, {}, [])
+        job_mgr.update_job(job_id, status='pending_features',
+                           spotify_url=spotify_url)
         # CRITICAL: Pause local scripts BEFORE Mac worker captures audio
         # GEMS uses Spotify playback — if it's running it will contaminate the capture
         global _last_api_activity
