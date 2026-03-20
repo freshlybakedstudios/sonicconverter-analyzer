@@ -1804,11 +1804,14 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             batch_num = batch_start // BATCH_SIZE + 1
             total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
             print(f"Enrichment [{job_id[:8]}]: Batch {batch_num}/{total_batches} done — {curator_count} curators so far")
-            _sse_publish(job_id, 'enrichment_progress', {
+            progress_data = {
                 'batch': batch_num,
                 'total_batches': total_batches,
                 'curators_found': curator_count,
-            })
+            }
+            _sse_publish(job_id, 'enrichment_progress', progress_data)
+            # Store for SSE catch-up on reconnect
+            job_mgr.update_job(job_id, progress=progress_data)
 
         # Dedupe playlists by playlist_id, keeping highest-scored entry
         seen_pl_ids = {}
@@ -1873,6 +1876,8 @@ async def stream_enrichment(job_id: str):
                 if state.get('credits'):
                     for mk, creds in state['credits'].items():
                         yield f"event: credits\ndata: {json.dumps({'match_key': mk, 'credits': creds})}\n\n"
+                if state.get('progress') and isinstance(state['progress'], dict) and state['progress'].get('batch'):
+                    yield f"event: enrichment_progress\ndata: {json.dumps(state['progress'])}\n\n"
                 if state.get('all_playlists'):
                     yield f"event: all_playlists\ndata: {json.dumps({'playlists': state['all_playlists'], 'total': len(state['all_playlists'])})}\n\n"
                 if state.get('curator_emails'):
