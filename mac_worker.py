@@ -489,6 +489,21 @@ def process_job(job: dict, loopback_device: int):
         update_job(job_id, 'error')
         return
 
+    # Stop GEMS/discovery BEFORE touching Spotify — they fight over playback
+    _gems_paused = []
+    try:
+        import subprocess as _sp
+        result = _sp.run(['pm2', 'jlist'], capture_output=True, text=True, timeout=10)
+        for p in json.loads(result.stdout):
+            if p.get('pm2_env', {}).get('status') == 'online' and p['name'] in ('gems', 'discovery'):
+                _sp.run(['pm2', 'stop', p['name']], capture_output=True, timeout=30)
+                _gems_paused.append(p['name'])
+        if _gems_paused:
+            print(f"[{job_id[:8]}] Paused {', '.join(_gems_paused)} for capture")
+            time.sleep(5)  # Let Spotify fully release previous GEMS track
+    except Exception as e:
+        print(f"[{job_id[:8]}] Warning: could not pause scripts: {e}")
+
     # Ensure Spotify is active
     device_id = _ensure_device_active()
     if not device_id:
@@ -549,6 +564,22 @@ def process_job(job: dict, loopback_device: int):
     energy_levels = []
 
     for i, pos_ms in enumerate(sample_points):
+        # Ensure playback is active before seeking — Spotify can silently stop
+        token = _get_spotify_token()
+        if token:
+            try:
+                state = requests.get(
+                    'https://api.spotify.com/v1/me/player',
+                    headers={'Authorization': f'Bearer {token}'},
+                    timeout=5,
+                )
+                if state.status_code == 200 and not state.json().get('is_playing'):
+                    print(f"[{job_id[:8]}] Spotify stopped before sample {i + 1}, restarting play...")
+                    _play_track(track_id, device_id)
+                    time.sleep(2)
+            except Exception:
+                pass
+
         _seek_to(pos_ms)
         time.sleep(1.5)  # Match GEMS pipeline settle time
 
