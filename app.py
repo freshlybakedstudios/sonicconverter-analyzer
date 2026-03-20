@@ -1695,9 +1695,18 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             if batch_curators:
                 print(f"Enrichment [{job_id[:8]}]: Batch {batch_start//BATCH_SIZE+1} — resolving {len(batch_curators)} curators...")
 
+            curators_checked = 0
             for curator_info in batch_curators:
                 try:
+                    curators_checked += 1
                     cm_cid = curator_info.get('cm_curator_id')
+                    # Live status so UI doesn't look frozen
+                    _sse_publish(job_id, 'enrichment_progress', {
+                        'batch': batch_start // BATCH_SIZE + 1,
+                        'total_batches': (total + BATCH_SIZE - 1) // BATCH_SIZE,
+                        'curators_found': curator_count,
+                        'checking': curator_info.get('name', ''),
+                    })
 
                     # Step 1: Check our local curators table (143K+ records, instant)
                     local = None

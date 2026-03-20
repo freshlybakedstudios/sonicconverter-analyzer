@@ -337,7 +337,8 @@ function startSSE(jobId) {
   eventSource.addEventListener('enrichment_progress', (e) => {
     const data = JSON.parse(e.data);
     const pct = data.total_batches ? Math.round(data.batch / data.total_batches * 100) : 0;
-    const msg = `${pct}% — ${data.curators_found} curators found`;
+    let msg = `${pct}% — ${data.curators_found} curators found`;
+    if (data.checking) msg += ` · checking ${data.checking}`;
     updateEnrichmentProgress('playlists', msg);
   });
 
