@@ -261,6 +261,8 @@ PRODUCTION_FEATURES = [
     'compression_amount',
     'spectral_complexity', 'dissonance', 'key_strength', 'zcr',
     'spectral_flux',
+    'harmonic_distortion', 'stereo_width', 'mid_side_ratio',
+    'stereo_correlation', 'true_peak_dbfs',
 ]
 
 FEATURE_DESCRIPTIONS = {
@@ -327,7 +329,7 @@ FEATURE_DESCRIPTIONS = {
     'crest_factor': {
         'higher': 'Increase transient punch — allowing peaks to stand out more clearly',
         'lower': 'Smooth peak dynamics — reducing crest factor for controlled loudness',
-        'domain': 'Dynamics', 'unit': '',
+        'domain': 'Dynamics', 'unit': 'dB',
     },
     'attack_time': {
         'higher': 'Soften transients — slowing the attack for a smoother onset',
@@ -370,9 +372,34 @@ FEATURE_DESCRIPTIONS = {
         'domain': 'Tonal Character', 'unit': '',
     },
     'loudness_range': {
-        'higher': 'Widen loudness variation — more dynamic contrast between sections',
-        'lower': 'Tighten loudness variation — more consistent level across sections',
+        'higher': 'Widen loudness variation (EBU R128) — more dynamic contrast between sections',
+        'lower': 'Tighten loudness variation (EBU R128) — more consistent level across sections',
         'domain': 'Dynamics', 'unit': 'LU',
+    },
+    'harmonic_distortion': {
+        'higher': 'Add harmonic saturation — introducing warmth and character through subtle distortion',
+        'lower': 'Reduce harmonic distortion — cleaning up the signal for more transparency',
+        'domain': 'Tonal Character', 'unit': '',
+    },
+    'stereo_width': {
+        'higher': 'Widen the stereo image — creating more spatial separation and immersion',
+        'lower': 'Narrow the stereo image — focusing the mix toward the center for punch and mono compatibility',
+        'domain': 'Stereo / Spatial', 'unit': '',
+    },
+    'mid_side_ratio': {
+        'higher': 'Increase center focus — more energy in the mid channel for a solid core',
+        'lower': 'Increase side presence — more energy in the side channel for width and ambience',
+        'domain': 'Stereo / Spatial', 'unit': '',
+    },
+    'stereo_correlation': {
+        'higher': 'Improve mono compatibility — tighter phase correlation between left and right',
+        'lower': 'Widen phase relationship — more decorrelation for a wider perceived image',
+        'domain': 'Stereo / Spatial', 'unit': '',
+    },
+    'true_peak_dbfs': {
+        'higher': 'Raise true peak ceiling — allowing more headroom usage',
+        'lower': 'Lower true peak — more headroom margin for codec transparency',
+        'domain': 'Dynamics', 'unit': 'dBFS',
     },
 }
 
@@ -384,6 +411,8 @@ COMPARISON_FEATURES = [
     'crest_factor', 'attack_time', 'beat_strength', 'onset_rate',
     'danceability', 'dissonance', 'key_strength', 'spectral_flux',
     'zcr', 'loudness_range',
+    'harmonic_distortion', 'stereo_width', 'mid_side_ratio',
+    'stereo_correlation', 'true_peak_dbfs',
 ]
 
 
@@ -399,7 +428,7 @@ def _find_consensus(features: dict, high_converter_gems: list) -> list:
         return []
 
     target_bpm = float(features.get('bpm', 120))
-    time_based = {'attack_time', 'onset_rate'}
+    time_based = {'attack_time', 'onset_rate', 'beat_strength', 'danceability'}
     consensus_results = []
 
     for feat in PRODUCTION_FEATURES:
@@ -460,6 +489,25 @@ def _find_consensus(features: dict, high_converter_gems: list) -> list:
 
     # Sort by consensus strength (strongest agreement first)
     consensus_results.sort(key=lambda c: (-c['consensus_pct'], -c['count']))
+
+    # Filter out recommendations where displayed values would be identical
+    filtered = []
+    for c in consensus_results:
+        feat = c['feature']
+        uv = c['user_val']
+        cv = c['converter_avg']
+        if feat in RATIO_FEATURES:
+            if f"{uv*100:.1f}" == f"{cv*100:.1f}":
+                continue
+        elif feat in DB_FEATURES:
+            if f"{uv:.1f}" == f"{cv:.1f}":
+                continue
+        else:
+            if f"{uv:.3f}" == f"{cv:.3f}":
+                continue
+        filtered.append(c)
+    consensus_results = filtered
+
     return consensus_results
 
 
@@ -469,7 +517,7 @@ RATIO_FEATURES = {
     'high_mid_ratio', 'presence_ratio', 'air_ratio',
 }
 # Features already in dB
-DB_FEATURES = {'lufs_integrated', 'dynamic_range', 'loudness_range', 'crest_factor'}
+DB_FEATURES = {'lufs_integrated', 'dynamic_range', 'loudness_range', 'crest_factor', 'true_peak_dbfs'}
 
 
 def _format_rec(feat: str, consensus: dict) -> str:
@@ -497,7 +545,7 @@ def _format_rec(feat: str, consensus: dict) -> str:
         user_str = f"{user_val * 100:.1f}%"
         peer_str = f"{peer_val * 100:.1f}%"
         if user_val > 0 and peer_val > 0:
-            db_delta = 20 * math.log10(peer_val / user_val)
+            db_delta = 10 * math.log10(peer_val / user_val)
             if abs(db_delta) >= 0.05:
                 delta_str = f" ({db_delta:+.1f} dB)"
     elif feat in DB_FEATURES:

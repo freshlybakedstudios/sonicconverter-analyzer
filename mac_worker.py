@@ -301,8 +301,8 @@ def _find_loopback_device() -> int | None:
     return None
 
 
-def _record_sample(device_idx: int, duration: float = SAMPLE_DURATION) -> np.ndarray | None:
-    """Record audio from loopback device, return mono float32 array."""
+def _record_sample(device_idx: int, duration: float = SAMPLE_DURATION) -> tuple:
+    """Record audio from loopback device, return (mono float32 array, stereo buffer) or (None, None)."""
     try:
         buf = sd.rec(
             int(duration * SAMPLE_RATE),
@@ -314,22 +314,42 @@ def _record_sample(device_idx: int, duration: float = SAMPLE_DURATION) -> np.nda
         mono = buf.mean(axis=1).astype(np.float32)
         # Validate not silent
         if np.max(np.abs(mono)) < 0.001:
-            return None
-        return mono
+            return None, None
+        return mono, buf
     except Exception as e:
         print(f"Record error: {e}")
-        return None
+        return None, None
 
 
 # ---------------------------------------------------------------------------
 # Feature extraction (same as GEMS pipeline)
 # ---------------------------------------------------------------------------
-def extract_features_from_audio(audio: np.ndarray) -> dict:
+def extract_features_from_audio(audio: np.ndarray, audio_stereo: np.ndarray = None) -> dict:
     """Extract 30+ audio features — mirrors fixed_gems_pipeline_v2.py."""
     import librosa
     import pyloudnorm as pyln
 
     features = {}
+
+    # === STEREO FEATURES ===
+    if audio_stereo is not None and audio_stereo.ndim == 2 and audio_stereo.shape[1] == 2:
+        left = audio_stereo[:, 0].astype(np.float64)
+        right = audio_stereo[:, 1].astype(np.float64)
+        mid = (left + right) / 2.0
+        side = (left - right) / 2.0
+        mid_energy = float(np.sqrt(np.mean(mid ** 2)))
+        side_energy = float(np.sqrt(np.mean(side ** 2)))
+        features['stereo_width'] = float(side_energy / max(mid_energy, 1e-10))
+        features['mid_side_ratio'] = float(mid_energy / max(mid_energy + side_energy, 1e-10))
+        if len(left) > 0:
+            corr = np.corrcoef(left, right)[0, 1]
+            features['stereo_correlation'] = float(corr) if np.isfinite(corr) else 1.0
+        else:
+            features['stereo_correlation'] = 1.0
+    else:
+        features['stereo_width'] = 0.0
+        features['mid_side_ratio'] = 1.0
+        features['stereo_correlation'] = 1.0
 
     # --- Loudness ---
     meter = pyln.Meter(SAMPLE_RATE)
@@ -404,14 +424,38 @@ def extract_features_from_audio(audio: np.ndarray) -> dict:
             mask = (freqs >= lo) & (freqs < hi)
             features[name] = float(np.sum(fft[mask]) / total_energy)
 
+    # Harmonic distortion estimate (THD approximation)
+    if total_energy > 0:
+        # Find fundamental frequency from spectral centroid
+        fundamental_idx = np.argmax(fft[1:]) + 1  # skip DC
+        fundamental_energy = float(fft[fundamental_idx])
+        # Sum energy at harmonics (2x, 3x, 4x, 5x fundamental)
+        harmonic_energy = 0.0
+        for h in range(2, 6):
+            h_idx = fundamental_idx * h
+            if h_idx < len(fft):
+                harmonic_energy += float(fft[h_idx])
+        features['harmonic_distortion'] = float(harmonic_energy / max(fundamental_energy, 1e-10))
+    else:
+        features['harmonic_distortion'] = 0.0
+
     # --- Energy / Dynamics ---
     rms = float(np.sqrt(np.mean(audio ** 2)))
     features['energy'] = rms
+
+    # True peak (inter-sample) via 4x oversampling
+    from scipy import signal as scipy_signal
+    try:
+        upsampled = scipy_signal.resample(audio, len(audio) * 4)
+        features['true_peak_dbfs'] = float(20 * np.log10(max(np.max(np.abs(upsampled)), 1e-10)))
+    except Exception:
+        features['true_peak_dbfs'] = float(20 * np.log10(max(np.max(np.abs(audio)), 1e-10)))
+
     p95 = np.percentile(np.abs(audio), 95)
     p10 = max(np.percentile(np.abs(audio), 10), 1e-10)
-    features['dynamic_range'] = min(float(p95 / p10), 60.0)
-    features['crest_factor'] = float(np.max(np.abs(audio)) / max(rms, 1e-10))
-    features['compression_amount'] = 1.0 - (features['crest_factor'] / 20.0)
+    features['dynamic_range'] = min(float(20 * np.log10(p95 / p10)), 60.0)
+    features['crest_factor'] = float(20 * np.log10(np.max(np.abs(audio)) / max(rms, 1e-10)))
+    features['compression_amount'] = max(0.0, 1.0 - (features['crest_factor'] / 26.0))
 
     # --- Advanced ---
     stft = librosa.stft(audio)
@@ -423,6 +467,7 @@ def extract_features_from_audio(audio: np.ndarray) -> dict:
     # Attack time
     attack_idx = int(np.argmax(onset_env > 0.9 * np.max(onset_env))) if np.max(onset_env) > 0 else 0
     features['attack_time'] = float(attack_idx / SAMPLE_RATE * len(audio) / max(len(onset_env), 1))
+    features['attack_time'] = max(features['attack_time'], 0.1)
 
     # Danceability
     if len(beats) > 1:
@@ -561,6 +606,7 @@ def process_job(job: dict, loopback_device: int):
     ]
 
     audio_samples = []
+    stereo_samples = []
     energy_levels = []
 
     for i, pos_ms in enumerate(sample_points):
@@ -583,10 +629,11 @@ def process_job(job: dict, loopback_device: int):
         _seek_to(pos_ms)
         time.sleep(1.5)  # Match GEMS pipeline settle time
 
-        mono = _record_sample(loopback_device)
+        mono, stereo_buf = _record_sample(loopback_device)
         if mono is not None:
             energy = float(np.sqrt(np.mean(mono ** 2)))
             audio_samples.append(mono)
+            stereo_samples.append(stereo_buf)
             energy_levels.append(energy)
             print(f"[{job_id[:8]}] Sample {i + 1}/3 at {pos_ms / 1000:.0f}s — energy={energy:.4f}")
         else:
@@ -603,11 +650,12 @@ def process_job(job: dict, loopback_device: int):
     # Use highest-energy sample
     best_idx = int(np.argmax(energy_levels))
     audio = audio_samples[best_idx]
+    audio_stereo = stereo_samples[best_idx]
     print(f"[{job_id[:8]}] Using sample {best_idx + 1} (energy={energy_levels[best_idx]:.4f})")
 
     # Extract features
     try:
-        features = extract_features_from_audio(audio)
+        features = extract_features_from_audio(audio, audio_stereo=audio_stereo)
     except Exception as e:
         print(f"[{job_id[:8]}] Feature extraction failed: {e}")
         update_job(job_id, 'extraction_failed')
