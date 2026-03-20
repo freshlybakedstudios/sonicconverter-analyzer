@@ -331,8 +331,16 @@ def extract_features(file_path: str, genre_hint: str = '') -> Dict:
     -------
     dict  with all feature keys used by the matcher + emotion data.
     """
-    # Load audio at 44.1 kHz mono
+    # Load audio at 44.1 kHz — mono for features, stereo for spatial analysis
     y, sr = librosa.load(file_path, sr=44100, mono=True)
+    # Also load stereo if available
+    y_stereo_raw, _ = librosa.load(file_path, sr=44100, mono=False)
+    if y_stereo_raw.ndim == 2 and y_stereo_raw.shape[0] == 2:
+        # librosa returns (channels, samples), transpose to (samples, channels)
+        y_stereo_full = y_stereo_raw.T
+    else:
+        y_stereo_full = None
+
     duration_samples = len(y)
     duration_sec = duration_samples / sr
 
@@ -343,6 +351,7 @@ def extract_features(file_path: str, genre_hint: str = '') -> Dict:
     segment_len = int(min(8, duration_sec * 0.2) * sr)
     sample_points = [0.25, 0.50, 0.75]
     segments = []
+    stereo_segments = []
     energies = []
 
     for pct in sample_points:
@@ -352,6 +361,10 @@ def extract_features(file_path: str, genre_hint: str = '') -> Dict:
         if len(seg) < sr:  # skip if less than 1 second
             continue
         segments.append(seg)
+        if y_stereo_full is not None:
+            stereo_segments.append(y_stereo_full[start : start + segment_len])
+        else:
+            stereo_segments.append(None)
         energies.append(float(np.sqrt(np.mean(seg ** 2))))
 
     if not segments:
@@ -360,8 +373,9 @@ def extract_features(file_path: str, genre_hint: str = '') -> Dict:
     # Use highest-energy segment for feature extraction
     best_idx = int(np.argmax(energies))
     audio = segments[best_idx]
+    audio_stereo = stereo_segments[best_idx]
 
-    features = _extract_core(audio, sr)
+    features = _extract_core(audio, sr, audio_stereo=audio_stereo)
 
     # Emotion detection
     emo = _emotion_detector.detect(features, genre_hint)
@@ -495,9 +509,29 @@ def _estimate_genre(f: Dict) -> str:
     return best
 
 
-def _extract_core(audio: np.ndarray, sr: int) -> Dict:
+def _extract_core(audio: np.ndarray, sr: int, audio_stereo: np.ndarray = None) -> Dict:
     """Extract all 33 audio features from a mono float32 array."""
     features: Dict = {}
+
+    # === STEREO FEATURES ===
+    if audio_stereo is not None and audio_stereo.ndim == 2 and audio_stereo.shape[1] == 2:
+        left = audio_stereo[:, 0].astype(np.float64)
+        right = audio_stereo[:, 1].astype(np.float64)
+        mid = (left + right) / 2.0
+        side = (left - right) / 2.0
+        mid_energy = float(np.sqrt(np.mean(mid ** 2)))
+        side_energy = float(np.sqrt(np.mean(side ** 2)))
+        features['stereo_width'] = float(side_energy / max(mid_energy, 1e-10))
+        features['mid_side_ratio'] = float(mid_energy / max(mid_energy + side_energy, 1e-10))
+        if len(left) > 0:
+            corr = np.corrcoef(left, right)[0, 1]
+            features['stereo_correlation'] = float(corr) if np.isfinite(corr) else 1.0
+        else:
+            features['stereo_correlation'] = 1.0
+    else:
+        features['stereo_width'] = 0.0
+        features['mid_side_ratio'] = 1.0
+        features['stereo_correlation'] = 1.0
 
     # --- LOUDNESS (LUFS) ---
     meter = pyln.Meter(sr)
@@ -573,14 +607,37 @@ def _extract_core(audio: np.ndarray, sr: int) -> Dict:
         for name, val in zip(bands.keys(), defaults):
             features[name] = val
 
+    # Harmonic distortion estimate (THD approximation)
+    if total_energy > 0:
+        # Find fundamental frequency from spectral centroid
+        fundamental_idx = np.argmax(fft[1:]) + 1  # skip DC
+        fundamental_energy = float(fft[fundamental_idx])
+        # Sum energy at harmonics (2x, 3x, 4x, 5x fundamental)
+        harmonic_energy = 0.0
+        for h in range(2, 6):
+            h_idx = fundamental_idx * h
+            if h_idx < len(fft):
+                harmonic_energy += float(fft[h_idx])
+        features['harmonic_distortion'] = float(harmonic_energy / max(fundamental_energy, 1e-10))
+    else:
+        features['harmonic_distortion'] = 0.0
+
     # --- ENERGY & DYNAMICS ---
     features['energy'] = float(np.sqrt(np.mean(audio ** 2)))
 
+    # True peak (inter-sample) via 4x oversampling
+    from scipy import signal as scipy_signal
+    try:
+        upsampled = scipy_signal.resample(audio, len(audio) * 4)
+        features['true_peak_dbfs'] = float(20 * np.log10(max(np.max(np.abs(upsampled)), 1e-10)))
+    except Exception:
+        features['true_peak_dbfs'] = float(20 * np.log10(max(np.max(np.abs(audio)), 1e-10)))
+
     p95 = np.percentile(np.abs(audio), 95)
     p10 = np.percentile(np.abs(audio), 10)
-    features['dynamic_range'] = min(float(p95 / p10), 60.0) if p10 > 1e-10 else 10.0
+    features['dynamic_range'] = min(float(20 * np.log10(p95 / p10)), 60.0) if p10 > 1e-10 else 10.0
 
-    features['crest_factor'] = float(np.max(np.abs(audio)) / features['energy']) if features['energy'] > 0 else 1.0
+    features['crest_factor'] = float(20 * np.log10(np.max(np.abs(audio)) / max(features['energy'], 1e-10))) if features['energy'] > 0 else 1.0
 
     # Attack time
     envelope = np.abs(librosa.onset.onset_strength(y=audio, sr=sr))
@@ -589,8 +646,9 @@ def _extract_core(audio: np.ndarray, sr: int) -> Dict:
         features['attack_time'] = float(attack_samples / sr * len(audio) / len(envelope))
     else:
         features['attack_time'] = 0.0
+    features['attack_time'] = max(features['attack_time'], 0.1)
 
-    features['compression_amount'] = 1.0 - (features['crest_factor'] / 20.0)
+    features['compression_amount'] = max(0.0, 1.0 - (features['crest_factor'] / 26.0))
 
     # Spectral flux
     stft = librosa.stft(audio)
