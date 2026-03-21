@@ -597,11 +597,9 @@ class TrackMatcher:
                     else:
                         overlap = target_fams & cand_fams
                         if not overlap:
-                            # Completely different family → steep penalty
-                            if is_extreme:
-                                similarity *= 0.65  # 35% for extreme vs different family
-                            else:
-                                similarity *= 0.82  # 18% for normal vs different family
+                            # Completely different family → hard filter
+                            # e.g. pure hip-hop matching electronic, or pure pop matching metal
+                            continue
                         elif cand_fams - target_fams:
                             # Crossover — shares a family but also has a foreign one
                             similarity *= 0.96
