@@ -490,7 +490,10 @@ class TrackMatcher:
         _EXTREME = {'black', 'death', 'brutal', 'doom', 'thrash',
                     'deathcore', 'goregrind', 'grind', 'sludge'}
         is_extreme = bool(target_genre_words & _EXTREME)
-        target_fams = _genre_families(genre_hint)
+        # Use primary genre (first in list) for family filtering — CM secondaries are noisy
+        # e.g. The Prodigy primary = "electronic" but CM adds "uk hip-hop/rap" as secondary
+        primary_genre = genre_hint.split(',')[0].strip() if genre_hint else ''
+        target_fams = _genre_families(primary_genre) if primary_genre else _genre_families(genre_hint)
         if is_extreme:
             target_fams.discard('rock')  # CM tags extreme metal with "rock" — strip it
 
