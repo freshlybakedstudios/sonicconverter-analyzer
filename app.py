@@ -1889,6 +1889,99 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         })
         print(f"Enrichment [{job_id[:8]}]: {len(deduped_playlists)} unique playlists, {curator_count} curators with contact info")
 
+        # Campaign Forecast — predict streams from playlist pitching
+        if curator_count > 0:
+            forecast_curators = []
+            total_reach = 0
+            total_expected_streams = 0
+
+            for name, curator in (job_mgr.get_job_state(job_id) or {}).get('curator_emails', {}).items():
+                followers = curator.get('followers', 0) or 0
+                sonic_match = curator.get('sonic_match_pct', 0.80)
+
+                # Base acceptance rate by contact method
+                if curator.get('submithub_url'):
+                    base_rate = 0.12
+                    method = 'SubmitHub'
+                elif curator.get('groover_url'):
+                    base_rate = 0.20
+                    method = 'Groover'
+                elif curator.get('email'):
+                    base_rate = 0.07
+                    method = 'Email'
+                elif curator.get('submission_url'):
+                    base_rate = 0.12
+                    method = 'Submission'
+                elif curator.get('instagram_url'):
+                    base_rate = 0.04
+                    method = 'Instagram'
+                elif curator.get('facebook_url'):
+                    base_rate = 0.04
+                    method = 'Facebook'
+                else:
+                    base_rate = 0.05
+                    method = 'Other'
+
+                # Targeting bonus — our pitches come with sonic match + reference artist
+                targeting_multiplier = min(2.5, 1.0 + max(0, (sonic_match - 0.70)) * 3)
+                acceptance_rate = min(0.60, base_rate * targeting_multiplier)
+
+                # Stream rate based on playlist activity
+                # (We don't have freshness per curator easily, use conservative estimate)
+                stream_rate = 0.03  # 3% of followers = streams
+
+                expected_streams = followers * stream_rate * acceptance_rate
+                total_reach += followers
+                total_expected_streams += expected_streams
+
+                forecast_curators.append({
+                    'name': curator.get('name', name),
+                    'playlist_name': curator.get('playlist_name', ''),
+                    'followers': followers,
+                    'method': method,
+                    'acceptance_rate': round(acceptance_rate * 100, 1),
+                    'expected_streams': round(expected_streams),
+                })
+
+            # Sort by expected streams descending
+            forecast_curators.sort(key=lambda x: x['expected_streams'], reverse=True)
+
+            # Expected placements
+            total_acceptance = sum(c['acceptance_rate'] / 100 for c in forecast_curators)
+            placements_low = max(1, int(total_acceptance * 0.7))
+            placements_high = max(placements_low, int(total_acceptance * 1.3))
+
+            # Algorithmic bonus (if save rate > 5%, 2-4x additional streams)
+            algo_low = int(total_expected_streams * 1.5)
+            algo_high = int(total_expected_streams * 3.0)
+
+            # Revenue estimate ($0.004 per stream)
+            revenue_low = round(total_expected_streams * 0.004, 2)
+            revenue_high = round((total_expected_streams + algo_high) * 0.004, 2)
+
+            # New followers (0.1% of streams)
+            followers_low = max(1, int(total_expected_streams * 0.001))
+            followers_high = int((total_expected_streams + algo_high) * 0.001)
+
+            forecast = {
+                'curator_count': curator_count,
+                'total_reach': total_reach,
+                'placements_low': placements_low,
+                'placements_high': placements_high,
+                'streams_low': int(total_expected_streams * 0.7),
+                'streams_high': int(total_expected_streams * 1.3),
+                'algo_streams_low': algo_low,
+                'algo_streams_high': algo_high,
+                'new_followers_low': followers_low,
+                'new_followers_high': followers_high,
+                'revenue_low': revenue_low,
+                'revenue_high': revenue_high,
+                'top_curators': forecast_curators[:5],
+            }
+
+            _sse_publish(job_id, 'campaign_forecast', forecast)
+            job_mgr.update_job(job_id, campaign_forecast=forecast)
+
         # Done
         job_mgr.update_job(job_id, status='complete')
         _sse_publish(job_id, 'complete', {'status': 'complete'})
@@ -1940,6 +2033,8 @@ async def stream_enrichment(job_id: str):
                 if state.get('curator_emails'):
                     for name, info in state['curator_emails'].items():
                         yield f"event: curator_emails\ndata: {json.dumps({'curator': info})}\n\n"
+                if state.get('campaign_forecast'):
+                    yield f"event: campaign_forecast\ndata: {json.dumps(state['campaign_forecast'])}\n\n"
                 if state.get('status') == 'complete':
                     yield f"event: complete\ndata: {json.dumps({'status': 'complete'})}\n\n"
                     return

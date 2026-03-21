@@ -334,6 +334,11 @@ function startSSE(jobId) {
     updateEnrichmentProgress('emails', data.progress);
   });
 
+  eventSource.addEventListener('campaign_forecast', (e) => {
+    const data = JSON.parse(e.data);
+    renderCampaignForecast(data);
+  });
+
   eventSource.addEventListener('enrichment_progress', (e) => {
     const data = JSON.parse(e.data);
     const pct = data.total_batches ? Math.round(data.batch / data.total_batches * 100) : 0;
@@ -1243,6 +1248,55 @@ function appendCuratorEmail(data) {
     <td class="social-links-cell">${links.join(' ') || '—'}</td>
   `;
   container.appendChild(tr);
+}
+
+function renderCampaignForecast(data) {
+  const card = $('#campaign-forecast-card');
+  if (!card) return;
+  show(card);
+
+  const fmtN = n => n.toLocaleString();
+
+  let topCuratorsHtml = '';
+  if (data.top_curators && data.top_curators.length > 0) {
+    topCuratorsHtml = '<div class="forecast-top-curators"><h4>Highest-Impact Curators</h4><ol>' +
+      data.top_curators.map(c =>
+        `<li><strong>${c.name}</strong> — ${c.playlist_name} (${fmtN(c.followers)} followers) via ${c.method}<br><span class="forecast-detail">${c.acceptance_rate}% est. acceptance · ~${fmtN(c.expected_streams)} streams</span></li>`
+      ).join('') + '</ol></div>';
+  }
+
+  card.innerHTML = `
+    <h3>Campaign Forecast</h3>
+    <p class="card-sub">Predicted impact from pitching ${data.curator_count} contactable curators</p>
+    <div class="forecast-grid">
+      <div class="forecast-stat">
+        <div class="forecast-value">${fmtN(data.total_reach)}</div>
+        <div class="forecast-label">Combined playlist reach</div>
+      </div>
+      <div class="forecast-stat">
+        <div class="forecast-value">${data.placements_low}–${data.placements_high}</div>
+        <div class="forecast-label">Expected placements</div>
+      </div>
+      <div class="forecast-stat">
+        <div class="forecast-value">${fmtN(data.streams_low)}–${fmtN(data.streams_high)}</div>
+        <div class="forecast-label">Estimated streams</div>
+      </div>
+      <div class="forecast-stat">
+        <div class="forecast-value">+${fmtN(data.algo_streams_low)}–${fmtN(data.algo_streams_high)}</div>
+        <div class="forecast-label">Algorithmic bonus (if save rate &gt; 5%)</div>
+      </div>
+      <div class="forecast-stat">
+        <div class="forecast-value">${data.new_followers_low}–${fmtN(data.new_followers_high)}</div>
+        <div class="forecast-label">Estimated new followers</div>
+      </div>
+      <div class="forecast-stat">
+        <div class="forecast-value">$${data.revenue_low.toFixed(0)}–$${data.revenue_high.toFixed(0)}</div>
+        <div class="forecast-label">Est. streaming revenue</div>
+      </div>
+    </div>
+    ${topCuratorsHtml}
+    <p class="forecast-disclaimer">Based on industry-average acceptance rates by contact method, adjusted for sonic targeting strength. Algorithmic bonus assumes Spotify promotes tracks with &gt;5% save rate into Discover Weekly and Release Radar.</p>
+  `;
 }
 
 // Curator CSV download
