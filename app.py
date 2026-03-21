@@ -1738,6 +1738,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     'spotify_user_id': spotify_uid,
                     'sonic_match': pl.get('sonic_match', ''),
                     'track_name': pl.get('track_name', ''),
+                    'sonic_match_pct': pl.get('sonic_similarity', 0.80),
                 })
 
             if batch_curators:
@@ -1899,28 +1900,35 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 followers = curator.get('followers', 0) or 0
                 sonic_match = curator.get('sonic_match_pct', 0.80)
 
-                # Base acceptance rate by contact method
+                # Base acceptance rate and cost by contact method
                 if curator.get('submithub_url'):
                     base_rate = 0.12
                     method = 'SubmitHub'
+                    cost = 2.0
                 elif curator.get('groover_url'):
                     base_rate = 0.20
                     method = 'Groover'
+                    cost = 2.0
                 elif curator.get('email'):
                     base_rate = 0.07
                     method = 'Email'
+                    cost = 0.0
                 elif curator.get('submission_url'):
                     base_rate = 0.12
                     method = 'Submission'
+                    cost = 0.0
                 elif curator.get('instagram_url'):
                     base_rate = 0.04
                     method = 'Instagram'
+                    cost = 0.0
                 elif curator.get('facebook_url'):
                     base_rate = 0.04
                     method = 'Facebook'
+                    cost = 0.0
                 else:
                     base_rate = 0.05
                     method = 'Other'
+                    cost = 0.0
 
                 # Targeting bonus — our pitches come with sonic match + reference artist
                 targeting_multiplier = min(2.5, 1.0 + max(0, (sonic_match - 0.70)) * 3)
@@ -1939,6 +1947,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     'playlist_name': curator.get('playlist_name', ''),
                     'followers': followers,
                     'method': method,
+                    'cost': cost,
                     'acceptance_rate': round(acceptance_rate * 100, 1),
                     'expected_streams': round(expected_streams),
                 })
@@ -1963,6 +1972,23 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             followers_low = max(1, int(total_expected_streams * 0.001))
             followers_high = int((total_expected_streams + algo_high) * 0.001)
 
+            # Cost breakdown by method
+            cost_by_method = {}
+            for c in forecast_curators:
+                m = c['method']
+                if m not in cost_by_method:
+                    cost_by_method[m] = {'count': 0, 'cost': 0}
+                cost_by_method[m]['count'] += 1
+                cost_by_method[m]['cost'] += c['cost']
+            total_cost = sum(v['cost'] for v in cost_by_method.values())
+
+            # Cost per stream
+            cost_per_stream = round(total_cost / max(total_expected_streams, 1), 4)
+
+            # ROI
+            net_roi_low = revenue_low - total_cost
+            net_roi_high = revenue_high - total_cost
+
             forecast = {
                 'curator_count': curator_count,
                 'total_reach': total_reach,
@@ -1976,6 +2002,11 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 'new_followers_high': followers_high,
                 'revenue_low': revenue_low,
                 'revenue_high': revenue_high,
+                'total_cost': total_cost,
+                'cost_by_method': cost_by_method,
+                'cost_per_stream': cost_per_stream,
+                'net_roi_low': net_roi_low,
+                'net_roi_high': net_roi_high,
                 'top_curators': forecast_curators[:5],
             }
 
