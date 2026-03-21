@@ -1306,6 +1306,47 @@ body {
   color: #888;
   margin-top: 8px;
 }
+.forecast-insight {
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(212, 225, 87, 0.06);
+  border-left: 3px solid #d4e157;
+  border-radius: 0 8px 8px 0;
+}
+.forecast-insight h4 {
+  font-size: 0.9rem;
+  color: #d4e157;
+  margin-bottom: 8px;
+}
+.forecast-insight p {
+  font-size: 0.85rem;
+  color: #ccc;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.forecast-insight p:last-child {
+  margin-bottom: 0;
+}
+.forecast-sources {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.forecast-sources h4 {
+  font-size: 0.8rem;
+  color: #999;
+  margin-bottom: 8px;
+}
+.forecast-sources ul {
+  padding-left: 18px;
+  margin: 0;
+}
+.forecast-sources li {
+  font-size: 0.72rem;
+  color: #777;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
 .forecast-disclaimer {
   font-size: 0.75rem;
   color: #777;
