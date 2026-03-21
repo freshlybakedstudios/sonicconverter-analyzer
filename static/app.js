@@ -1322,18 +1322,21 @@ function renderCampaignForecast(data) {
     ${topCuratorsHtml}
     <div class="forecast-insight">
       <h4>Why This Matters</h4>
-      <p>Direct streaming ROI from playlist placements is often negative — but that's not the play. Playlist placements seed the <strong>save-rate signal</strong> that triggers Spotify's algorithmic playlists (Discover Weekly, Release Radar). Tracks with &gt;5% save rate see 40% more algorithmic placements. Tracks with &gt;20% save rate and 2.0+ stream-to-listener ratio trigger algorithmic placement within 10-14 days. The algorithm weights save rate and repeat-listen ratio <strong>3x higher</strong> than raw stream volume.</p>
-      <p>Sonically-targeted pitches deliver higher save rates than generic submissions because the listeners already like that sound. That's the multiplier.</p>
+      <p>Direct streaming ROI from playlist placements is often negative — but that's not the play. Playlist placements seed the <strong>save-rate signal</strong> that triggers Spotify's algorithmic playlists. ~40% of all Spotify streams come from algorithmic playlists (Music Ally, 2026). Discover Weekly alone has generated <strong>100 billion+ streams</strong> since 2015, with 77% going to emerging artists (Spotify Newsroom, June 2025).</p>
+      <p>Independent campaign data from 1,200+ artist campaigns suggests the algorithm weights save rate and repeat-listen ratio roughly <strong>3x higher</strong> than raw stream volume (Chartlex, 2025-2026). Tracks with &gt;5% save rate see significantly more Discover Weekly placements. Tracks with &gt;20% save rate and 2.0+ stream-to-listener ratio have been observed triggering algorithmic placement within 10-14 days.</p>
+      <p>Sonically-targeted pitches deliver higher save rates than generic submissions because the playlist listeners already like that sound. That's the multiplier — you're not buying streams, you're buying <strong>ignition</strong> into the algorithmic flywheel.</p>
     </div>
     <div class="forecast-sources">
       <h4>Sources</h4>
       <ul>
+        <li>Discover Weekly: 100B+ streams, 77% to emerging artists — <a href="https://newsroom.spotify.com/2025-06-30/discover-weekly-turns-10-celebrating-100-billion-tracks-streamed-and-a-decade-of-personalized-discovery/" target="_blank" rel="noopener">Spotify Newsroom, June 2025</a></li>
+        <li>~40% of Spotify streams from algorithmic playlists — <a href="https://musically.com/2026/03/11/how-to-turn-spotify-data-into-algorithmic-growth/" target="_blank" rel="noopener">Music Ally, March 2026</a></li>
+        <li>Save rate ~3x weight, 1,200+ campaign dataset — <a href="https://www.chartlex.com/blog/streaming/spotify-algorithm-2026-retention-revolution" target="_blank" rel="noopener">Chartlex, 2025-2026</a></li>
         <li>Acceptance rates: SubmitHub 10-14% (SubmitHub reported), Groover ~20% (Groover reported), cold email estimated 5-8%</li>
-        <li>Playlist stream conversion: 3-5% of followers per placement (Loop Solitaire, Playlist Push campaign data)</li>
-        <li>Save rate thresholds: Chartlex analysis of 1,200+ artist campaigns, 2025-2026</li>
-        <li>Algorithmic trigger: 400-600 streams/day for popularity score 30/100 (artist community data, Decent Music PR)</li>
-        <li>Follower conversion from playlists: ~0.1% (Loop Solitaire editorial playlist study)</li>
-        <li>Spotify payout: $0.003-0.005/stream (Spotify Loud &amp; Clear 2025, streaming calculator aggregates)</li>
+        <li>Playlist stream conversion: 3-5% of followers per placement — <a href="https://loopsolitaire.co.uk/blog/spotify-editorial-playlists/" target="_blank" rel="noopener">Loop Solitaire</a>, Playlist Push campaign data</li>
+        <li>Algorithmic trigger: 400-600 streams/day for popularity score 30/100 — <a href="https://www.decentmusicpr.com/post/spotify-algorithm-trigger-points" target="_blank" rel="noopener">Decent Music PR</a></li>
+        <li>Follower conversion from playlists: ~0.1% — <a href="https://loopsolitaire.co.uk/blog/spotify-editorial-playlists/" target="_blank" rel="noopener">Loop Solitaire editorial playlist study</a></li>
+        <li>Spotify payout: $0.003-0.005/stream — <a href="https://www.izotope.com/en/learn/what-are-lufs" target="_blank" rel="noopener">Spotify Loud &amp; Clear 2025</a>, streaming calculator aggregates</li>
         <li>Targeting multiplier: proprietary — based on sonic similarity consensus across matched artist catalog</li>
       </ul>
     </div>
