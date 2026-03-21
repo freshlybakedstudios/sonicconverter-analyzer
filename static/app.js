@@ -1265,6 +1265,18 @@ function renderCampaignForecast(data) {
       ).join('') + '</ol></div>';
   }
 
+  // Cost breakdown by method
+  let costBreakdownHtml = '';
+  if (data.cost_by_method) {
+    const methods = Object.entries(data.cost_by_method)
+      .sort((a, b) => b[1].cost - a[1].cost);
+    costBreakdownHtml = methods.map(([method, info]) =>
+      `<span class="cost-line">${info.count} via ${method} — ${info.cost > 0 ? '$' + info.cost.toFixed(0) : 'Free'}</span>`
+    ).join('');
+  }
+
+  const roiClass = data.net_roi_high > 0 ? 'roi-positive' : 'roi-negative';
+
   card.innerHTML = `
     <h3>Campaign Forecast</h3>
     <p class="card-sub">Predicted impact from pitching ${data.curator_count} contactable curators</p>
@@ -1294,8 +1306,21 @@ function renderCampaignForecast(data) {
         <div class="forecast-label">Est. streaming revenue</div>
       </div>
     </div>
+    <div class="forecast-roi-section">
+      <div class="forecast-cost-breakdown">
+        <h4>Campaign Investment</h4>
+        <div class="cost-lines">${costBreakdownHtml}</div>
+        <div class="cost-total">Total out-of-pocket: <strong>$${(data.total_cost || 0).toFixed(0)}</strong></div>
+      </div>
+      <div class="forecast-roi">
+        <h4>Return on Investment</h4>
+        <div class="roi-metric">Cost per stream: <strong>$${data.cost_per_stream || '0.000'}</strong></div>
+        <div class="roi-metric ${roiClass}">Net ROI: <strong>$${(data.net_roi_low || 0).toFixed(0)} – $${(data.net_roi_high || 0).toFixed(0)}</strong></div>
+        <div class="roi-compare">vs. Playlist Push ~$0.02/stream · Spotify Ads ~$0.04/stream</div>
+      </div>
+    </div>
     ${topCuratorsHtml}
-    <p class="forecast-disclaimer">Based on industry-average acceptance rates by contact method, adjusted for sonic targeting strength. Algorithmic bonus assumes Spotify promotes tracks with &gt;5% save rate into Discover Weekly and Release Radar.</p>
+    <p class="forecast-disclaimer">Based on industry-average acceptance rates by contact method, adjusted for sonic targeting strength. Algorithmic bonus assumes Spotify promotes tracks with &gt;5% save rate into Discover Weekly and Release Radar. Costs: SubmitHub ~$2/pitch, Groover ~$2/pitch, email/DM free.</p>
   `;
 }
 

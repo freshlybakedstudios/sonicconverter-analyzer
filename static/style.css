@@ -1261,6 +1261,51 @@ body {
   font-size: 0.8rem;
   color: #999;
 }
+.forecast-roi-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 20px 0;
+  padding: 16px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 10px;
+}
+.forecast-cost-breakdown h4,
+.forecast-roi h4 {
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  color: #eee;
+}
+.cost-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cost-line {
+  font-size: 0.85rem;
+  color: #bbb;
+}
+.cost-total {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: #eee;
+}
+.roi-metric {
+  font-size: 0.9rem;
+  color: #ddd;
+  margin-bottom: 6px;
+}
+.roi-positive strong {
+  color: #a5d6a7;
+}
+.roi-negative strong {
+  color: #ef9a9a;
+}
+.roi-compare {
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 8px;
+}
 .forecast-disclaimer {
   font-size: 0.75rem;
   color: #777;
@@ -1270,6 +1315,9 @@ body {
 @media (max-width: 600px) {
   .forecast-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .forecast-roi-section {
+    grid-template-columns: 1fr;
   }
 }
 .curator-contacts-table a {
