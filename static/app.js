@@ -669,6 +669,30 @@ function renderResults(data) {
         }
         $('#conv-sources').innerHTML = 'Derived from <a href="https://loudandclear.byspotify.com/" target="_blank" rel="noopener noreferrer">Spotify Loud & Clear 2025</a> and <a href="https://andrewsouthworth.com/how-many-monthly-listeners-to-make-a-living-on-spotify/" target="_blank" rel="noopener noreferrer">published artist earnings data</a>. Streaming revenue only — does not include merch, touring, or sync.';
         show(revEl);
+
+        // Estimated save rate
+        const estSave = userProfile.estimated_save_rate;
+        if (estSave) {
+          const saveEl = $('#conv-save-rate');
+          if (saveEl) {
+            let algoStatus, algoClass;
+            if (estSave >= 20) { algoStatus = 'Algorithmic placement likely within 10-14 days'; algoClass = 'save-excellent'; }
+            else if (estSave >= 10) { algoStatus = 'Strong algorithmic distribution expected'; algoClass = 'save-strong'; }
+            else if (estSave >= 5) { algoStatus = 'Above algorithmic threshold — 40% more Discover Weekly placements'; algoClass = 'save-good'; }
+            else if (estSave >= 3) { algoStatus = 'Near algorithmic threshold — close to triggering Discover Weekly'; algoClass = 'save-average'; }
+            else { algoStatus = 'Below algorithmic threshold — playlist seeding recommended'; algoClass = 'save-low'; }
+
+            saveEl.innerHTML = `
+              <div class="save-rate-display">
+                <div class="save-rate-value ${algoClass}">${estSave.toFixed(1)}%</div>
+                <div class="save-rate-label">Estimated Save Rate</div>
+                <div class="save-rate-status">${algoStatus}</div>
+                <div class="save-rate-note">Estimated from listener-to-follower conversion. Connect Spotify for Artists for actual save rate data.</div>
+              </div>
+            `;
+            show(saveEl);
+          }
+        }
       } else {
         hide(revEl);
       }
