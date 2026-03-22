@@ -1176,16 +1176,29 @@ async def analyze(
                 additional_fans = max(int(round(top25_followers_target - current_followers)), 0)
                 additional_revenue = additional_fans * 25
 
-            # Estimated save rate from follower conversion (proxy)
-            # Follower conversion 1% ≈ 3.5% save rate, capped 2-25%
-            est_save = min(25.0, max(2.0, (u_conversion or 1.0) * 3.5))
+            # Estimated save rate range from follower conversion (proxy)
+            # Based on industry benchmarks: Playlist Push, LoudLab, Chartlex
+            conv = u_conversion or 0.5
+            if conv < 0.5:
+                save_low, save_high = 2.0, 4.0
+            elif conv < 1.0:
+                save_low, save_high = 3.0, 5.0
+            elif conv < 2.0:
+                save_low, save_high = 4.0, 7.0
+            elif conv < 3.0:
+                save_low, save_high = 6.0, 10.0
+            elif conv < 5.0:
+                save_low, save_high = 8.0, 15.0
+            else:
+                save_low, save_high = 12.0, 20.0
 
             user_profile = {
                 'name': lead.get('name', 'Artist'),
                 'listeners': u_listeners,
                 'followers': u_followers,
                 'conversion_rate': u_conversion,
-                'estimated_save_rate': round(est_save, 1),
+                'estimated_save_rate_low': save_low,
+                'estimated_save_rate_high': save_high,
                 'conversion_comparison': conv_comparison,
                 'additional_fans': additional_fans,
                 'additional_revenue': additional_revenue,
@@ -2584,15 +2597,28 @@ async def analyze_url(
             additional_fans = max(int(round(target_followers - current_followers)), 0)
             additional_revenue = additional_fans * 25
 
-        # Estimated save rate from follower conversion (proxy)
-        est_save = min(25.0, max(2.0, (u_conversion or 1.0) * 3.5))
+        # Estimated save rate range from follower conversion (proxy)
+        conv = u_conversion or 0.5
+        if conv < 0.5:
+            save_low, save_high = 2.0, 4.0
+        elif conv < 1.0:
+            save_low, save_high = 3.0, 5.0
+        elif conv < 2.0:
+            save_low, save_high = 4.0, 7.0
+        elif conv < 3.0:
+            save_low, save_high = 6.0, 10.0
+        elif conv < 5.0:
+            save_low, save_high = 8.0, 15.0
+        else:
+            save_low, save_high = 12.0, 20.0
 
         user_profile = {
             'name': lead.get('name', 'Artist'),
             'listeners': u_listeners,
             'followers': u_followers,
             'conversion_rate': u_conversion,
-            'estimated_save_rate': round(est_save, 1),
+            'estimated_save_rate_low': save_low,
+            'estimated_save_rate_high': save_high,
             'conversion_comparison': conv_comparison,
             'additional_fans': additional_fans,
             'additional_revenue': additional_revenue,
