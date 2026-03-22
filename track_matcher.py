@@ -499,6 +499,9 @@ class TrackMatcher:
             target_fams = _genre_families(core_genres)
         else:
             target_fams = _genre_families(genre_hint)
+        # Primary genre families — used to boost candidates that share the primary
+        primary_genre = genre_hint.split(',')[0].strip() if genre_hint else ''
+        primary_fams = _genre_families(primary_genre) if primary_genre else target_fams
         if is_extreme:
             target_fams.discard('rock')  # CM tags extreme metal with "rock" — strip it
 
@@ -611,6 +614,11 @@ class TrackMatcher:
                         elif cand_fams - target_fams:
                             # Crossover — shares a family but also has a foreign one
                             similarity *= 0.96
+                    # Boost candidates that share the PRIMARY genre family
+                    # e.g. R&B artist matching R&B candidate gets +5% over hip-hop candidate
+                    if primary_fams and cand_fams:
+                        if primary_fams & cand_fams:
+                            similarity = min(1.0, similarity * 1.05)  # 5% boost for primary match
                     if similarity < threshold:
                         continue
 
