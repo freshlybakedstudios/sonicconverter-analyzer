@@ -904,6 +904,47 @@ body {
 }
 .conv-sources a:hover { color: var(--accent-light); }
 
+/* Estimated Save Rate */
+.conv-save-rate {
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 10px;
+  text-align: center;
+}
+.save-rate-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.save-rate-value {
+  font-size: 2rem;
+  font-weight: 700;
+}
+.save-excellent { color: #a5d6a7; }
+.save-strong { color: #c5e1a5; }
+.save-good { color: #d4e157; }
+.save-average { color: #ffd54f; }
+.save-low { color: #ef9a9a; }
+.save-rate-label {
+  font-size: 0.85rem;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.save-rate-status {
+  font-size: 0.9rem;
+  color: #ddd;
+  margin-top: 4px;
+}
+.save-rate-note {
+  font-size: 0.72rem;
+  color: #777;
+  margin-top: 8px;
+  font-style: italic;
+}
+
 /* Audience Match card */
 .audience-match-item {
   display: flex;

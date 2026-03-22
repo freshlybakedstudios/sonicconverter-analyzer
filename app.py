@@ -1176,11 +1176,16 @@ async def analyze(
                 additional_fans = max(int(round(top25_followers_target - current_followers)), 0)
                 additional_revenue = additional_fans * 25
 
+            # Estimated save rate from follower conversion (proxy)
+            # Follower conversion 1% ≈ 3.5% save rate, capped 2-25%
+            est_save = min(25.0, max(2.0, (u_conversion or 1.0) * 3.5))
+
             user_profile = {
                 'name': lead.get('name', 'Artist'),
                 'listeners': u_listeners,
                 'followers': u_followers,
                 'conversion_rate': u_conversion,
+                'estimated_save_rate': round(est_save, 1),
                 'conversion_comparison': conv_comparison,
                 'additional_fans': additional_fans,
                 'additional_revenue': additional_revenue,
@@ -2579,16 +2584,20 @@ async def analyze_url(
             additional_fans = max(int(round(target_followers - current_followers)), 0)
             additional_revenue = additional_fans * 25
 
+        # Estimated save rate from follower conversion (proxy)
+        est_save = min(25.0, max(2.0, (u_conversion or 1.0) * 3.5))
+
         user_profile = {
             'name': lead.get('name', 'Artist'),
             'listeners': u_listeners,
             'followers': u_followers,
             'conversion_rate': u_conversion,
+            'estimated_save_rate': round(est_save, 1),
             'conversion_comparison': conv_comparison,
             'additional_fans': additional_fans,
             'additional_revenue': additional_revenue,
         }
-        print(f"  User profile built: conversion={u_conversion}, fans_gap={additional_fans}, peers={conv_comparison.get('peer_count', 0)}")
+        print(f"  User profile built: conversion={u_conversion}, est_save={est_save:.1f}%, fans_gap={additional_fans}, peers={conv_comparison.get('peer_count', 0)}")
 
     print(f"  URL analysis: {len(found_matches)} tier-filtered matches, "
           f"{len(all_found)} total genre-filtered for enrichment, "
