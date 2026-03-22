@@ -2623,7 +2623,7 @@ async def analyze_url(
             'additional_fans': additional_fans,
             'additional_revenue': additional_revenue,
         }
-        print(f"  User profile built: conversion={u_conversion}, est_save={est_save:.1f}%, fans_gap={additional_fans}, peers={conv_comparison.get('peer_count', 0)}")
+        print(f"  User profile built: conversion={u_conversion}, est_save={save_low}-{save_high}%, fans_gap={additional_fans}, peers={conv_comparison.get('peer_count', 0)}")
 
     print(f"  URL analysis: {len(found_matches)} tier-filtered matches, "
           f"{len(all_found)} total genre-filtered for enrichment, "
