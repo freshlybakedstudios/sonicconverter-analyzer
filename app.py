@@ -348,7 +348,7 @@ FEATURE_DESCRIPTIONS = {
     },
     'danceability': {
         'higher': 'Tighten the groove — more consistent timing and rhythmic pull',
-        'lower': 'Loosen the pocket — allowing more swing and rhythmic freedom',
+        'lower': 'Ease rhythmic rigidity — less quantized, more human groove',
         'domain': 'Rhythm / Transients', 'unit': '',
     },
     'dissonance': {
@@ -419,7 +419,7 @@ COMPARISON_FEATURES = [
 def _find_consensus(features: dict, high_converter_gems: list) -> list:
     """
     Find consensus patterns: for each production feature, check whether
-    most high converters are higher or lower than the user. If 70%+ agree
+    most high converters are higher or lower than the user. If 50%+ agree
     on direction, that's a consensus recommendation.
 
     Same method as the production outreach pipeline.
