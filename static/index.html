@@ -352,9 +352,12 @@
 
       <!-- All Playlists -->
       <div class="result-card hidden" id="all-playlists-card">
-        <h3>Playlist Opportunities <button class="csv-download-btn hidden" id="csv-download-btn" title="Download CSV">Download CSV</button></h3>
+        <h3 class="collapsible-header" id="playlists-toggle">
+          <span class="collapse-arrow">&#9654;</span> Playlist Opportunities <span class="playlist-count-badge" id="playlist-count-badge"></span>
+          <button class="csv-download-btn hidden" id="csv-download-btn" title="Download CSV">Download CSV</button>
+        </h3>
         <p class="card-sub" id="all-playlists-count">Scanning playlists across all sonically similar artists (wider pool, no tier filter)...</p>
-        <div class="matches-table-wrap">
+        <div class="matches-table-wrap hidden" id="playlists-collapsible">
           <table class="matches-table">
             <thead>
               <tr>

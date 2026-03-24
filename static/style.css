@@ -533,6 +533,25 @@ body {
 }
 
 /* Matches table */
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+.collapsible-header:hover {
+  opacity: 0.8;
+}
+.collapse-arrow {
+  font-size: 0.8em;
+  color: #888;
+  transition: transform 0.2s;
+}
+.playlist-count-badge {
+  font-size: 0.75em;
+  color: #888;
+  font-weight: 400;
+}
 .matches-table-wrap {
   overflow-x: auto;
   margin-top: 12px;
@@ -1293,6 +1312,12 @@ body {
 .forecast-stat-total .forecast-label {
   font-size: 0.9rem;
   color: #d4e157;
+}
+.forecast-pct {
+  font-size: 0.7em;
+  font-weight: 400;
+  color: #4ecdc4;
+  margin-left: 8px;
 }
 .forecast-top-curators {
   margin-top: 20px;
