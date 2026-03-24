@@ -786,16 +786,22 @@ def _create_session(user_id: str) -> str:
     return token
 
 
-def _check_scan_cap(user: dict) -> int:
-    """Check if user can scan. Returns scans_remaining or raises 403."""
-    # Legacy tokens have no cap
+def _check_scan_cap(user: dict):
+    """Check if user can scan. Raises 403 if at limit. Does NOT decrement."""
     if 'id' not in user:
-        return 999
+        return  # Legacy tokens have no cap
+    if user.get('scans_used', 0) >= user.get('max_scans', 3):
+        raise HTTPException(403, "Scan limit reached. Contact us for more scans.")
 
-    resp = supabase.rpc('use_scan', {'p_user_id': user['id']}).execute()
-    if resp.data and resp.data[0].get('allowed'):
-        return resp.data[0]['scans_remaining']
-    raise HTTPException(403, "Scan limit reached. Contact us for more scans.")
+
+def _use_scan(user: dict):
+    """Decrement a scan from the user's cap. Call AFTER successful analysis."""
+    if 'id' not in user:
+        return
+    try:
+        supabase.rpc('use_scan', {'p_user_id': user['id']}).execute()
+    except Exception as e:
+        print(f"Scan decrement failed: {e}")
 
 
 def _send_reset_email(email: str, reset_token: str) -> bool:
@@ -1630,6 +1636,7 @@ async def analyze(
             job_id, enrichment_matches, user_cm_id,
         )
 
+        _use_scan(lead)
         return result
 
     finally:
@@ -3017,6 +3024,7 @@ async def analyze_url(
         new_job_id, enrichment_matches, user_cm_id,
     )
 
+    _use_scan(lead)
     return result
 
 
