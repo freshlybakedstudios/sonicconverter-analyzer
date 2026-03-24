@@ -519,7 +519,12 @@ def extract_features_from_audio(audio: np.ndarray, audio_stereo: np.ndarray = No
     if len(beats) > 1:
         beat_diffs = np.diff(beats)
         tempo_stability = 1.0 - float(np.std(beat_diffs) / max(np.mean(beat_diffs), 1e-10))
-        features['danceability'] = float(tempo_stability * features['beat_strength'])
+        features['danceability'] = max(0.0, float(tempo_stability * features['beat_strength']))
+    elif features['bpm'] > 0:
+        # Fallback: estimate from BPM and beat_strength when beat frames are sparse
+        # BPM was detected via autocorrelation even if onset frames weren't found
+        bpm_factor = min(features['bpm'] / 120.0, 1.5)  # normalize around 120 BPM
+        features['danceability'] = max(0.0, float(bpm_factor * features['beat_strength'] * 0.5))
     else:
         features['danceability'] = 0.0
 
