@@ -28,7 +28,8 @@ const show = (el) => el.classList.remove('hidden');
 const hide = (el) => el.classList.add('hidden');
 
 function scrollToRegister() {
-  $('#register-section').scrollIntoView({ behavior: 'smooth' });
+  const el = $('#auth-section');
+  if (el) el.scrollIntoView({ behavior: 'smooth' });
 }
 
 function resetAll() {
@@ -45,55 +46,209 @@ function resetAll() {
 }
 
 // -------------------------------------------------------
-// Registration
+// Auth: Login / Signup / Session
 // -------------------------------------------------------
-$('#register-form').addEventListener('submit', async (e) => {
+function _authSuccess(data) {
+  accessToken = data.token;
+  localStorage.setItem('sc_token', data.token);
+  localStorage.setItem('sc_name', data.name || '');
+  _updateScans(data.scans_remaining);
+  hide($('#auth-section'));
+  hide($('#hero'));
+  show($('#upload-section'));
+}
+
+function _updateScans(remaining) {
+  const badge = $('#scans-badge');
+  if (badge && remaining != null) {
+    badge.textContent = remaining >= 999 ? '' : `${remaining} scans remaining`;
+  }
+}
+
+function _showView(viewId) {
+  ['login-view', 'signup-view', 'forgot-view', 'reset-view'].forEach(id => {
+    const el = $('#' + id);
+    if (el) el.classList.toggle('hidden', id !== viewId);
+  });
+}
+
+// View toggles
+document.addEventListener('DOMContentLoaded', () => {
+  const showSignup = $('#show-signup');
+  const showLogin = $('#show-login');
+  const showForgot = $('#show-forgot');
+  const backToLogin = $('#back-to-login');
+  if (showSignup) showSignup.addEventListener('click', (e) => { e.preventDefault(); _showView('signup-view'); });
+  if (showLogin) showLogin.addEventListener('click', (e) => { e.preventDefault(); _showView('login-view'); });
+  if (showForgot) showForgot.addEventListener('click', (e) => { e.preventDefault(); _showView('forgot-view'); });
+  if (backToLogin) backToLogin.addEventListener('click', (e) => { e.preventDefault(); _showView('login-view'); });
+
+  // NDA checkbox enables signup button
+  const ndaBox = $('#nda-agreed');
+  const signupBtn = $('#signup-btn');
+  if (ndaBox && signupBtn) {
+    ndaBox.addEventListener('change', () => {
+      signupBtn.disabled = !ndaBox.checked;
+      signupBtn.style.opacity = ndaBox.checked ? '1' : '0.5';
+    });
+  }
+
+  // Logout
+  const logoutBtn = $('#logout-btn');
+  if (logoutBtn) logoutBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (accessToken) {
+      const form = new FormData();
+      form.append('token', accessToken);
+      fetch(`${API_URL}/api/logout`, { method: 'POST', body: form }).catch(() => {});
+    }
+    accessToken = null;
+    localStorage.removeItem('sc_token');
+    localStorage.removeItem('sc_name');
+    hide($('#upload-section'));
+    hide($('#results-section'));
+    show($('#auth-section'));
+    show($('#hero'));
+    _showView('login-view');
+  });
+
+  // Check for password reset token in URL
+  const params = new URLSearchParams(window.location.search);
+  const resetToken = params.get('reset');
+  if (resetToken) {
+    _showView('reset-view');
+    // Store for form submission
+    window._resetToken = resetToken;
+  }
+
+  // Check for saved session on page load
+  const savedToken = localStorage.getItem('sc_token');
+  if (savedToken) {
+    fetch(`${API_URL}/api/me?token=${savedToken}`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        accessToken = savedToken;
+        _updateScans(data.scans_remaining);
+        hide($('#auth-section'));
+        hide($('#hero'));
+        show($('#upload-section'));
+      })
+      .catch(() => {
+        localStorage.removeItem('sc_token');
+        localStorage.removeItem('sc_name');
+      });
+  }
+});
+
+// Login form
+$('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const btn = $('#register-btn');
-  const name = $('#name').value.trim();
-  const email = $('#email').value.trim();
-  if (!name || !email) return;
+  const btn = $('#login-btn');
+  const email = $('#login-email').value.trim();
+  const password = $('#login-password').value;
+  if (!email || !password) return;
 
   btn.disabled = true;
-  btn.textContent = 'Registering...';
+  btn.textContent = 'Logging in...';
+  try {
+    const form = new FormData();
+    form.append('email', email);
+    form.append('password', password);
+    const res = await fetch(`${API_URL}/api/login`, { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Login failed');
+    }
+    _authSuccess(await res.json());
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Log In';
+  }
+});
 
+// Signup form
+$('#signup-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#signup-btn');
+  const name = $('#signup-name').value.trim();
+  const email = $('#signup-email').value.trim();
+  const password = $('#signup-password').value;
+  const ndaAgreed = $('#nda-agreed').checked;
+  if (!name || !email || !password || !ndaAgreed) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Creating account...';
   try {
     const form = new FormData();
     form.append('name', name);
     form.append('email', email);
-    const spotifyUrl = $('#spotify-url').value.trim();
+    form.append('password', password);
+    form.append('nda_agreed', 'true');
+    const spotifyUrl = $('#signup-spotify-url').value.trim();
     if (spotifyUrl) form.append('spotify_url', spotifyUrl);
-    const monthlyListeners = $('#monthly-listeners').value.trim();
-    if (monthlyListeners) form.append('monthly_listeners', monthlyListeners);
+    const listeners = $('#signup-listeners').value.trim();
+    if (listeners) form.append('monthly_listeners', listeners);
 
-    const res = await fetch(`${API_URL}/api/register`, { method: 'POST', body: form });
+    const res = await fetch(`${API_URL}/api/signup`, { method: 'POST', body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Registration failed');
+      throw new Error(err.detail || 'Signup failed');
     }
     const data = await res.json();
-    accessToken = data.token;
 
     // Track lead conversion
     if (typeof gtag === 'function') {
-      gtag('event', 'generate_lead', {
-        currency: 'USD',
-        value: 1.00
-      });
+      gtag('event', 'generate_lead', { currency: 'USD', value: 1.00 });
     }
     if (typeof fbq === 'function') {
       fbq('track', 'Lead');
     }
 
-    // Transition
-    hide($('#register-section'));
-    hide($('#hero'));
-    show($('#upload-section'));
+    _authSuccess(data);
   } catch (err) {
     alert(err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Unlock Analyzer';
+    btn.textContent = 'Create Account';
+  }
+});
+
+// Forgot password form
+$('#forgot-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('#forgot-email').value.trim();
+  if (!email) return;
+  const form = new FormData();
+  form.append('email', email);
+  await fetch(`${API_URL}/api/forgot-password`, { method: 'POST', body: form }).catch(() => {});
+  hide($('#forgot-form'));
+  show($('#forgot-success'));
+});
+
+// Reset password form
+$('#reset-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const pw = $('#reset-password').value;
+  const confirm = $('#reset-confirm').value;
+  if (pw !== confirm) { alert('Passwords do not match.'); return; }
+  if (pw.length < 8) { alert('Password must be at least 8 characters.'); return; }
+
+  const form = new FormData();
+  form.append('token', window._resetToken || '');
+  form.append('new_password', pw);
+  try {
+    const res = await fetch(`${API_URL}/api/reset-password`, { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Reset failed');
+    }
+    alert('Password reset! You can now log in.');
+    window.history.replaceState({}, '', window.location.pathname);
+    _showView('login-view');
+  } catch (err) {
+    alert(err.message);
   }
 });
 

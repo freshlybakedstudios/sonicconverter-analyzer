@@ -9,3 +9,4 @@ requests
 supabase
 sendgrid
 stripe
+bcrypt

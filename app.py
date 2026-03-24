@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import bcrypt
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -78,7 +79,8 @@ def send_pushover_notification(title: str, message: str):
 # ---------------------------------------------------------------------------
 matcher = TrackMatcher()
 supabase = None
-access_tokens: dict = {}  # token -> {name, email, created_at}
+access_tokens: dict = {}  # DEPRECATED — kept for backwards compat during migration
+NDA_VERSION = "2026-03-v1"
 job_mgr = JobManager()
 enrichment_pool = ThreadPoolExecutor(max_workers=3)
 # SSE subscribers: job_id -> list of asyncio.Queue
@@ -735,6 +737,303 @@ def _listeners_to_tier(listeners: int) -> str:
     return 'unknown'
 
 
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+def _validate_session(token: str) -> dict:
+    """Validate session token from Supabase. Returns user dict or raises 401.
+
+    Also checks legacy in-memory tokens for backwards compat.
+    """
+    # Check legacy in-memory tokens first (will be removed after migration)
+    legacy = access_tokens.get(token)
+    if legacy:
+        return legacy
+
+    if not supabase:
+        raise HTTPException(401, "Service unavailable")
+
+    resp = supabase.table('sessions').select('user_id, expires_at').eq('token', token).execute()
+    if not resp.data:
+        raise HTTPException(401, "Invalid or expired session. Please log in.")
+
+    session = resp.data[0]
+    from datetime import timezone
+    expires = datetime.fromisoformat(session['expires_at'].replace('Z', '+00:00'))
+    if expires < datetime.now(timezone.utc):
+        supabase.table('sessions').delete().eq('token', token).execute()
+        raise HTTPException(401, "Session expired. Please log in again.")
+
+    user_resp = supabase.table('users').select('*').eq('id', session['user_id']).execute()
+    if not user_resp.data:
+        raise HTTPException(401, "User not found.")
+
+    return user_resp.data[0]
+
+
+def _create_session(user_id: str) -> str:
+    """Create a new session token in Supabase. Returns the token."""
+    token = secrets.token_urlsafe(32)
+    from datetime import timezone, timedelta
+    expires = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    supabase.table('sessions').insert({
+        'token': token,
+        'user_id': user_id,
+        'expires_at': expires,
+    }).execute()
+    return token
+
+
+def _check_scan_cap(user: dict) -> int:
+    """Check if user can scan. Returns scans_remaining or raises 403."""
+    # Legacy tokens have no cap
+    if 'id' not in user:
+        return 999
+
+    resp = supabase.rpc('use_scan', {'p_user_id': user['id']}).execute()
+    if resp.data and resp.data[0].get('allowed'):
+        return resp.data[0]['scans_remaining']
+    raise HTTPException(403, "Scan limit reached. Contact us for more scans.")
+
+
+def _send_reset_email(email: str, reset_token: str) -> bool:
+    """Send password reset email via SendGrid."""
+    api_key = os.getenv('SENDGRID_API_KEY')
+    if not api_key:
+        print("SENDGRID_API_KEY not set — skipping reset email")
+        return False
+
+    reset_url = f"https://analyze.freshlybakedstudios.com/?reset={reset_token}"
+
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                max-width:500px;margin:0 auto;background:#141213;color:#eee;padding:32px;border-radius:12px">
+      <h2 style="color:#fff;margin:0 0 16px">Reset Your Password</h2>
+      <p style="color:#ccc">Click the button below to reset your SonicConverter password. This link expires in 1 hour.</p>
+      <div style="text-align:center;margin:24px 0">
+        <a href="{reset_url}" style="background:#4ecdc4;color:#000;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">Reset Password</a>
+      </div>
+      <p style="color:#666;font-size:12px">If you didn't request this, you can ignore this email.</p>
+      <p style="color:#444;font-size:11px;margin-top:24px">Freshly Baked Studios &bull; freshlybakedstudios.com</p>
+    </div>
+    """
+
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail, HtmlContent
+    message = Mail(
+        from_email='noreply@freshlybakedstudios.com',
+        to_emails=email,
+        subject='Reset your SonicConverter password',
+        html_content=HtmlContent(html),
+    )
+    try:
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        print(f"Reset email sent to {email} — status {response.status_code}")
+        return response.status_code in (200, 201, 202)
+    except Exception as e:
+        print(f"Reset email failed: {e}")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+@app.post("/api/signup")
+async def signup(
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    nda_agreed: str = Form("false"),
+    spotify_url: Optional[str] = Form(None),
+    monthly_listeners: Optional[int] = Form(None),
+):
+    """Create a new user account with NDA acceptance."""
+    if not name or not email or not password:
+        raise HTTPException(400, "Name, email, and password are required")
+    if len(password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    if nda_agreed.lower() != 'true':
+        raise HTTPException(400, "You must agree to the Terms of Use & Non-Disclosure Agreement.")
+
+    # Check if email already exists
+    existing = supabase.table('users').select('id').eq('email', email.lower().strip()).execute()
+    if existing.data:
+        raise HTTPException(409, "An account with this email already exists. Please log in.")
+
+    # Hash password
+    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    from datetime import timezone
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Create user
+    user_row = {
+        'name': name,
+        'email': email.lower().strip(),
+        'password_hash': password_hash,
+        'nda_agreed_at': now,
+        'nda_version': NDA_VERSION,
+        'spotify_url': spotify_url or None,
+        'monthly_listeners': monthly_listeners,
+        'max_scans': 3,
+        'scans_used': 0,
+    }
+
+    try:
+        resp = supabase.table('users').insert(user_row).execute()
+        user = resp.data[0]
+    except Exception as e:
+        print(f"User creation failed: {e}")
+        raise HTTPException(500, "Could not create account. Please try again.")
+
+    # Create session
+    token = _create_session(user['id'])
+
+    # Also save to analyzer_leads for lead tracking
+    try:
+        supabase.table('analyzer_leads').insert({
+            'name': name,
+            'email': email.lower().strip(),
+            'created_at': now,
+            'analysis_count': 0,
+        }).execute()
+    except Exception:
+        pass  # duplicate or missing columns — fine
+
+    send_pushover_notification(
+        "New SonicConverter Signup",
+        f"{name}\n{email}\nNDA: {NDA_VERSION}"
+    )
+    print(f"Signup: {email} (NDA {NDA_VERSION})")
+
+    return {
+        "token": token,
+        "name": name,
+        "scans_remaining": user['max_scans'],
+    }
+
+
+@app.post("/api/login")
+async def login(
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    """Log in with email and password."""
+    if not email or not password:
+        raise HTTPException(400, "Email and password are required")
+
+    resp = supabase.table('users').select('*').eq('email', email.lower().strip()).execute()
+    if not resp.data:
+        raise HTTPException(401, "Invalid email or password.")
+
+    user = resp.data[0]
+
+    if not bcrypt.checkpw(password.encode(), user['password_hash'].encode()):
+        raise HTTPException(401, "Invalid email or password.")
+
+    if not user.get('nda_agreed_at'):
+        raise HTTPException(403, "NDA acceptance required. Please sign up again.")
+
+    token = _create_session(user['id'])
+    print(f"Login: {email}")
+
+    return {
+        "token": token,
+        "name": user['name'],
+        "scans_remaining": user['max_scans'] - user['scans_used'],
+    }
+
+
+@app.post("/api/logout")
+async def logout(token: str = Form(...)):
+    """Log out — destroy session."""
+    if supabase:
+        try:
+            supabase.table('sessions').delete().eq('token', token).execute()
+        except Exception:
+            pass
+    access_tokens.pop(token, None)
+    return {"ok": True}
+
+
+@app.get("/api/me")
+async def me(token: str):
+    """Check if session is valid and return user info."""
+    try:
+        user = _validate_session(token)
+    except HTTPException:
+        raise HTTPException(401, "Invalid session")
+
+    # Legacy token
+    if 'id' not in user:
+        return {"name": user.get('name', ''), "email": user.get('email', ''), "scans_remaining": 999}
+
+    return {
+        "name": user['name'],
+        "email": user['email'],
+        "scans_remaining": user['max_scans'] - user['scans_used'],
+        "scans_used": user['scans_used'],
+        "max_scans": user['max_scans'],
+    }
+
+
+@app.post("/api/forgot-password")
+async def forgot_password(email: str = Form(...)):
+    """Send a password reset link. Always returns ok (don't leak email existence)."""
+    if supabase:
+        resp = supabase.table('users').select('id').eq('email', email.lower().strip()).execute()
+        if resp.data:
+            reset_token = secrets.token_urlsafe(32)
+            from datetime import timezone, timedelta
+            supabase.table('password_reset_tokens').insert({
+                'token': reset_token,
+                'user_id': resp.data[0]['id'],
+                'expires_at': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            }).execute()
+            _send_reset_email(email.lower().strip(), reset_token)
+    return {"ok": True}
+
+
+@app.post("/api/reset-password")
+async def reset_password(
+    token: str = Form(...),
+    new_password: str = Form(...),
+):
+    """Reset password using a reset token."""
+    if len(new_password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+
+    resp = supabase.table('password_reset_tokens').select('*').eq('token', token).eq('used', False).execute()
+    if not resp.data:
+        raise HTTPException(400, "Invalid or expired reset link.")
+
+    reset = resp.data[0]
+    from datetime import timezone
+    expires = datetime.fromisoformat(reset['expires_at'].replace('Z', '+00:00'))
+    if expires < datetime.now(timezone.utc):
+        raise HTTPException(400, "Reset link has expired. Please request a new one.")
+
+    # Update password
+    password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+    supabase.table('users').update({
+        'password_hash': password_hash,
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    }).eq('id', reset['user_id']).execute()
+
+    # Mark token as used
+    supabase.table('password_reset_tokens').update({'used': True}).eq('token', token).execute()
+
+    # Kill all sessions for this user (force re-login)
+    supabase.table('sessions').delete().eq('user_id', reset['user_id']).execute()
+
+    print(f"Password reset completed for user {reset['user_id']}")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Legacy register endpoint (backwards compat — will be removed)
+# ---------------------------------------------------------------------------
 @app.post("/api/register")
 async def register(
     name: str = Form(...),
@@ -742,47 +1041,7 @@ async def register(
     spotify_url: Optional[str] = Form(None),
     monthly_listeners: Optional[int] = Form(None),
 ):
-    """Capture lead and return an access token for the analyze endpoint."""
-    if not name or not email:
-        raise HTTPException(400, "Name and email are required")
-
-    # Store lead in Supabase with retry logic for connection issues
-    row = {
-        'name': name,
-        'email': email,
-        'created_at': datetime.utcnow().isoformat(),
-        'analysis_count': 0,
-    }
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            supabase.table('analyzer_leads').insert(row).execute()
-            print(f"Lead saved: {email}")
-            # Send push notification
-            send_pushover_notification(
-                "New Analyzer Lead",
-                f"{name}\n{email}"
-            )
-            break
-        except Exception as e:
-            if attempt < max_retries - 1:
-                wait_time = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
-                print(f"Supabase insert retry {attempt + 1}/{max_retries} after {wait_time}s: {e}")
-                time.sleep(wait_time)
-            else:
-                print(f"Supabase insert FAILED after {max_retries} attempts: {e} — lead: {email}")
-    # Try to update with optional columns (may fail if columns don't exist yet)
-    if spotify_url or monthly_listeners is not None:
-        extra = {}
-        if spotify_url:
-            extra['spotify_url'] = spotify_url
-        if monthly_listeners is not None:
-            extra['monthly_listeners'] = monthly_listeners
-        try:
-            supabase.table('analyzer_leads').update(extra).eq('email', email).execute()
-        except Exception:
-            pass  # columns don't exist yet — fine, data is in-memory token
-
+    """DEPRECATED — use /api/signup. Kept for cached frontends."""
     token = secrets.token_urlsafe(32)
     access_tokens[token] = {
         'name': name,
@@ -791,7 +1050,6 @@ async def register(
         'monthly_listeners': monthly_listeners,
         'created_at': time.time(),
     }
-    print(f"Lead saved: {email}, spotify_url={'yes: ' + spotify_url if spotify_url else 'none'}, listeners={monthly_listeners}")
     return {"token": token, "name": name}
 
 
@@ -806,9 +1064,8 @@ async def analyze(
     Also sends results email.
     """
     # Validate token
-    lead = access_tokens.get(token)
-    if not lead:
-        raise HTTPException(401, "Invalid or expired token. Please register first.")
+    lead = _validate_session(token)
+    _check_scan_cap(lead)
 
     # Validate file type
     filename = file.filename or ''
@@ -2226,9 +2483,8 @@ async def analyze_url(
     Analyze a Spotify track by URL.
     Tries: 1) Mac worker pickup (30s), 2) Spotify preview fallback.
     """
-    lead = access_tokens.get(token)
-    if not lead:
-        raise HTTPException(401, "Invalid or expired token. Please register first.")
+    lead = _validate_session(token)
+    _check_scan_cap(lead)
 
     # Validate Spotify URL
     if 'open.spotify.com/track/' not in spotify_url and 'spotify:track:' not in spotify_url:
