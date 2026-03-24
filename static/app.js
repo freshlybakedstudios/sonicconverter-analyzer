@@ -140,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
         hide($('#auth-section'));
         hide($('#hero'));
         show($('#upload-section'));
+        if (typeof setInputMode === 'function') setInputMode('url');
       })
       .catch(() => {
         localStorage.removeItem('sc_token');
