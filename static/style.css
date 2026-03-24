@@ -270,6 +270,125 @@ body {
   margin-top: 12px;
 }
 
+/* ---- AUTH ---- */
+.auth-links {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.auth-links a {
+  color: #888;
+  font-size: 13px;
+  text-decoration: none;
+}
+.auth-links a:hover {
+  color: #4ecdc4;
+}
+.auth-links a strong {
+  color: #4ecdc4;
+}
+.upload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.scans-badge {
+  font-size: 13px;
+  color: #aaa;
+  background: rgba(255,255,255,0.06);
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+.logout-link {
+  color: #666;
+  font-size: 13px;
+  text-decoration: none;
+}
+.logout-link:hover {
+  color: #ef9a9a;
+}
+
+/* ---- NDA ---- */
+.nda-container {
+  margin: 20px 0;
+}
+.nda-label {
+  display: block;
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.nda-scroll-box {
+  background: #1a1818;
+  border: 1px solid #3a3636;
+  border-radius: 8px;
+  padding: 20px;
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #bbb;
+  margin-bottom: 12px;
+}
+.nda-scroll-box h2 {
+  color: #eee;
+  font-size: 14px;
+  margin: 16px 0 8px;
+}
+.nda-scroll-box h2:first-child {
+  margin-top: 0;
+}
+.nda-scroll-box ul {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.nda-scroll-box li {
+  margin-bottom: 4px;
+}
+.nda-scroll-box strong {
+  color: #ddd;
+}
+.nda-scroll-box::-webkit-scrollbar {
+  width: 6px;
+}
+.nda-scroll-box::-webkit-scrollbar-track {
+  background: #1a1818;
+}
+.nda-scroll-box::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+.nda-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+}
+.nda-checkbox-row input[type="checkbox"] {
+  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+  accent-color: #4ecdc4;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.nda-checkbox-row label {
+  color: #ccc;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
 /* ---- UPLOAD ZONE ---- */
 .upload-zone {
   background: var(--card);
