@@ -1373,10 +1373,10 @@ body {
   color: #ddd;
   margin-bottom: 6px;
 }
-.roi-positive strong {
+.roi-positive strong, strong.roi-positive {
   color: #a5d6a7;
 }
-.roi-negative strong {
+.roi-negative strong, strong.roi-negative {
   color: #ef9a9a;
 }
 .roi-compare {

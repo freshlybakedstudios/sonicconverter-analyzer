@@ -991,7 +991,13 @@ function appendPlaylistData(data) {
     if (artistCell) artistCell.appendChild(badge);
 
     matchRow.style.cursor = 'pointer';
-    matchRow.addEventListener('click', () => {
+    matchRow.addEventListener('click', (e) => {
+      // Don't toggle playlists when clicking the Spotify link
+      if (e.target.closest('a')) return;
+      // Collapse any other open playlist rows first
+      document.querySelectorAll('tr.playlist-row:not(.hidden)').forEach(openRow => {
+        if (openRow !== plRow) openRow.classList.add('hidden');
+      });
       plRow.classList.toggle('hidden');
     });
     // Start collapsed
@@ -1437,9 +1443,9 @@ function renderCampaignForecast(data) {
       </div>
       <div class="forecast-roi">
         <h4>What You're Paying</h4>
-        <div class="roi-metric">You'd spend <strong>$${(data.total_cost || 0).toFixed(0)}</strong> to reach <strong>${fmtN(data.total_reach)}</strong> playlist followers</div>
-        <div class="roi-metric">That's <strong>$${data.cost_per_stream || '0.00'}/stream</strong> (total spend ÷ expected streams) — cheaper than Playlist Push (~$0.02) or Spotify Ads (~$0.04)</div>
-        <div class="roi-metric">Streaming revenue: <strong>$${data.revenue_low.toFixed(0)}–$${data.revenue_high.toFixed(0)}</strong> — the real value is algorithmic reach, not stream payouts</div>
+        <div class="roi-metric">You'd spend <strong class="roi-negative">$${(data.total_cost || 0).toFixed(0)}</strong> to reach <strong class="roi-positive">${fmtN(data.total_reach)}</strong> playlist followers</div>
+        <div class="roi-metric">That's <strong class="roi-positive">$${data.cost_per_stream || '0.00'}/stream</strong> (total spend ÷ expected streams) — cheaper than Playlist Push (~$0.02) or Spotify Ads (~$0.04)</div>
+        <div class="roi-metric">Streaming revenue: <strong class="roi-positive">$${data.revenue_low.toFixed(0)}–$${data.revenue_high.toFixed(0)}</strong> — the real value is algorithmic reach, not stream payouts</div>
       </div>
     </div>
     ${topCuratorsHtml}
