@@ -2325,36 +2325,9 @@ async def analyze_url(
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
-    # On Railway (production), use cached features if available — Railway has a 30s proxy timeout
-    # that kills the connection before the Mac worker can finish (90s).
-    # On localhost, always scan fresh for accurate production recs.
+    # Always scan fresh via Mac worker — Spotify desktop playback through Loopback
+    # No cached GEMS features, no preview URLs — full quality capture only
     features = None
-    is_local = os.getenv('RAILWAY_ENVIRONMENT') is None
-
-    if not is_local and track_isrc:
-        features = _lookup_gems_features(track_isrc)
-        if features:
-            print(f"  URL analysis: using cached features for ISRC {track_isrc}")
-
-    # 1) Try Spotify preview (immediate)
-    if not features and preview_url:
-        print(f"  URL analysis: downloading preview for {track_id}...")
-        try:
-            preview_resp = requests.get(preview_url, timeout=30)
-            if preview_resp.status_code == 200 and len(preview_resp.content) > 1000:
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
-                tmp.write(preview_resp.content)
-                tmp.flush()
-                tmp.close()
-                try:
-                    features = extract_features(tmp.name, genre_hint=genre or '')
-                    print(f"  URL analysis: features extracted from preview ({len(preview_resp.content) // 1024}KB)")
-                finally:
-                    os.unlink(tmp.name)
-        except Exception as e:
-            print(f"  URL analysis: preview download/analysis failed: {e}")
-    elif not features:
-        print(f"  URL analysis: no preview_url available for {track_id}")
 
     # Create job for Mac worker — insert directly as pending_features with spotify_url
     if not features:
