@@ -1416,10 +1416,6 @@ function renderCampaignForecast(data) {
         <div class="forecast-value">+${fmtN(data.algo_streams_low)}–${fmtN(data.algo_streams_high)}</div>
         <div class="forecast-label">Algorithmic bonus streams (if save rate &gt; 5%)</div>
       </div>
-      <div class="forecast-stat forecast-stat-total">
-        <div class="forecast-value">${fmtN(data.total_streams_low)}–${fmtN(data.total_streams_high)}</div>
-        <div class="forecast-label">Total potential streams</div>
-      </div>
       <div class="forecast-stat">
         <div class="forecast-value">${data.new_followers_low}–${fmtN(data.new_followers_high)}</div>
         <div class="forecast-label">Estimated new followers</div>
@@ -1427,6 +1423,10 @@ function renderCampaignForecast(data) {
       <div class="forecast-stat">
         <div class="forecast-value">$${data.revenue_low.toFixed(0)}–$${data.revenue_high.toFixed(0)}</div>
         <div class="forecast-label">Est. streaming revenue</div>
+      </div>
+      <div class="forecast-stat forecast-stat-total">
+        <div class="forecast-value">${fmtN(data.total_streams_low)}–${fmtN(data.total_streams_high)}</div>
+        <div class="forecast-label">Total potential streams</div>
       </div>
     </div>
     <div class="forecast-roi-section">
