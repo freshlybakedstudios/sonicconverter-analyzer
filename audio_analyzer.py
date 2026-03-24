@@ -661,9 +661,13 @@ def _extract_core(audio: np.ndarray, sr: int, audio_stereo: np.ndarray = None) -
     if len(beats) > 1:
         diffs = np.diff(beats)
         tempo_stability = 1.0 - np.std(diffs) / np.mean(diffs) if np.mean(diffs) > 0 else 0.5
+    elif features.get('bpm', 0) > 0:
+        # Fallback: estimate from BPM when beat frames are sparse
+        bpm_factor = min(features['bpm'] / 120.0, 1.5)
+        tempo_stability = bpm_factor * 0.5
     else:
         tempo_stability = 0.5
-    features['danceability'] = float(tempo_stability * features['beat_strength'])
+    features['danceability'] = max(0.0, float(tempo_stability * features['beat_strength']))
 
     # Clean NaN
     for k, v in features.items():
