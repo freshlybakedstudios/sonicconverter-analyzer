@@ -1310,19 +1310,23 @@ function renderCampaignForecast(data) {
     <div class="forecast-grid">
       <div class="forecast-stat">
         <div class="forecast-value">${fmtN(data.total_reach)}</div>
-        <div class="forecast-label">Combined playlist reach</div>
+        <div class="forecast-label">Combined playlist followers</div>
       </div>
       <div class="forecast-stat">
         <div class="forecast-value">${data.placements_low}–${data.placements_high}</div>
-        <div class="forecast-label">Expected placements</div>
+        <div class="forecast-label">Expected playlist placements</div>
       </div>
       <div class="forecast-stat">
         <div class="forecast-value">${fmtN(data.streams_low)}–${fmtN(data.streams_high)}</div>
-        <div class="forecast-label">Estimated streams</div>
+        <div class="forecast-label">Estimated playlist streams</div>
       </div>
       <div class="forecast-stat">
         <div class="forecast-value">+${fmtN(data.algo_streams_low)}–${fmtN(data.algo_streams_high)}</div>
-        <div class="forecast-label">Algorithmic bonus (if save rate &gt; 5%)</div>
+        <div class="forecast-label">Algorithmic bonus streams (if save rate &gt; 5%)</div>
+      </div>
+      <div class="forecast-stat forecast-stat-total">
+        <div class="forecast-value">${fmtN(data.total_streams_low)}–${fmtN(data.total_streams_high)}</div>
+        <div class="forecast-label">Total potential streams</div>
       </div>
       <div class="forecast-stat">
         <div class="forecast-value">${data.new_followers_low}–${fmtN(data.new_followers_high)}</div>
@@ -1340,10 +1344,10 @@ function renderCampaignForecast(data) {
         <div class="cost-total">Total out-of-pocket: <strong>$${(data.total_cost || 0).toFixed(0)}</strong></div>
       </div>
       <div class="forecast-roi">
-        <h4>Return on Investment</h4>
-        <div class="roi-metric">Cost per stream: <strong>$${data.cost_per_stream || '0.000'}</strong></div>
-        <div class="roi-metric ${roiClass}">Net ROI: <strong>$${(data.net_roi_low || 0).toFixed(0)} – $${(data.net_roi_high || 0).toFixed(0)}</strong></div>
-        <div class="roi-compare">vs. Playlist Push ~$0.02/stream · Spotify Ads ~$0.04/stream</div>
+        <h4>What You're Paying</h4>
+        <div class="roi-metric">You'd spend <strong>$${(data.total_cost || 0).toFixed(0)}</strong> to reach <strong>${fmtN(data.total_reach)}</strong> playlist followers</div>
+        <div class="roi-metric">That's <strong>$${data.cost_per_stream || '0.00'}/stream</strong> (total spend ÷ expected streams) — cheaper than Playlist Push (~$0.02) or Spotify Ads (~$0.04)</div>
+        <div class="roi-metric">Streaming revenue: <strong>$${data.revenue_low.toFixed(0)}–$${data.revenue_high.toFixed(0)}</strong> — the real value is algorithmic reach, not stream payouts</div>
       </div>
     </div>
     ${topCuratorsHtml}

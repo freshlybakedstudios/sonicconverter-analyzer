@@ -1282,6 +1282,18 @@ body {
   font-size: 0.8rem;
   color: #aaa;
 }
+.forecast-stat-total {
+  grid-column: 1 / -1;
+  background: rgba(212, 225, 87, 0.08);
+  border: 1px solid rgba(212, 225, 87, 0.25);
+}
+.forecast-stat-total .forecast-value {
+  font-size: 1.5rem;
+}
+.forecast-stat-total .forecast-label {
+  font-size: 0.9rem;
+  color: #d4e157;
+}
 .forecast-top-curators {
   margin-top: 20px;
 }

@@ -1982,13 +1982,19 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             algo_low = int(total_expected_streams * 1.5)
             algo_high = int(total_expected_streams * 3.0)
 
-            # Revenue estimate ($0.004 per stream)
-            revenue_low = round(total_expected_streams * 0.004, 2)
-            revenue_high = round((total_expected_streams + algo_high) * 0.004, 2)
+            # Total combined streams (playlist + algorithmic)
+            playlist_streams_low = int(total_expected_streams * 0.7)
+            playlist_streams_high = int(total_expected_streams * 1.3)
+            total_streams_low = playlist_streams_low + algo_low
+            total_streams_high = playlist_streams_high + algo_high
 
-            # New followers (0.1% of streams)
-            followers_low = max(1, int(total_expected_streams * 0.001))
-            followers_high = int((total_expected_streams + algo_high) * 0.001)
+            # Revenue estimate ($0.004 per stream) — covers combined streams
+            revenue_low = round(total_streams_low * 0.004, 2)
+            revenue_high = round(total_streams_high * 0.004, 2)
+
+            # New followers (0.1% of total combined streams)
+            followers_low = max(1, int(total_streams_low * 0.001))
+            followers_high = int(total_streams_high * 0.001)
 
             # Cost breakdown by method
             cost_by_method = {}
@@ -2012,8 +2018,10 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 'total_reach': total_reach,
                 'placements_low': placements_low,
                 'placements_high': placements_high,
-                'streams_low': int(total_expected_streams * 0.7),
-                'streams_high': int(total_expected_streams * 1.3),
+                'streams_low': playlist_streams_low,
+                'streams_high': playlist_streams_high,
+                'total_streams_low': total_streams_low,
+                'total_streams_high': total_streams_high,
                 'algo_streams_low': algo_low,
                 'algo_streams_high': algo_high,
                 'new_followers_low': followers_low,
