@@ -18,6 +18,7 @@ let matchView = 'tier';   // 'tier' or 'all'
 let userTier = '';        // User's tier label
 let storedPlaylists = {}; // match_key -> playlist SSE data (preserved across re-renders)
 let storedConfidence = {}; // match_key -> confidence level
+let enrichmentPct = 0;    // enrichment progress percentage
 
 // -------------------------------------------------------
 // Helpers
@@ -336,15 +337,20 @@ function startSSE(jobId) {
 
   eventSource.addEventListener('campaign_forecast', (e) => {
     const data = JSON.parse(e.data);
+    data._complete = true;
     renderCampaignForecast(data);
   });
 
   eventSource.addEventListener('enrichment_progress', (e) => {
     const data = JSON.parse(e.data);
-    const pct = data.total_batches ? Math.round(data.batch / data.total_batches * 100) : 0;
-    let msg = `${pct}% — ${data.curators_found} curators found`;
+    enrichmentPct = data.total_batches ? Math.round(data.batch / data.total_batches * 100) : 0;
+    let msg = `${enrichmentPct}% — ${data.curators_found} curators found`;
     if (data.checking) msg += ` · checking ${data.checking}`;
     updateEnrichmentProgress('playlists', msg);
+    // Update live forecast from accumulated curators
+    if (curatorRows.length > 0) {
+      renderLiveForecast();
+    }
   });
 
   eventSource.addEventListener('complete', () => {
@@ -1040,7 +1046,30 @@ function renderAllPlaylists(playlists, total) {
   show(card);
   const countEl = $('#all-playlists-count');
   const recentCount = playlists.filter(pl => _isRecentlyActive(pl.added_at || pl.last_updated || '', 90)).length;
-  if (countEl) countEl.textContent = `${total} unique playlists found across wider pool — ${recentCount} active in last 90 days`;
+  if (countEl) countEl.textContent = `${total} unique playlists found — ${recentCount} active in last 90 days. Click to expand.`;
+
+  // Show count badge on collapsed header
+  const badge = $('#playlist-count-badge');
+  if (badge) badge.textContent = `(${total})`;
+
+  // Wire up collapse toggle
+  const toggle = $('#playlists-toggle');
+  const collapsible = $('#playlists-collapsible');
+  if (toggle && collapsible && !toggle._wired) {
+    toggle._wired = true;
+    toggle.style.cursor = 'pointer';
+    toggle.addEventListener('click', (e) => {
+      if (e.target.closest('.csv-download-btn')) return; // don't toggle on CSV btn click
+      const arrow = toggle.querySelector('.collapse-arrow');
+      if (collapsible.classList.contains('hidden')) {
+        collapsible.classList.remove('hidden');
+        if (arrow) arrow.innerHTML = '&#9660;';
+      } else {
+        collapsible.classList.add('hidden');
+        if (arrow) arrow.innerHTML = '&#9654;';
+      }
+    });
+  }
 
   // Show CSV download button
   const csvBtn = $('#csv-download-btn');
@@ -1277,12 +1306,75 @@ function appendCuratorEmail(data) {
   container.appendChild(tr);
 }
 
+function renderLiveForecast() {
+  // Build a running forecast from accumulated curators
+  if (!curatorRows.length) return;
+
+  let totalReach = 0, totalStreams = 0, totalCost = 0;
+  const costByMethod = {};
+
+  curatorRows.forEach(c => {
+    const followers = c.followers || 0;
+    let method = 'Email', cost = 0, acceptanceRate = 0.065;
+    if (c.groover_url) { method = 'Groover'; cost = 2; acceptanceRate = 0.20; }
+    else if (c.submithub_url) { method = 'SubmitHub'; cost = 2; acceptanceRate = 0.12; }
+
+    totalReach += followers;
+    totalStreams += followers * 0.03 * acceptanceRate;
+    totalCost += cost;
+
+    if (!costByMethod[method]) costByMethod[method] = { count: 0, cost: 0 };
+    costByMethod[method].count++;
+    costByMethod[method].cost += cost;
+  });
+
+  const algoLow = Math.round(totalStreams * 1.5);
+  const algoHigh = Math.round(totalStreams * 3.0);
+  const streamsLow = Math.round(totalStreams * 0.7);
+  const streamsHigh = Math.round(totalStreams * 1.3);
+  const totalStreamsLow = streamsLow + algoLow;
+  const totalStreamsHigh = streamsHigh + algoHigh;
+
+  const totalAcceptance = curatorRows.reduce((sum, c) => {
+    if (c.groover_url) return sum + 0.20;
+    if (c.submithub_url) return sum + 0.12;
+    return sum + 0.065;
+  }, 0);
+
+  renderCampaignForecast({
+    curator_count: curatorRows.length,
+    total_reach: Math.round(totalReach),
+    placements_low: Math.max(1, Math.round(totalAcceptance * 0.7)),
+    placements_high: Math.max(1, Math.round(totalAcceptance * 1.3)),
+    streams_low: streamsLow,
+    streams_high: streamsHigh,
+    algo_streams_low: algoLow,
+    algo_streams_high: algoHigh,
+    total_streams_low: totalStreamsLow,
+    total_streams_high: totalStreamsHigh,
+    new_followers_low: Math.max(1, Math.round(totalStreamsLow * 0.001)),
+    new_followers_high: Math.round(totalStreamsHigh * 0.001),
+    revenue_low: totalStreamsLow * 0.004,
+    revenue_high: totalStreamsHigh * 0.004,
+    total_cost: totalCost,
+    cost_by_method: costByMethod,
+    cost_per_stream: (totalCost / Math.max(totalStreams, 1)).toFixed(4),
+    net_roi_low: totalStreamsLow * 0.004 - totalCost,
+    net_roi_high: totalStreamsHigh * 0.004 - totalCost,
+    top_curators: [],
+    _complete: false,
+    _pct: enrichmentPct,
+  });
+}
+
 function renderCampaignForecast(data) {
   const card = $('#campaign-forecast-card');
   if (!card) return;
   show(card);
 
   const fmtN = n => n.toLocaleString();
+  const isComplete = data._complete;
+  const pctLabel = !isComplete && data._pct != null ? ` <span class="forecast-pct">${data._pct}% scanned</span>` : '';
 
   let topCuratorsHtml = '';
   if (data.top_curators && data.top_curators.length > 0) {
@@ -1305,8 +1397,8 @@ function renderCampaignForecast(data) {
   const roiClass = data.net_roi_high > 0 ? 'roi-positive' : 'roi-negative';
 
   card.innerHTML = `
-    <h3>Campaign Forecast</h3>
-    <p class="card-sub">Predicted impact from pitching ${data.curator_count} contactable curators</p>
+    <h3>Campaign Forecast${pctLabel}</h3>
+    <p class="card-sub">Predicted impact from pitching ${data.curator_count} contactable curators${!isComplete ? ' (updating live...)' : ''}</p>
     <div class="forecast-grid">
       <div class="forecast-stat">
         <div class="forecast-value">${fmtN(data.total_reach)}</div>

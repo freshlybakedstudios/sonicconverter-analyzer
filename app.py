@@ -235,12 +235,31 @@ async def health():
 
 @app.get("/api/pipeline/status")
 async def pipeline_status():
-    """Check if a web user is currently active (for local pipeline manager)."""
+    """Check if a web user is currently active (for local pipeline manager).
+
+    Reports active if there's recent API activity OR if any enrichment jobs
+    are still running in Supabase (survives deploys/restarts).
+    """
     now = time.time()
     idle_seconds = now - _last_api_activity if _last_api_activity > 0 else -1
     is_active = _last_api_activity > 0 and idle_seconds < _IDLE_TIMEOUT
+
+    # Also check Supabase for in-progress enrichment jobs — this survives deploys
+    enrichment_active = False
+    if not is_active and supabase:
+        try:
+            resp = supabase.table('analysis_jobs').select('id').in_(
+                'status', ['enriching', 'matching', 'pending_features', 'capturing']
+            ).limit(1).execute()
+            if resp.data:
+                enrichment_active = True
+                is_active = True
+        except Exception:
+            pass
+
     return {
         "user_active": is_active,
+        "enrichment_active": enrichment_active,
         "idle_seconds": round(idle_seconds, 1) if idle_seconds >= 0 else None,
         "idle_timeout": _IDLE_TIMEOUT,
         "last_activity": datetime.fromtimestamp(_last_api_activity).isoformat() if _last_api_activity > 0 else None,
