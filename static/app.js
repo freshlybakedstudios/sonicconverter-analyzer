@@ -1354,7 +1354,7 @@ function renderCampaignForecast(data) {
     <div class="forecast-insight">
       <h4>Why This Matters</h4>
       <p>Direct streaming ROI from playlist placements is often negative — but that's not the play. Playlist placements seed the <strong>save-rate signal</strong> that triggers Spotify's algorithmic playlists. ~40% of all Spotify streams come from algorithmic playlists (Music Ally, 2026). Discover Weekly alone has generated <strong>100 billion+ streams</strong> since 2015, with 77% going to emerging artists (Spotify Newsroom, June 2025).</p>
-      <p>Independent campaign data from 1,200+ artist campaigns suggests the algorithm weights save rate and repeat-listen ratio roughly <strong>3x higher</strong> than raw stream volume (Chartlex, 2025-2026). Tracks with &gt;5% save rate see significantly more Discover Weekly placements. Tracks with &gt;20% save rate and 2.0+ stream-to-listener ratio have been observed triggering algorithmic placement within 10-14 days.</p>
+      <p>Independent campaign data from 1,200+ artist campaigns suggests the algorithm weights save rate and repeat-listen ratio roughly <strong>3x higher</strong> than raw stream volume (Chartlex, 2025-2026). New releases with &gt;5% save rate see significantly more Discover Weekly placements. New releases with &gt;20% save rate and 2.0+ stream-to-listener ratio have been observed triggering algorithmic placement within 10-14 days.</p>
       <p>Sonically-targeted pitches deliver higher save rates than generic submissions because the playlist listeners already like that sound. That's the multiplier — you're not buying streams, you're buying <strong>ignition</strong> into the algorithmic flywheel.</p>
     </div>
     <div class="forecast-sources">
