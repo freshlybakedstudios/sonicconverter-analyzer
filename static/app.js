@@ -56,12 +56,20 @@ function _authSuccess(data) {
   hide($('#auth-section'));
   hide($('#hero'));
   show($('#upload-section'));
+  // Default to Spotify URL tab
+  if (typeof setInputMode === 'function') setInputMode('url');
 }
 
 function _updateScans(remaining) {
   const badge = $('#scans-badge');
   if (badge && remaining != null) {
-    badge.textContent = remaining >= 999 ? '' : `${remaining} scans remaining`;
+    if (remaining >= 999) {
+      badge.textContent = '';
+    } else if (remaining <= 0) {
+      badge.innerHTML = '0 scans remaining — <a href="mailto:alex@freshlybakedstudios.com" style="color:#4ecdc4">contact us</a>';
+    } else {
+      badge.textContent = `${remaining} scans remaining`;
+    }
   }
 }
 
@@ -385,13 +393,34 @@ async function analyzeTrack() {
   show($('#loading-section'));
 
   const statuses = inputMode === 'url'
-    ? ['Fetching track from Spotify', 'Extracting audio features', 'Matching against 140,000+ tracks', 'Generating recommendations']
+    ? ['Fetching track from Spotify', 'Recording from Spotify desktop', 'Extracting audio features', 'Matching against 140,000+ tracks', 'Generating recommendations']
     : ['Extracting audio features', 'Analyzing frequency spectrum', 'Detecting emotional character', 'Matching against 140,000+ tracks', 'Generating recommendations'];
   let statusIdx = 0;
   const statusInterval = setInterval(() => {
     statusIdx = Math.min(statusIdx + 1, statuses.length - 1);
-    $('#loader-status').textContent = statuses[statusIdx];
-  }, 3000);
+    const el = $('#loader-status');
+    // Don't overwrite queue message
+    if (el && !el.textContent.includes('in queue')) {
+      el.textContent = statuses[statusIdx];
+    }
+  }, 4000);
+
+  // Poll queue position during URL scans
+  let queueInterval = null;
+  if (inputMode === 'url') {
+    queueInterval = setInterval(async () => {
+      try {
+        const qr = await fetch(`${API_URL}/api/queue-status`);
+        if (qr.ok) {
+          const qd = await qr.json();
+          const el = $('#loader-status');
+          if (qd.queue_length > 1 && el) {
+            el.textContent = `You're #${qd.queue_length} in queue — another scan is in progress`;
+          }
+        }
+      } catch {}
+    }, 5000);
+  }
 
   try {
     let res;
@@ -409,6 +438,7 @@ async function analyzeTrack() {
       res = await fetch(`${API_URL}/api/analyze`, { method: 'POST', body: form });
     }
     clearInterval(statusInterval);
+    if (queueInterval) clearInterval(queueInterval);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -437,6 +467,7 @@ async function analyzeTrack() {
 
   } catch (err) {
     clearInterval(statusInterval);
+    if (queueInterval) clearInterval(queueInterval);
     hide($('#loading-section'));
     show($('#upload-section'));
     alert('Analysis failed: ' + err.message);

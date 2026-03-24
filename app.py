@@ -250,9 +250,11 @@ async def pipeline_status():
     enrichment_active = False
     if not is_active and supabase:
         try:
+            from datetime import timezone, timedelta
+            stale_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
             resp = supabase.table('analysis_jobs').select('id').in_(
                 'status', ['enriching', 'matching', 'pending_features', 'capturing']
-            ).limit(1).execute()
+            ).gte('updated_at', stale_cutoff).limit(1).execute()
             if resp.data:
                 enrichment_active = True
                 is_active = True
@@ -947,13 +949,15 @@ async def login(
 
 @app.post("/api/logout")
 async def logout(token: str = Form(...)):
-    """Log out — destroy session."""
+    """Log out — destroy session and signal resource-switcher to resume pipelines."""
     if supabase:
         try:
             supabase.table('sessions').delete().eq('token', token).execute()
         except Exception:
             pass
     access_tokens.pop(token, None)
+    # Signal resource-switcher that no user is active — resume GEMS/discovery
+    _notify_local_pipeline('user_idle')
     return {"ok": True}
 
 
@@ -976,6 +980,27 @@ async def me(token: str):
         "scans_used": user['scans_used'],
         "max_scans": user['max_scans'],
     }
+
+
+@app.get("/api/queue-status")
+async def queue_status(job_id: Optional[str] = None):
+    """Check how many jobs are in the audio capture queue."""
+    if not supabase:
+        return {"queue_length": 0, "position": 0}
+    try:
+        q = supabase.table('analysis_jobs').select('id,created_at').in_(
+            'status', ['pending_features', 'capturing']
+        ).order('created_at').execute()
+        queue = q.data or []
+        position = 0
+        if job_id:
+            for i, j in enumerate(queue):
+                if j['id'] == job_id:
+                    position = i + 1
+                    break
+        return {"queue_length": len(queue), "position": position}
+    except Exception:
+        return {"queue_length": 0, "position": 0}
 
 
 @app.post("/api/forgot-password")
@@ -2589,7 +2614,20 @@ async def analyze_url(
     if not features:
         job_id = str(__import__('uuid').uuid4())
         now = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
+
+        # Check queue position before creating job
+        queue_ahead = 0
         if job_mgr._supabase:
+            try:
+                q = job_mgr._supabase.table('analysis_jobs').select('id').in_(
+                    'status', ['pending_features', 'capturing']
+                ).execute()
+                queue_ahead = len(q.data) if q.data else 0
+            except Exception:
+                pass
+            if queue_ahead > 0:
+                print(f"  URL analysis: {queue_ahead} job(s) ahead in queue")
+
             try:
                 job_mgr._supabase.table('analysis_jobs').insert({
                     'id': job_id, 'token': token, 'status': 'pending_features',
@@ -2608,8 +2646,11 @@ async def analyze_url(
         global _last_api_activity
         _last_api_activity = time.time()
         _notify_local_pipeline('user_active')
-        print(f"  URL analysis: waiting for Mac worker (up to 150s)...")
-        deadline = time.time() + 150
+
+        # Longer timeout if there's a queue (150s base + 90s per job ahead)
+        timeout = 150 + (queue_ahead * 90)
+        print(f"  URL analysis: waiting for Mac worker (up to {timeout}s, {queue_ahead} ahead)...")
+        deadline = time.time() + timeout
 
         def _poll_supabase_for_features():
             """Synchronous Supabase poll — runs in thread to avoid blocking event loop."""
@@ -2627,6 +2668,18 @@ async def analyze_url(
             except Exception as e:
                 print(f"  URL analysis: poll error: {e}")
             return None
+
+        def _check_queue_position():
+            """Check how many jobs are ahead of ours in the queue."""
+            if not job_mgr._supabase:
+                return 0
+            try:
+                q = job_mgr._supabase.table('analysis_jobs').select('id,created_at').in_(
+                    'status', ['pending_features', 'capturing']
+                ).lt('created_at', now).execute()
+                return len(q.data) if q.data else 0
+            except Exception:
+                return 0
 
         loop = asyncio.get_event_loop()
         while time.time() < deadline:
