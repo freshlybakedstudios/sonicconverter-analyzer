@@ -36,6 +36,7 @@ load_dotenv()
 POLL_INTERVAL = 5  # seconds
 SAMPLE_RATE = 48000
 SAMPLE_DURATION = 4  # seconds per sample point
+RETRY_WINDOW = 120  # seconds — retry failed jobs created within this window
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
@@ -81,6 +82,33 @@ def poll_pending_jobs():
     if now - _last_poll_log > 60:
         _last_poll_log = now
         print(f"Polling... (no pending jobs)")
+    return None
+
+
+def poll_retryable_jobs():
+    """Check for recently failed jobs that should be retried.
+
+    Picks up jobs with status error/capture_failed/extraction_failed
+    that were created within RETRY_WINDOW seconds.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=RETRY_WINDOW)).isoformat()
+        resp = requests.get(
+            f"{SUPABASE_URL}/rest/v1/analysis_jobs"
+            f"?status=in.(error,capture_failed,extraction_failed)"
+            f"&created_at=gte.{cutoff}"
+            f"&order=created_at.asc&limit=1",
+            headers=_supabase_headers(),
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            jobs = resp.json()
+            if jobs:
+                print(f"Found retryable job: {jobs[0]['id'][:8]} (status={jobs[0]['status']})")
+                return jobs[0]
+    except Exception as e:
+        print(f"Retry poll error: {e}")
     return None
 
 
@@ -289,8 +317,16 @@ def _pause_playback():
 # ---------------------------------------------------------------------------
 # Audio capture
 # ---------------------------------------------------------------------------
-def _find_loopback_device() -> int | None:
-    """Find a Loopback or BlackHole audio input device."""
+def _find_loopback_device(retry_coreaudio=True) -> int | None:
+    """Find a Loopback or BlackHole audio input device.
+
+    If not found and retry_coreaudio=True, restarts coreaudiod and tries again.
+    This handles the common case where Loopback disappears after sleep/wake.
+    """
+    # Force sounddevice to re-query (it caches the device list)
+    sd._terminate()
+    sd._initialize()
+
     devices = sd.query_devices()
     for i, dev in enumerate(devices):
         name = dev['name'].lower()
@@ -298,6 +334,16 @@ def _find_loopback_device() -> int | None:
         if channels >= 2 and ('loopback' in name or 'blackhole' in name):
             print(f"Found audio device: {dev['name']} (index {i}, {channels}ch)")
             return i
+
+    if retry_coreaudio:
+        print("No Loopback device found — restarting coreaudiod...")
+        try:
+            subprocess.run(['sudo', 'killall', 'coreaudiod'], capture_output=True, timeout=10)
+            time.sleep(5)  # coreaudiod takes a few seconds to come back
+            return _find_loopback_device(retry_coreaudio=False)
+        except Exception as e:
+            print(f"coreaudiod restart failed: {e}")
+
     return None
 
 
@@ -698,6 +744,7 @@ def main():
     print(f"Mac Worker started")
     print(f"  Audio device: {sd.query_devices(loopback_device)['name']}")
     print(f"  Polling every {POLL_INTERVAL}s")
+    print(f"  Retry window: {RETRY_WINDOW}s for failed jobs")
 
     import threading
     import subprocess as _sp
@@ -728,6 +775,70 @@ def main():
         if paused:
             print(f"  Resumed {', '.join(paused)}")
 
+    def _ensure_loopback(current_idx):
+        """Re-validate loopback device before each job. Returns new index or None."""
+        try:
+            dev = sd.query_devices(current_idx)
+            name = dev['name'].lower()
+            if dev['max_input_channels'] >= 2 and ('loopback' in name or 'blackhole' in name):
+                return current_idx
+        except Exception:
+            pass
+        print("Loopback device lost — attempting recovery...")
+        new_idx = _find_loopback_device()
+        if new_idx is not None:
+            print(f"Loopback recovered: device index {new_idx}")
+        else:
+            print("Loopback recovery FAILED — skipping job")
+        return new_idx
+
+    def _run_job(job, device_idx):
+        """Run a job with timeout protection. Returns True if features were delivered."""
+        paused = _pause_local_scripts()
+        success = False
+        JOB_TIMEOUT = 120
+
+        def _run():
+            nonlocal success
+            try:
+                process_job(job, device_idx)
+                # Check if job actually succeeded
+                if job_mgr_check(job['id']):
+                    success = True
+            except Exception as e:
+                print(f"Job processing error: {e}")
+                try:
+                    update_job(job['id'], 'error')
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        t.join(timeout=JOB_TIMEOUT)
+        if t.is_alive():
+            print(f"[{job['id'][:8]}] Job timed out after {JOB_TIMEOUT}s — moving on")
+            try:
+                update_job(job['id'], 'error')
+            except Exception:
+                pass
+
+        _resume_local_scripts(paused)
+        return success
+
+    def job_mgr_check(job_id):
+        """Check if a job reached features_ready status."""
+        try:
+            resp = requests.get(
+                f"{SUPABASE_URL}/rest/v1/analysis_jobs?id=eq.{job_id}&select=status",
+                headers=_supabase_headers(),
+                timeout=10,
+            )
+            if resp.status_code == 200 and resp.json():
+                return resp.json()[0].get('status') == 'features_ready'
+        except Exception:
+            pass
+        return False
+
     while True:
         try:
             job = poll_pending_jobs()
@@ -735,34 +846,30 @@ def main():
             print(f"Poll exception: {e}")
             job = None
 
+        # If no pending job, check for recently failed jobs to retry
+        if not job:
+            try:
+                job = poll_retryable_jobs()
+                if job:
+                    # Reset status to pending so we process it
+                    update_job(job['id'], 'pending_features')
+            except Exception as e:
+                print(f"Retry poll exception: {e}")
+                job = None
+
         if job:
-            # Pause GEMS/discovery BEFORE capture (in main thread, not daemon)
-            paused = _pause_local_scripts()
-
-            # Run job with a hard timeout to prevent hangs
-            JOB_TIMEOUT = 120
-            def _run():
-                try:
-                    process_job(job, loopback_device)
-                except Exception as e:
-                    print(f"Job processing error: {e}")
-                    try:
-                        update_job(job['id'], 'error')
-                    except Exception:
-                        pass
-
-            t = threading.Thread(target=_run, daemon=True)
-            t.start()
-            t.join(timeout=JOB_TIMEOUT)
-            if t.is_alive():
-                print(f"[{job['id'][:8]}] Job timed out after {JOB_TIMEOUT}s — moving on")
-                try:
-                    update_job(job['id'], 'error')
-                except Exception:
-                    pass
-
-            # ALWAYS resume after job completes or times out (in main thread)
-            _resume_local_scripts(paused)
+            # Re-validate loopback device before every job
+            loopback_device = _ensure_loopback(loopback_device)
+            if loopback_device is None:
+                print(f"[{job['id'][:8]}] No audio device — marking error")
+                update_job(job['id'], 'error')
+                # Keep trying to recover the device
+                time.sleep(10)
+                loopback_device = _find_loopback_device()
+                if loopback_device is not None:
+                    print(f"Loopback recovered after wait: device index {loopback_device}")
+            else:
+                _run_job(job, loopback_device)
 
         time.sleep(POLL_INTERVAL)
 

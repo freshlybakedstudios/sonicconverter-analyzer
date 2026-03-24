@@ -2352,8 +2352,8 @@ async def analyze_url(
         global _last_api_activity
         _last_api_activity = time.time()
         _notify_local_pipeline('user_active')
-        print(f"  URL analysis: waiting for Mac worker (up to 90s)...")
-        deadline = time.time() + 90
+        print(f"  URL analysis: waiting for Mac worker (up to 150s)...")
+        deadline = time.time() + 150
 
         def _poll_supabase_for_features():
             """Synchronous Supabase poll — runs in thread to avoid blocking event loop."""
@@ -2790,7 +2790,7 @@ async def deal_lookup(
             # Create a Supabase job so Mac worker picks it up
             deal_job_id = job_mgr.create_job('deal-lookup', {}, [])
             job_mgr.update_job(deal_job_id, status='pending_features', spotify_url=track_url)
-            print(f"Deal lookup: created job {deal_job_id}, waiting for Mac worker (up to 90s)...")
+            print(f"Deal lookup: created job {deal_job_id}, waiting for Mac worker (up to 150s)...")
 
             def _poll_deal_features():
                 if not job_mgr._supabase:
@@ -2809,7 +2809,7 @@ async def deal_lookup(
                 return None
 
             loop = asyncio.get_event_loop()
-            deadline = time.time() + 90
+            deadline = time.time() + 150
             while time.time() < deadline:
                 result = await loop.run_in_executor(None, _poll_deal_features)
                 if result:
@@ -2823,7 +2823,7 @@ async def deal_lookup(
                 await asyncio.sleep(3)
 
             if not features:
-                print(f"Deal lookup: Mac worker timed out after 90s")
+                print(f"Deal lookup: Mac worker timed out after 150s")
         except Exception as e:
             print(f"Deal lookup: Mac worker job failed: {e}")
 
