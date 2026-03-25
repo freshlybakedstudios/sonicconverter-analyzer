@@ -821,7 +821,8 @@ function renderResults(data) {
       if (fans > 0 && atTop) {
         oppEl.innerHTML = `You're already in the <span class="fan-number">top 25%</span> of ${peerCount} sonic peers. Reaching the top 1% (${target.toFixed(1)}%) would convert an estimated <span class="fan-number">${fans.toLocaleString()} additional listeners into followers</span> — each one a direct line to your releases, merch drops, and tour dates via Spotify push notifications.`;
       } else if (fans > 0) {
-        oppEl.innerHTML = `Across ${peerCount} sonic peers, the top 25% convert at <span class="fan-number">${target.toFixed(1)}%</span>. Closing that gap means an estimated <span class="fan-number">${fans.toLocaleString()} new followers</span> — each one receiving push notifications for your releases, merch drops, and tour dates.`;
+        const monthlyFans = Math.round(fans / 12);
+        oppEl.innerHTML = `Across ${peerCount} sonic peers, the top 25% convert at <span class="fan-number">${target.toFixed(1)}%</span>. Closing that gap means an estimated <span class="fan-number">${fans.toLocaleString()} new followers/year</span> (~${monthlyFans.toLocaleString()}/month) — each one receiving push notifications for your releases, merch drops, and tour dates.`;
       } else {
         oppEl.innerHTML = `You're converting at <span class="fan-number">${cr.toFixed(1)}%</span> — above the top 1% of ${peerCount} sonic peers. Your listener-to-follower conversion is exceptional.`;
       }
@@ -883,7 +884,7 @@ function renderResults(data) {
                 <div class="save-rate-value ${algoClass}">${saveLow}–${saveHigh}%</div>
                 <div class="save-rate-label">Estimated Save Rate</div>
                 <div class="save-rate-status">${algoStatus}</div>
-                <div class="save-rate-note">Estimated from listener-to-follower conversion (industry benchmarks: Playlist Push, LoudLab, Chartlex). Connect Spotify for Artists for actual save rate data.</div>
+                <div class="save-rate-note">Your listeners convert to followers at ${userProfile.conversion_rate ? userProfile.conversion_rate.toFixed(2) + '%' : '—'} — artists at this level typically see ${saveLow}–${saveHigh}% of listeners saving their tracks. Above 5% is where Spotify's algorithm starts recommending you to new listeners. (Industry benchmarks: Playlist Push, LoudLab, Chartlex.) Connect Spotify for Artists for your actual save rate.</div>
               </div>
             `;
             show(saveEl);

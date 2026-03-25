@@ -2278,7 +2278,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     'expected_streams': round(expected_streams),
                 })
 
-            # Sort by expected streams descending
+            # Sort by expected streams descending (best playlists first)
             forecast_curators.sort(key=lambda x: x['expected_streams'], reverse=True)
 
             # Expected placements
@@ -2286,13 +2286,26 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             placements_low = max(1, int(total_acceptance * 0.7))
             placements_high = max(placements_low, int(total_acceptance * 1.3))
 
-            # Algorithmic bonus (if save rate > 5%, 2-4x additional streams)
-            algo_low = int(total_expected_streams * 1.5)
-            algo_high = int(total_expected_streams * 3.0)
+            # Estimated playlist streams — based on which curators actually accept
+            # Best case: your top N placements land (biggest playlists)
+            # Worst case: your bottom N placements land (smallest playlists)
+            # Each curator's streams = followers × 3% stream rate (already calculated)
+            per_curator_streams = [c['expected_streams'] / max(c['acceptance_rate'] / 100, 0.01)
+                                   for c in forecast_curators]
+            # Sort descending for best case, ascending for worst case
+            per_curator_streams_desc = sorted(per_curator_streams, reverse=True)
+            per_curator_streams_asc = sorted(per_curator_streams)
+
+            # Best case: top N placements by stream potential
+            playlist_streams_high = int(sum(per_curator_streams_desc[:placements_high]))
+            # Worst case: bottom N placements by stream potential
+            playlist_streams_low = int(sum(per_curator_streams_asc[:placements_low]))
+
+            # Algorithmic bonus (if save rate > 5%, 1.5-3x additional streams)
+            algo_low = int(playlist_streams_low * 1.5)
+            algo_high = int(playlist_streams_high * 3.0)
 
             # Total combined streams (playlist + algorithmic)
-            playlist_streams_low = int(total_expected_streams * 0.7)
-            playlist_streams_high = int(total_expected_streams * 1.3)
             total_streams_low = playlist_streams_low + algo_low
             total_streams_high = playlist_streams_high + algo_high
 
