@@ -2327,8 +2327,16 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 cost_by_method[m]['cost'] += c['cost']
             total_cost = sum(v['cost'] for v in cost_by_method.values())
 
-            # Cost per stream
-            cost_per_stream = round(total_cost / max(total_expected_streams, 1), 4)
+            # Ensure low <= high for all ranges
+            playlist_streams_low, playlist_streams_high = min(playlist_streams_low, playlist_streams_high), max(playlist_streams_low, playlist_streams_high)
+            algo_low, algo_high = min(algo_low, algo_high), max(algo_low, algo_high)
+            total_streams_low, total_streams_high = min(total_streams_low, total_streams_high), max(total_streams_low, total_streams_high)
+            followers_low, followers_high = min(followers_low, followers_high), max(followers_low, followers_high)
+            revenue_low, revenue_high = min(revenue_low, revenue_high), max(revenue_low, revenue_high)
+
+            # Cost per stream (use midpoint of stream range)
+            mid_streams = max((playlist_streams_low + playlist_streams_high) / 2, 1)
+            cost_per_stream = round(total_cost / mid_streams, 4)
 
             # ROI
             net_roi_low = revenue_low - total_cost
