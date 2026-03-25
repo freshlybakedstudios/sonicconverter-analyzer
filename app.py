@@ -558,6 +558,11 @@ def _format_rec(feat: str, consensus: dict) -> str:
     unit = desc.get('unit', '')
     user_val = consensus['user_val']
     peer_val = consensus['converter_avg']
+
+    # Skip crest factor recs when target is unrealistically low (<6 dB)
+    # GEMS 4-second samples bias toward compressed moments, making targets too low
+    if feat == 'crest_factor' and peer_val < 6.0:
+        return None
     count = consensus['count']
     total = consensus['total']
 

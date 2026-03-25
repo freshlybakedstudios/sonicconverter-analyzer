@@ -1507,14 +1507,16 @@ function renderLiveForecast() {
   let totalReach = 0, totalStreams = 0, totalCost = 0;
   const costByMethod = {};
 
+  // Per-curator stream potential (followers × 3% stream rate)
+  const perCuratorStreams = [];
   curatorRows.forEach(c => {
     const followers = c.followers || 0;
-    let method = 'Email', cost = 0, acceptanceRate = 0.065;
-    if (c.groover_url) { method = 'Groover'; cost = 2; acceptanceRate = 0.20; }
-    else if (c.submithub_url) { method = 'SubmitHub'; cost = 2; acceptanceRate = 0.12; }
+    let method = 'Email', cost = 0;
+    if (c.groover_url) { method = 'Groover'; cost = 2; }
+    else if (c.submithub_url) { method = 'SubmitHub'; cost = 2; }
 
     totalReach += followers;
-    totalStreams += followers * 0.03 * acceptanceRate;
+    perCuratorStreams.push(followers * 0.03);
     totalCost += cost;
 
     if (!costByMethod[method]) costByMethod[method] = { count: 0, cost: 0 };
@@ -1522,39 +1524,57 @@ function renderLiveForecast() {
     costByMethod[method].cost += cost;
   });
 
-  const algoLow = Math.round(totalStreams * 1.5);
-  const algoHigh = Math.round(totalStreams * 3.0);
-  const streamsLow = Math.round(totalStreams * 0.7);
-  const streamsHigh = Math.round(totalStreams * 1.3);
-  const totalStreamsLow = streamsLow + algoLow;
-  const totalStreamsHigh = streamsHigh + algoHigh;
-
   const totalAcceptance = curatorRows.reduce((sum, c) => {
     if (c.groover_url) return sum + 0.20;
     if (c.submithub_url) return sum + 0.12;
     return sum + 0.065;
   }, 0);
 
+  const placementsLow = Math.max(1, Math.round(totalAcceptance * 0.7));
+  const placementsHigh = Math.max(1, Math.round(totalAcceptance * 1.3));
+
+  // Best case: top N placements, worst case: bottom N
+  const sortedDesc = [...perCuratorStreams].sort((a, b) => b - a);
+  const sortedAsc = [...perCuratorStreams].sort((a, b) => a - b);
+  let streamsHigh = Math.round(sortedDesc.slice(0, placementsHigh).reduce((a, b) => a + b, 0));
+  let streamsLow = Math.round(sortedAsc.slice(0, placementsLow).reduce((a, b) => a + b, 0));
+
+  // Ensure low <= high
+  if (streamsLow > streamsHigh) [streamsLow, streamsHigh] = [streamsHigh, streamsLow];
+
+  let algoLow = Math.round(streamsLow * 1.5);
+  let algoHigh = Math.round(streamsHigh * 3.0);
+  let totalStreamsLow = streamsLow + algoLow;
+  let totalStreamsHigh = streamsHigh + algoHigh;
+  let followersLow = Math.round(totalStreamsLow * 0.001);
+  let followersHigh = Math.round(totalStreamsHigh * 0.001);
+  let revLow = totalStreamsLow * 0.004;
+  let revHigh = totalStreamsHigh * 0.004;
+
+  // Ensure all low <= high
+  if (followersLow > followersHigh) [followersLow, followersHigh] = [followersHigh, followersLow];
+  if (revLow > revHigh) [revLow, revHigh] = [revHigh, revLow];
+
   renderCampaignForecast({
     curator_count: curatorRows.length,
     total_reach: Math.round(totalReach),
-    placements_low: Math.max(1, Math.round(totalAcceptance * 0.7)),
-    placements_high: Math.max(1, Math.round(totalAcceptance * 1.3)),
+    placements_low: placementsLow,
+    placements_high: placementsHigh,
     streams_low: streamsLow,
     streams_high: streamsHigh,
     algo_streams_low: algoLow,
     algo_streams_high: algoHigh,
     total_streams_low: totalStreamsLow,
     total_streams_high: totalStreamsHigh,
-    new_followers_low: Math.max(1, Math.round(totalStreamsLow * 0.001)),
-    new_followers_high: Math.round(totalStreamsHigh * 0.001),
-    revenue_low: totalStreamsLow * 0.004,
-    revenue_high: totalStreamsHigh * 0.004,
+    new_followers_low: Math.max(0, followersLow),
+    new_followers_high: followersHigh,
+    revenue_low: revLow,
+    revenue_high: revHigh,
     total_cost: totalCost,
     cost_by_method: costByMethod,
-    cost_per_stream: (totalCost / Math.max(totalStreams, 1)).toFixed(4),
-    net_roi_low: totalStreamsLow * 0.004 - totalCost,
-    net_roi_high: totalStreamsHigh * 0.004 - totalCost,
+    cost_per_stream: (totalCost / Math.max((streamsLow + streamsHigh) / 2, 1)).toFixed(4),
+    net_roi_low: revLow - totalCost,
+    net_roi_high: revHigh - totalCost,
     top_curators: [],
     _complete: false,
     _pct: enrichmentPct,
