@@ -960,13 +960,23 @@ async def login(
 
 @app.post("/api/logout")
 async def logout(token: str = Form(...)):
-    """Log out — destroy session and signal resource-switcher to resume pipelines."""
+    """Log out — destroy session, stop enrichment, resume pipelines."""
     if supabase:
+        try:
+            # Mark any active enrichment/matching jobs for this token as stale
+            supabase.table('analysis_jobs').update({
+                'status': 'stale'
+            }).eq('token', token).in_('status', ['enriching', 'matching']).execute()
+        except Exception:
+            pass
         try:
             supabase.table('sessions').delete().eq('token', token).execute()
         except Exception:
             pass
     access_tokens.pop(token, None)
+    # Reset activity timestamp so status endpoint reports idle
+    global _last_api_activity
+    _last_api_activity = 0
     # Signal resource-switcher that no user is active — resume GEMS/discovery
     _notify_local_pipeline('user_idle')
     return {"ok": True}
