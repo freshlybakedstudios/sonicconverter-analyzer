@@ -1961,6 +1961,13 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         })
 
         for batch_start in range(0, total, BATCH_SIZE):
+            # Stop enrichment if no one is listening (tab closed)
+            if job_id not in sse_subscribers or not sse_subscribers[job_id]:
+                print(f"Enrichment [{job_id[:8]}]: No SSE subscribers — stopping (tab closed)")
+                job_mgr.update_job(job_id, status='stale')
+                _notify_local_pipeline('user_idle')
+                return
+
             # Keep activity alive so resource-switcher doesn't resume GEMS mid-enrichment
             _last_api_activity = time.time()
 
