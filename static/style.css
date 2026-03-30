@@ -659,6 +659,39 @@ body {
 }
 
 /* Matches table */
+/* ---- EDITORIAL PLAYLISTS ---- */
+.editorial-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.editorial-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+  border-left: 3px solid #4ecdc4;
+}
+.editorial-item.recently-active {
+  border-left-color: #d4e157;
+}
+.editorial-item a {
+  color: #eee;
+  font-weight: 600;
+  text-decoration: none;
+}
+.editorial-item a:hover {
+  color: #4ecdc4;
+}
+.editorial-via {
+  color: #888;
+  font-size: 12px;
+}
+
 .collapsible-header {
   display: flex;
   align-items: center;
