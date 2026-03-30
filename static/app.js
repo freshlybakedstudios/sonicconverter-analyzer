@@ -394,8 +394,8 @@ async function analyzeTrack() {
   show($('#loading-section'));
 
   const statuses = inputMode === 'url'
-    ? ['Fetching track from Spotify', 'Recording from Spotify desktop', 'Extracting audio features', 'Matching against 140,000+ tracks', 'Generating recommendations']
-    : ['Extracting audio features', 'Analyzing frequency spectrum', 'Detecting emotional character', 'Matching against 140,000+ tracks', 'Generating recommendations'];
+    ? ['Fetching track from Spotify', 'Recording from Spotify desktop', 'Extracting audio features', 'Matching against 210,000+ tracks', 'Generating recommendations']
+    : ['Extracting audio features', 'Analyzing frequency spectrum', 'Detecting emotional character', 'Matching against 210,000+ tracks', 'Generating recommendations'];
   let statusIdx = 0;
   const statusInterval = setInterval(() => {
     statusIdx = Math.min(statusIdx + 1, statuses.length - 1);
@@ -498,6 +498,7 @@ function startSSE(jobId) {
   eventSource.addEventListener('all_playlists', (e) => {
     const data = JSON.parse(e.data);
     renderAllPlaylists(data.playlists, data.total);
+    renderEditorialPlaylists(data.playlists);
   });
 
   eventSource.addEventListener('confidence', (e) => {
@@ -1290,6 +1291,37 @@ function renderAllPlaylists(playlists, total) {
       <td>${pl.curator_name || ''}</td>
     </tr>`;
   }).join('');
+}
+
+function renderEditorialPlaylists(allPlaylists) {
+  const card = $('#editorial-playlists-card');
+  if (!card) return;
+
+  const editorial = allPlaylists.filter(pl => pl.editorial);
+  if (!editorial.length) return;
+
+  show(card);
+  const sorted = editorial.sort((a, b) => (b.followers || 0) - (a.followers || 0));
+
+  card.innerHTML = `
+    <h3>Spotify Editorial Playlists <span class="playlist-count-badge">(${sorted.length})</span></h3>
+    <p class="card-sub">Editorial playlists your sonic peers appear on — use these for your Spotify for Artists pitch.</p>
+    <div class="editorial-list">
+      ${sorted.map(pl => {
+        const freshDate = pl.added_at || pl.last_updated || '';
+        const isRecent = _isRecentlyActive(freshDate, 90);
+        return `
+        <div class="editorial-item ${isRecent ? 'recently-active' : ''}">
+          <a href="${pl.link}" target="_blank" rel="noopener">${pl.name}</a>
+          <span class="playlist-followers">${(pl.followers || 0).toLocaleString()} followers</span>
+          <span class="editorial-via">via ${pl.sonic_match || 'matched artist'}</span>
+          ${pl.status === 'current' ? '<span class="playlist-badge current-badge">Current</span>' : ''}
+          ${isRecent ? '<span class="playlist-badge active-badge">Active</span>' : ''}
+          ${freshDate ? `<span class="playlist-freshness">${_formatFreshness(freshDate)}</span>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+  `;
 }
 
 function renderConfidenceBadges(confidenceMap) {
