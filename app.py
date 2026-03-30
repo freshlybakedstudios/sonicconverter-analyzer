@@ -216,7 +216,7 @@ from starlette.requests import Request
 class ActivityTrackingMiddleware(BaseHTTPMiddleware):
     """Record timestamps of user-facing API requests."""
     # Paths that indicate a real user (not health checks or internal)
-    USER_PATHS = ('/api/analyze', '/api/deal/', '/api/register')
+    USER_PATHS = ('/api/analyze', '/api/deal/', '/api/register', '/api/signup', '/api/login', '/api/analysis/')
 
     async def dispatch(self, request: Request, call_next):
         global _last_api_activity
@@ -245,6 +245,11 @@ async def pipeline_status():
     now = time.time()
     idle_seconds = now - _last_api_activity if _last_api_activity > 0 else -1
     is_active = _last_api_activity > 0 and idle_seconds < _IDLE_TIMEOUT
+
+    # Check if anyone is connected via SSE (active tab watching results)
+    has_sse = bool(sse_subscribers)
+    if has_sse:
+        is_active = True
 
     # Also check Supabase for in-progress enrichment jobs — this survives deploys
     enrichment_active = False
