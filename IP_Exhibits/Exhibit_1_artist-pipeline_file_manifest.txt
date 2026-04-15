@@ -1,0 +1,1515 @@
+2025-06-03 13:28 | 632 | ./instagram/test_supabase.js
+2025-06-11 15:23 | 61 | ./placeholder.py
+2025-06-11 15:30 | 1836 | ./services/discovery/app.py
+2025-06-11 16:10 | 6108 | ./pipeline.py
+2025-06-12 12:05 | 7332 | ./backfill_history.py
+2025-06-12 14:09 | 4672 | ./discovery working script.py
+2025-06-12 16:49 | 10156 | ./discovery after updates.py
+2025-06-16 19:22 | 4249 | ./instagram/gmail_integration.js
+2025-06-17 08:20 | 4249 | ./gmail_integration.js
+2025-06-17 08:20 | 4339 | ./authenticator_integration.js
+2025-06-17 10:56 | 17905 | ./instagram/enricher_single.js
+2025-06-20 12:42 | 22878 | ./discovery pre track table add.py
+2025-06-22 11:22 | 34259 | ./discovery pre cmdebugg.py
+2025-06-24 13:34 | 538 | ./humanizer/manifest.json
+2025-06-24 13:35 | 105 | ./humanizer/background.js
+2025-06-24 13:35 | 4593 | ./humanizer/popup.js
+2025-06-24 13:58 | 13894 | ./humanizer/content.js
+2025-06-26 10:14 | 1711 | ./telnyx-fetch/fetch_otp.py
+2025-06-26 10:21 | 1635 | ./telnyx-fetch/receive.py
+2025-06-27 13:34 | 2068499 | ./humanizer/instagram-behavior-data-2025-06-27.json
+2025-06-27 13:51 | 267626 | ./humanizer/instagram-data-chunk-1-of-12.json
+2025-06-27 13:53 | 267626 | ./humanizer/instagram-data-chunk-1-of-14.json
+2025-06-27 14:00 | 15279 | ./humanizer/instagram-data-chunk-007-of-85.json
+2025-06-27 14:00 | 27222 | ./humanizer/instagram-data-chunk-006-of-85.json
+2025-06-27 14:00 | 2977 | ./humanizer/instagram-data-chunk-004-of-85.json
+2025-06-27 14:00 | 35647 | ./humanizer/instagram-data-chunk-001-of-85.json
+2025-06-27 14:00 | 41298 | ./humanizer/instagram-data-chunk-005-of-85.json
+2025-06-27 14:00 | 41889 | ./humanizer/instagram-data-chunk-009-of-85.json
+2025-06-27 14:00 | 45240 | ./humanizer/instagram-data-chunk-013-of-85.json
+2025-06-27 14:00 | 45799 | ./humanizer/instagram-data-chunk-002-of-85.json
+2025-06-27 14:00 | 45836 | ./humanizer/instagram-data-chunk-003-of-85.json
+2025-06-27 14:00 | 5551 | ./humanizer/instagram-data-chunk-008-of-85.json
+2025-06-27 14:00 | 5995 | ./humanizer/instagram-data-chunk-012-of-85.json
+2025-06-27 14:00 | 65735 | ./humanizer/instagram-data-chunk-011-of-85.json
+2025-06-27 14:00 | 8478 | ./humanizer/instagram-data-chunk-010-of-85.json
+2025-06-27 14:01 | 19929 | ./humanizer/instagram-data-chunk-017-of-85.json
+2025-06-27 14:01 | 2952 | ./humanizer/instagram-data-chunk-015-of-85.json
+2025-06-27 14:01 | 42807 | ./humanizer/instagram-data-chunk-016-of-85.json
+2025-06-27 14:01 | 45596 | ./humanizer/instagram-data-chunk-014-of-85.json
+2025-06-27 14:02 | 35792 | ./humanizer/instagram-data-chunk-018-of-85.json
+2025-06-27 14:02 | 4613 | ./humanizer/instagram-data-chunk-020-of-85.json
+2025-06-27 14:02 | 7887 | ./humanizer/instagram-data-chunk-019-of-85.json
+2025-06-27 14:03 | 16271 | ./humanizer/instagram-data-chunk-028-of-85.json
+2025-06-27 14:03 | 19458 | ./humanizer/instagram-data-chunk-037-of-85.json
+2025-06-27 14:03 | 2250 | ./humanizer/instagram-data-chunk-030-of-85.json
+2025-06-27 14:03 | 23218 | ./humanizer/instagram-data-chunk-027-of-85.json
+2025-06-27 14:03 | 2966 | ./humanizer/instagram-data-chunk-025-of-85.json
+2025-06-27 14:03 | 31779 | ./humanizer/instagram-data-chunk-036-of-85.json
+2025-06-27 14:03 | 3437 | ./humanizer/instagram-data-chunk-038-of-85.json
+2025-06-27 14:03 | 36518 | ./humanizer/instagram-data-chunk-031-of-85.json
+2025-06-27 14:03 | 36888 | ./humanizer/instagram-data-chunk-035-of-85.json
+2025-06-27 14:03 | 3748 | ./humanizer/instagram-data-chunk-034-of-85.json
+2025-06-27 14:03 | 37936 | ./humanizer/instagram-data-chunk-021-of-85.json
+2025-06-27 14:03 | 3965 | ./humanizer/instagram-data-chunk-022-of-85.json
+2025-06-27 14:03 | 45154 | ./humanizer/instagram-data-chunk-026-of-85.json
+2025-06-27 14:03 | 45163 | ./humanizer/instagram-data-chunk-023-of-85.json
+2025-06-27 14:03 | 45387 | ./humanizer/instagram-data-chunk-032-of-85.json
+2025-06-27 14:03 | 45565 | ./humanizer/instagram-data-chunk-033-of-85.json
+2025-06-27 14:03 | 45758 | ./humanizer/instagram-data-chunk-024-of-85.json
+2025-06-27 14:03 | 4666 | ./humanizer/instagram-data-chunk-029-of-85.json
+2025-06-27 14:04 | 11472 | ./humanizer/instagram-data-chunk-042-of-85.json
+2025-06-27 14:04 | 11723 | ./humanizer/instagram-data-chunk-039-of-85.json
+2025-06-27 14:04 | 1298 | ./humanizer/instagram-data-chunk-047-of-85.json
+2025-06-27 14:04 | 16767 | ./humanizer/instagram-data-chunk-050-of-85.json
+2025-06-27 14:04 | 1813 | ./humanizer/instagram-data-chunk-057-of-85.json
+2025-06-27 14:04 | 19532 | ./humanizer/instagram-data-chunk-045-of-85.json
+2025-06-27 14:04 | 22261 | ./humanizer/instagram-data-chunk-051-of-85.json
+2025-06-27 14:04 | 22512 | ./humanizer/instagram-data-chunk-044-of-85.json
+2025-06-27 14:04 | 2802 | ./humanizer/instagram-data-chunk-052-of-85.json
+2025-06-27 14:04 | 31376 | ./humanizer/instagram-data-chunk-040-of-85.json
+2025-06-27 14:04 | 45997 | ./humanizer/instagram-data-chunk-043-of-85.json
+2025-06-27 14:04 | 46433 | ./humanizer/instagram-data-chunk-055-of-85.json
+2025-06-27 14:04 | 46441 | ./humanizer/instagram-data-chunk-056-of-85.json
+2025-06-27 14:04 | 54782 | ./humanizer/instagram-data-chunk-049-of-85.json
+2025-06-27 14:04 | 55041 | ./humanizer/instagram-data-chunk-041-of-85.json
+2025-06-27 14:04 | 6993 | ./humanizer/instagram-data-chunk-048-of-85.json
+2025-06-27 14:04 | 741 | ./humanizer/instagram-data-chunk-046-of-85.json
+2025-06-27 14:04 | 9421 | ./humanizer/instagram-data-chunk-054-of-85.json
+2025-06-27 14:04 | 959 | ./humanizer/instagram-data-chunk-053-of-85.json
+2025-06-27 14:05 | 1039 | ./humanizer/instagram-data-chunk-068-of-85.json
+2025-06-27 14:05 | 10886 | ./humanizer/instagram-data-chunk-063-of-85.json
+2025-06-27 14:05 | 1178 | ./humanizer/instagram-data-chunk-060-of-85.json
+2025-06-27 14:05 | 13398 | ./humanizer/instagram-data-chunk-058-of-85.json
+2025-06-27 14:05 | 15479 | ./humanizer/instagram-data-chunk-066-of-85.json
+2025-06-27 14:05 | 17023 | ./humanizer/instagram-data-chunk-076-of-85.json
+2025-06-27 14:05 | 20524 | ./humanizer/instagram-data-chunk-078-of-85.json
+2025-06-27 14:05 | 20888 | ./humanizer/instagram-data-chunk-065-of-85.json
+2025-06-27 14:05 | 2964 | ./humanizer/instagram-data-chunk-074-of-85.json
+2025-06-27 14:05 | 3726 | ./humanizer/instagram-data-chunk-059-of-85.json
+2025-06-27 14:05 | 38119 | ./humanizer/instagram-data-chunk-071-of-85.json
+2025-06-27 14:05 | 45699 | ./humanizer/instagram-data-chunk-072-of-85.json
+2025-06-27 14:05 | 45772 | ./humanizer/instagram-data-chunk-073-of-85.json
+2025-06-27 14:05 | 47093 | ./humanizer/instagram-data-chunk-075-of-85.json
+2025-06-27 14:05 | 5277 | ./humanizer/instagram-data-chunk-069-of-85.json
+2025-06-27 14:05 | 54469 | ./humanizer/instagram-data-chunk-064-of-85.json
+2025-06-27 14:05 | 5636 | ./humanizer/instagram-data-chunk-067-of-85.json
+2025-06-27 14:05 | 5812 | ./humanizer/instagram-data-chunk-077-of-85.json
+2025-06-27 14:05 | 61047 | ./humanizer/instagram-data-chunk-062-of-85.json
+2025-06-27 14:05 | 62045 | ./humanizer/instagram-data-chunk-070-of-85.json
+2025-06-27 14:05 | 7056 | ./humanizer/instagram-data-chunk-061-of-85.json
+2025-06-27 14:06 | 12359 | ./humanizer/instagram-data-chunk-083-of-85.json
+2025-06-27 14:06 | 1848 | ./humanizer/instagram-data-chunk-081-of-85.json
+2025-06-27 14:06 | 2018 | ./humanizer/instagram-data-chunk-084-of-85.json
+2025-06-27 14:06 | 32351 | ./humanizer/instagram-data-chunk-082-of-85.json
+2025-06-27 14:06 | 46214 | ./humanizer/instagram-data-chunk-080-of-85.json
+2025-06-27 14:06 | 46234 | ./humanizer/instagram-data-chunk-079-of-85.json
+2025-06-27 14:06 | 55836 | ./humanizer/instagram-data-chunk-085-of-85.json
+2025-06-28 11:54 | 48407 | ./discovery perfection pre rotating cm rank.py
+2025-06-30 10:30 | 141444 | ./processed_artists 2.json
+2025-06-30 10:52 | 141444 | ./processed_artists_backup.json
+2025-06-30 12:13 | 60894 | ./discovery pre api call optimization.py
+2025-06-30 15:44 | 676 | ./instagram/insert_test_user.js
+2025-07-01 06:27 | 806 | ./instagram/test_single_warmer.js
+2025-07-01 06:35 | 1898 | ./instagram/real_debug.js
+2025-07-01 06:37 | 1914 | ./instagram/debug_page_load.js
+2025-07-01 06:40 | 2442 | ./instagram/fixed_login_test.js
+2025-07-01 06:45 | 3436 | ./instagram/enhanced_timing_test.js
+2025-07-01 06:46 | 1761 | ./instagram/no_proxy_test.js
+2025-07-01 06:48 | 556 | ./instagram/no_proxy_warmer.js
+2025-07-01 08:41 | 4332 | ./instagram/authenticator_integration.js
+2025-07-01 09:20 | 1196 | ./instagram/convert_webp_to_jpg.py
+2025-07-01 09:26 | 638 | ./instagram/cole_with_posting.js
+2025-07-01 09:45 | 826 | ./instagram/debug_posting.js
+2025-07-01 10:40 | 34341 | ./instagram/instagram_warmer.js
+2025-07-01 11:15 | 1820 | ./instagram/check_cole_images.js
+2025-07-01 11:23 | 102 | ./instagram/last_post_colehendricks87.json
+2025-07-01 11:34 | 37392 | ./instagram/fixed_instagram_warmer.js
+2025-07-01 11:37 | 610 | ./instagram/cole_with_posting_fixed.js
+2025-07-01 11:39 | 6027 | ./instagram/debug_login_dialog.js
+2025-07-01 11:43 | 3226 | ./instagram/check_instagram_page.js
+2025-07-01 12:03 | 4204 | ./instagram/debug_johnny_2fa.js
+2025-07-01 12:06 | 37392 | ./instagram/parallel_warmer.js
+2025-07-01 12:09 | 2433 | ./instagram/parallel_from_working.js
+2025-07-01 12:17 | 37135 | ./instagram/instagram_warmer_fixed.js
+2025-07-01 12:18 | 651 | ./instagram/cole_test.js
+2025-07-01 12:18 | 653 | ./instagram/brooke_test.js
+2025-07-01 12:18 | 653 | ./instagram/johnny_test.js
+2025-07-01 12:18 | 653 | ./instagram/skyler_test.js
+2025-07-01 12:18 | 653 | ./instagram/trevor_test.js
+2025-07-01 12:18 | 654 | ./instagram/kendall_test.js
+2025-07-01 12:22 | 5553 | ./instagram/simple_warmer.js
+2025-07-01 12:24 | 83 | ./instagram/test_johnny.js
+2025-07-01 13:02 | 8641 | ./instagram/enricher/multi_worker_enricher 2.js
+2025-07-01 13:32 | 21897 | ./instagram/enricher/enricher_worker 2.js
+2025-07-01 13:32 | 21897 | ./instagram/enricher_worker pregrok.js
+2025-07-02 13:21 | 5361 | ./enhanced_human_patterns.js
+2025-07-02 13:27 | 5361 | ./instagram/enhanced_human_patterns.js
+2025-07-02 13:43 | 8659 | ./instagram/multi_worker_enricher.js
+2025-07-02 14:58 | 103 | ./instagram-test/test.js
+2025-07-02 16:11 | 277 | ./instagram-test/manifest.json
+2025-07-02 17:06 | 10292 | ./instagram-test/popup.js
+2025-07-03 11:18 | 1679 | ./facebook/fix_facebook_emails.js
+2025-07-03 11:21 | 1679 | ./facebook/fix_facebook_emails_v2.js
+2025-07-03 15:34 | 18440 | ./facebook/facebook_enricher_worker.js
+2025-07-07 16:14 | 18088 | ./facebook/facebook_enricher_worker_NEW preGrok.js
+2025-07-08 07:56 | 66831 | ./discovery preFBlogic.py
+2025-07-08 08:38 | 63640 | ./discovery with countries.py
+2025-07-08 09:02 | 19968 | ./facebook/facebook_enricher_worker_NEW pre add websites.js
+2025-07-08 10:22 | 30292 | ./email-extractor/email_extractor preupdate.py
+2025-07-08 11:01 | 3046 | ./email-extractor/test_anika_scraper.py
+2025-07-08 11:13 | 1792 | ./email-extractor/test_anika_selenium.py
+2025-07-08 12:16 | 2581 | ./email-extractor/test_form_extraction.py
+2025-07-08 12:17 | 3837 | ./email-extractor/deep_page_analysis.py
+2025-07-08 14:44 | 36383 | ./email-extractor/comprehensive_contact_extractor.py
+2025-07-08 16:16 | 66716 | ./discovery countrys fucked.py
+2025-07-09 14:05 | 166 | ./discovery_progress.json
+2025-07-10 11:37 | 50528 | ./email-extractor/email_extractor.py
+2025-07-10 13:48 | 3058 | ./facebook/facebook_cookies_3.json
+2025-07-10 17:30 | 2102 | ./cookies/cookies_6.json
+2025-07-11 00:56 | 2105 | ./cookies/cookies_4.json
+2025-07-11 05:32 | 2104 | ./cookies/cookies_5.json
+2025-07-11 05:34 | 2104 | ./cookies/cookies_2.json
+2025-07-11 05:42 | 2105 | ./cookies/cookies_1.json
+2025-07-11 06:08 | 2105 | ./cookies/cookies_3.json
+2025-07-11 10:34 | 5247 | ./facebook/facebook-worker-integration.js
+2025-07-11 11:29 | 7830 | ./facebook/facebook_human_patterns.js
+2025-07-11 11:51 | 17428 | ./facebook/facebook_multi_worker copy 2.js
+2025-07-11 12:58 | 14325 | ./facebook/facebook-human-behavior-advanced.js
+2025-07-11 13:32 | 3679 | ./facebook/facebook_cookies_2.json
+2025-07-11 15:20 | 439 | ./InstagramAutoMessager/automessager.js
+2025-07-11 15:22 | 14013 | ./InstagramAutoMessager/recording.json
+2025-07-14 09:19 | 18097 | ./facebook/facebook_multi_worker.js
+2025-07-14 09:19 | 28860 | ./facebook/facebook_enricher_worker_NEW.js
+2025-07-14 09:26 | 14850 | ./facebook/facebook_login_handler.js
+2025-07-14 14:46 | 12720 | ./facebook/facebook_multi_worker copy.js
+2025-07-14 14:46 | 19317 | ./instagram/enricher_worker.js
+2025-07-14 15:00 | 2361 | ./GEMS/get_new_token.py
+2025-07-14 15:05 | 1968 | ./GEMS/get_spotify_auth.py
+2025-07-14 16:56 | 16801 | ./GEMS/emotion-benchmark-collector.py
+2025-07-14 16:59 | 16379 | ./GEMS/emotion-benchmark-lite.py
+2025-07-14 17:13 | 3707 | ./GEMS/benchmark-simple.py
+2025-07-14 17:16 | 4631 | ./GEMS/benchmark-quick.py
+2025-07-14 18:03 | 58104 | ./GEMS/gems-45-analyzer.py
+2025-07-15 03:26 | 4257 | ./GEMS/fix_audio_features.py
+2025-07-15 03:38 | 17349 | ./GEMS/recalibrated_emotion_detector.py
+2025-07-15 03:39 | 8662 | ./GEMS/reanalyze_with_calibration.py
+2025-07-15 09:01 | 15254 | ./GEMS/diverse_track_analyzer.py
+2025-07-15 09:07 | 5168 | ./GEMS/gems_analyzer_specific_tracks.py
+2025-07-15 10:12 | 11784 | ./GEMS/multi-emotion-collector.py
+2025-07-15 11:51 | 13491 | ./GEMS/full_feature_recalibration.py
+2025-07-15 12:26 | 27226 | ./GEMS/hierarchical_emotion_system.py
+2025-07-15 12:26 | 707 | ./GEMS/test_realworld_gems.py
+2025-07-15 12:30 | 14744 | ./GEMS/fixed_realworld_gems.py
+2025-07-15 12:33 | 16535 | ./GEMS/calibrated_gems_system.py
+2025-07-15 12:37 | 19705 | ./GEMS/four_emotion_gems_system.py
+2025-07-15 12:39 | 7633 | ./GEMS/analyze_benchmark_features.py
+2025-07-15 12:42 | 18682 | ./GEMS/data_driven_gems_system.py
+2025-07-15 12:49 | 10111 | ./GEMS/accuracy_verification.py
+2025-07-15 13:06 | 6087 | ./GEMS/check_genre_data.py
+2025-07-15 13:17 | 125978 | ./GEMS/comprehensive_genre_mapping.json
+2025-07-15 13:17 | 17331 | ./GEMS/complete_genre_system.py
+2025-07-15 13:22 | 1360 | ./GEMS/update_strategy.md
+2025-07-15 13:22 | 9767 | ./GEMS/streamlined_genre_system.py
+2025-07-15 15:30 | 49485 | ./GEMS/complete_gems_pipeline.py
+2025-07-15 15:52 | 53729 | ./GEMS/fixed_gems_pipeline.py
+2025-07-15 17:50 | 5491 | ./GEMS/emergency_debug.py
+2025-07-15 17:51 | 2097 | ./GEMS/fixed_null_query.py
+2025-07-15 17:54 | 20487 | ./GEMS/fixed_bulk_processor.py
+2025-07-15 17:55 | 20490 | ./GEMS/bulk_gems_processor.py
+2025-07-15 18:22 | 20578 | ./GEMS/adaptive_bulk_processor.py
+2025-07-15 18:32 | 193 | ./GEMS/bulk_processing_progress.json
+2025-07-15 18:52 | 12232 | ./GEMS/enhanced_output_processor.py
+2025-07-16 11:01 | 6179 | ./GEMS/genre_mapping_json.json
+2025-07-16 14:19 | 22291 | ./GEMS/genre_aware_gems_final.py
+2025-07-16 14:28 | 19454 | ./GEMS/genre_aware_bulk_processor.py
+2025-07-17 10:48 | 32977 | ./GEMS/detailed_bulk_processor copy.py
+2025-07-18 07:55 | 76017 | ./GEMS/fixed_gems_pipeline_v2 copy 2.py
+2025-07-18 12:18 | 17010 | ./GEMS/automatic_genre_mapping_organizer.py
+2025-07-18 17:32 | 69065 | ./discovery presuperstar.py
+2025-07-20 17:55 | 3361 | ./facebook/facebook_cookies_1.json
+2025-07-21 19:14 | 7317 | ./instagramAPI/instagram_scraper.py
+2025-07-21 19:44 | 2592 | ./instagramAPI/test_query.py
+2025-07-21 19:45 | 16896 | ./instagramAPI/continuous_instagram_scraper.py
+2025-07-22 09:02 | 3613 | ./instagramAPI/direct_api_test.py
+2025-07-22 09:04 | 2430 | ./instagramAPI/api_workaround_test.py
+2025-07-22 09:29 | 1128 | ./instagramAPI/test_2025_api.py
+2025-07-22 09:29 | 15157 | ./instagramAPI/instagram_scraper_2025.py
+2025-07-22 09:36 | 15675 | ./instagramAPI/instagram-scraper-2025.py
+2025-07-22 09:42 | 2390 | ./instagramAPI/debug_artist_query.py
+2025-07-22 09:46 | 4957 | ./instagramAPI/simple_scraper.py
+2025-07-22 10:09 | 7459 | ./instagramAPI/latest_rank_scraper.py
+2025-07-22 10:23 | 12489 | ./instagramAPI/instagram_scraper_final.py
+2025-07-22 10:37 | 12674 | ./instagramAPI/final_instagram_scraper.py
+2025-07-22 10:41 | 11896 | ./instagramAPI/instagram_scraper_no_dupes.py
+2025-07-22 10:43 | 3008 | ./instagramAPI/debug_duplicates.py
+2025-07-22 10:44 | 9430 | ./instagramAPI/instagram_scraper_final_v2.py
+2025-07-22 11:03 | 8976 | ./instagramAPI/instagram_scraper_working.py
+2025-07-22 11:29 | 10499 | ./instagramAPI/instagram_scraper_all.py
+2025-07-22 14:51 | 61711 | ./GEMS/fixed_gems_pipeline_v2 copy.py
+2025-07-24 10:14 | 10329 | ./instagramAPI/instagram_scraper_fixed.py
+2025-07-24 17:00 | 15244 | ./GEMS/gems_emotion_detector.py
+2025-07-25 11:11 | 59781 | ./GEMS/detailed_bulk_processor copy 2.py
+2025-07-27 06:39 | 8320 | ./instagramAPI/scraper_remaining_artists.py
+2025-07-27 06:54 | 2098 | ./instagramAPI/count_scraped_artists.py
+2025-07-29 16:40 | 70479 | ./discovery old.py
+2025-07-29 16:40 | 835859 | ./processed_artists.json
+2025-07-29 17:31 | 1167 | ./discovery_simple.py
+2025-07-29 17:33 | 3034 | ./snapshot_updater.py
+2025-07-30 15:16 | 1704 | ./GEMS/friend_track_analysis.json
+2025-07-30 15:21 | 3942 | ./GEMS/editorial_tracks_analyzed.json
+2025-07-30 15:37 | 15933 | ./GEMS/editorial_matches_comprehensive.json
+2025-07-30 15:53 | 927755 | ./GEMS/gems_backup_20250730_155300.json
+2025-07-30 17:21 | 0 | ./GEMS/gems_backup_20250730_172141.json
+2025-07-30 17:21 | 0 | ./GEMS/gems_backup_20250730_172152.json
+2025-07-30 17:22 | 100931 | ./GEMS/gems_backup_20250730_172237.json
+2025-08-01 05:41 | 60457 | ./GEMS/detailed_bulk_processor copy 3.py
+2025-08-04 09:01 | 7802 | ./regression/monitoring_dashboard.py
+2025-08-08 09:22 | 43857 | ./regression/artist_ml_system copy.py
+2025-08-12 12:29 | 329 | ./package.json
+2025-08-12 12:29 | 62411 | ./package-lock.json
+2025-08-12 13:29 | 558 | ./InstagramSeed/package.json
+2025-08-12 14:38 | 286 | ./crawler-progress-old.json
+2025-08-12 15:44 | 0 | ./atomic-crm copy/supabase/seed.sql
+2025-08-12 15:44 | 0 | ./atomic-crm/supabase/seed.sql
+2025-08-12 15:44 | 1033 | ./atomic-crm copy/src/contacts/Avatar.tsx
+2025-08-12 15:44 | 1033 | ./atomic-crm/src/contacts/Avatar.tsx
+2025-08-12 15:44 | 10555 | ./atomic-crm copy/src/companies/CompanyShow.tsx
+2025-08-12 15:44 | 10555 | ./atomic-crm/src/companies/CompanyShow.tsx
+2025-08-12 15:44 | 1080 | ./atomic-crm copy/src/contacts/ContactEdit.tsx
+2025-08-12 15:44 | 1080 | ./atomic-crm/src/contacts/ContactEdit.tsx
+2025-08-12 15:44 | 1099 | ./atomic-crm copy/src/contacts/ContactCreate.tsx
+2025-08-12 15:44 | 1099 | ./atomic-crm/src/contacts/ContactCreate.tsx
+2025-08-12 15:44 | 1105 | ./atomic-crm copy/LICENSE.md
+2025-08-12 15:44 | 1105 | ./atomic-crm/LICENSE.md
+2025-08-12 15:44 | 1122 | ./atomic-crm copy/src/login/LoginSkeleton.tsx
+2025-08-12 15:44 | 1122 | ./atomic-crm/src/login/LoginSkeleton.tsx
+2025-08-12 15:44 | 1129 | ./atomic-crm copy/.github/ISSUE_TEMPLATE/Bug_report.md
+2025-08-12 15:44 | 1129 | ./atomic-crm/.github/ISSUE_TEMPLATE/Bug_report.md
+2025-08-12 15:44 | 1151 | ./atomic-crm copy/src/deals/ContactList.stories.tsx
+2025-08-12 15:44 | 1151 | ./atomic-crm/src/deals/ContactList.stories.tsx
+2025-08-12 15:44 | 1167 | ./atomic-crm copy/src/companies/CompanyEmpty.tsx
+2025-08-12 15:44 | 1167 | ./atomic-crm/src/companies/CompanyEmpty.tsx
+2025-08-12 15:44 | 1169 | ./atomic-crm copy/src/sales/SalesInputs.tsx
+2025-08-12 15:44 | 1169 | ./atomic-crm/src/sales/SalesInputs.tsx
+2025-08-12 15:44 | 1191 | ./atomic-crm copy/src/notes/NotesIterator.tsx
+2025-08-12 15:44 | 1191 | ./atomic-crm/src/notes/NotesIterator.tsx
+2025-08-12 15:44 | 1208 | ./atomic-crm copy/src/deals/OnlyMineInput.tsx
+2025-08-12 15:44 | 1208 | ./atomic-crm/src/deals/OnlyMineInput.tsx
+2025-08-12 15:44 | 125 | ./atomic-crm copy/setupFiles/jest.ts
+2025-08-12 15:44 | 125 | ./atomic-crm/setupFiles/jest.ts
+2025-08-12 15:44 | 1263 | ./atomic-crm copy/src/contacts/ContactEmpty.tsx
+2025-08-12 15:44 | 1263 | ./atomic-crm/src/contacts/ContactEmpty.tsx
+2025-08-12 15:44 | 1294 | ./atomic-crm copy/supabase/migrations/20240730075425_init_triggers.sql
+2025-08-12 15:44 | 1294 | ./atomic-crm/supabase/migrations/20240730075425_init_triggers.sql
+2025-08-12 15:44 | 13091 | ./atomic-crm copy/src/deals/DealShow.tsx
+2025-08-12 15:44 | 13091 | ./atomic-crm/src/deals/DealShow.tsx
+2025-08-12 15:44 | 1315 | ./atomic-crm copy/src/dashboard/Welcome.tsx
+2025-08-12 15:44 | 1315 | ./atomic-crm/src/dashboard/Welcome.tsx
+2025-08-12 15:44 | 1320 | ./atomic-crm copy/src/deals/ContactList.tsx
+2025-08-12 15:44 | 1320 | ./atomic-crm/src/deals/ContactList.tsx
+2025-08-12 15:44 | 1337 | ./atomic-crm copy/doc/user/import-contacts.md
+2025-08-12 15:44 | 1337 | ./atomic-crm/doc/user/import-contacts.md
+2025-08-12 15:44 | 1388 | ./atomic-crm copy/.eslintrc.json
+2025-08-12 15:44 | 1388 | ./atomic-crm/.eslintrc.json
+2025-08-12 15:44 | 1520 | ./atomic-crm copy/doc/developer/migrations.md
+2025-08-12 15:44 | 1520 | ./atomic-crm/doc/developer/migrations.md
+2025-08-12 15:44 | 1543 | ./atomic-crm copy/src/sales/SalesCreate.tsx
+2025-08-12 15:44 | 1543 | ./atomic-crm/src/sales/SalesCreate.tsx
+2025-08-12 15:44 | 1544 | ./atomic-crm copy/src/activity/ActivityLogNote.tsx
+2025-08-12 15:44 | 1544 | ./atomic-crm/src/activity/ActivityLogNote.tsx
+2025-08-12 15:44 | 1592 | ./atomic-crm copy/supabase/migrations/20250113132531_phone_jsonb.sql
+2025-08-12 15:44 | 1592 | ./atomic-crm/supabase/migrations/20250113132531_phone_jsonb.sql
+2025-08-12 15:44 | 160 | ./atomic-crm copy/src/misc/RelativeDate.tsx
+2025-08-12 15:44 | 160 | ./atomic-crm/src/misc/RelativeDate.tsx
+2025-08-12 15:44 | 1620 | ./atomic-crm copy/src/companies/GridList.tsx
+2025-08-12 15:44 | 1620 | ./atomic-crm/src/companies/GridList.tsx
+2025-08-12 15:44 | 164 | ./atomic-crm copy/supabase/migrations/20240808141826_init_state_configure.sql
+2025-08-12 15:44 | 164 | ./atomic-crm/supabase/migrations/20240808141826_init_state_configure.sql
+2025-08-12 15:44 | 1667 | ./atomic-crm copy/src/companies/CompanyList.tsx
+2025-08-12 15:44 | 1667 | ./atomic-crm/src/companies/CompanyList.tsx
+2025-08-12 15:44 | 169 | ./atomic-crm copy/vitest.config.ts
+2025-08-12 15:44 | 169 | ./atomic-crm/vitest.config.ts
+2025-08-12 15:44 | 1707 | ./atomic-crm copy/src/contacts/TagsList.stories.tsx
+2025-08-12 15:44 | 1707 | ./atomic-crm/src/contacts/TagsList.stories.tsx
+2025-08-12 15:44 | 1736 | ./atomic-crm copy/src/sales/SalesList.tsx
+2025-08-12 15:44 | 1736 | ./atomic-crm/src/sales/SalesList.tsx
+2025-08-12 15:44 | 1744 | ./atomic-crm copy/doc/user/inbound-email.md
+2025-08-12 15:44 | 1744 | ./atomic-crm/doc/user/inbound-email.md
+2025-08-12 15:44 | 177 | ./atomic-crm copy/src/tags/colors.ts
+2025-08-12 15:44 | 177 | ./atomic-crm/src/tags/colors.ts
+2025-08-12 15:44 | 18044 | ./atomic-crm copy/supabase/migrations/20240730075029_init_db.sql
+2025-08-12 15:44 | 18044 | ./atomic-crm/supabase/migrations/20240730075029_init_db.sql
+2025-08-12 15:44 | 1807 | ./atomic-crm copy/doc/developer/architecture-choices.md
+2025-08-12 15:44 | 1807 | ./atomic-crm/doc/developer/architecture-choices.md
+2025-08-12 15:44 | 186 | ./atomic-crm copy/src/deals/index.ts
+2025-08-12 15:44 | 186 | ./atomic-crm/src/deals/index.ts
+2025-08-12 15:44 | 1865 | ./atomic-crm copy/src/dashboard/TasksListFilter.tsx
+2025-08-12 15:44 | 1865 | ./atomic-crm/src/dashboard/TasksListFilter.tsx
+2025-08-12 15:44 | 1961 | ./atomic-crm copy/src/companies/CompanyListFilter.tsx
+2025-08-12 15:44 | 1961 | ./atomic-crm/src/companies/CompanyListFilter.tsx
+2025-08-12 15:44 | 1975 | ./atomic-crm copy/src/root/ConfigurationContext.tsx
+2025-08-12 15:44 | 1975 | ./atomic-crm/src/root/ConfigurationContext.tsx
+2025-08-12 15:44 | 1994 | ./atomic-crm copy/src/misc/unsupportedDomains.const.ts
+2025-08-12 15:44 | 1994 | ./atomic-crm/src/misc/unsupportedDomains.const.ts
+2025-08-12 15:44 | 1996 | ./atomic-crm copy/src/activity/ActivityLog.tsx
+2025-08-12 15:44 | 1996 | ./atomic-crm/src/activity/ActivityLog.tsx
+2025-08-12 15:44 | 200 | ./atomic-crm copy/src/deals/deal.ts
+2025-08-12 15:44 | 200 | ./atomic-crm/src/deals/deal.ts
+2025-08-12 15:44 | 2034 | ./atomic-crm copy/src/dashboard/Dashboard.tsx
+2025-08-12 15:44 | 2034 | ./atomic-crm/src/dashboard/Dashboard.tsx
+2025-08-12 15:44 | 2090 | ./atomic-crm copy/src/sales/SalesEdit.tsx
+2025-08-12 15:44 | 2090 | ./atomic-crm/src/sales/SalesEdit.tsx
+2025-08-12 15:44 | 2155 | ./atomic-crm copy/src/activity/ActivityLogCompanyCreated.tsx
+2025-08-12 15:44 | 2155 | ./atomic-crm/src/activity/ActivityLogCompanyCreated.tsx
+2025-08-12 15:44 | 2194 | ./atomic-crm copy/doc/developer/data-providers.md
+2025-08-12 15:44 | 2194 | ./atomic-crm/doc/developer/data-providers.md
+2025-08-12 15:44 | 2266 | ./atomic-crm copy/vite.config.ts
+2025-08-12 15:44 | 231 | ./atomic-crm copy/supabase/migrations/20241104153231_sales_policies.sql
+2025-08-12 15:44 | 231 | ./atomic-crm/supabase/migrations/20241104153231_sales_policies.sql
+2025-08-12 15:44 | 232 | ./atomic-crm copy/src/companies/sizes.ts
+2025-08-12 15:44 | 232 | ./atomic-crm/src/companies/sizes.ts
+2025-08-12 15:44 | 241 | ./atomic-crm copy/src/setupTests.js
+2025-08-12 15:44 | 241 | ./atomic-crm/src/setupTests.js
+2025-08-12 15:44 | 243 | ./atomic-crm copy/tsconfig.node.json
+2025-08-12 15:44 | 243 | ./atomic-crm/tsconfig.node.json
+2025-08-12 15:44 | 2441 | ./atomic-crm copy/src/activity/ActivityLogContactCreated.tsx
+2025-08-12 15:44 | 2441 | ./atomic-crm/src/activity/ActivityLogContactCreated.tsx
+2025-08-12 15:44 | 2466 | ./atomic-crm copy/.github/CONTRIBUTING.md
+2025-08-12 15:44 | 2466 | ./atomic-crm/.github/CONTRIBUTING.md
+2025-08-12 15:44 | 2601 | ./atomic-crm copy/src/activity/ActivityLogDealCreated.tsx
+2025-08-12 15:44 | 2601 | ./atomic-crm/src/activity/ActivityLogDealCreated.tsx
+2025-08-12 15:44 | 2623 | ./atomic-crm copy/src/notes/NoteCreate.tsx
+2025-08-12 15:44 | 2623 | ./atomic-crm/src/notes/NoteCreate.tsx
+2025-08-12 15:44 | 2703 | ./atomic-crm copy/src/activity/ActivityLogIterator.tsx
+2025-08-12 15:44 | 2703 | ./atomic-crm/src/activity/ActivityLogIterator.tsx
+2025-08-12 15:44 | 274 | ./atomic-crm copy/supabase/migrations/20240813084010_tags_policy.sql
+2025-08-12 15:44 | 274 | ./atomic-crm/supabase/migrations/20240813084010_tags_policy.sql
+2025-08-12 15:44 | 2764 | ./atomic-crm copy/src/notes/NoteAttachments.tsx
+2025-08-12 15:44 | 2764 | ./atomic-crm/src/notes/NoteAttachments.tsx
+2025-08-12 15:44 | 2775 | ./atomic-crm copy/src/deals/DealCard.tsx
+2025-08-12 15:44 | 2775 | ./atomic-crm/src/deals/DealCard.tsx
+2025-08-12 15:44 | 279 | ./atomic-crm copy/.storybook/preview.ts
+2025-08-12 15:44 | 279 | ./atomic-crm/.storybook/preview.ts
+2025-08-12 15:44 | 2812 | ./atomic-crm copy/src/deals/DealColumn.tsx
+2025-08-12 15:44 | 2812 | ./atomic-crm/src/deals/DealColumn.tsx
+2025-08-12 15:44 | 2824 | ./atomic-crm copy/src/dashboard/TasksList.tsx
+2025-08-12 15:44 | 2824 | ./atomic-crm/src/dashboard/TasksList.tsx
+2025-08-12 15:44 | 2841 | ./atomic-crm copy/src/deals/DealEmpty.tsx
+2025-08-12 15:44 | 2841 | ./atomic-crm/src/deals/DealEmpty.tsx
+2025-08-12 15:44 | 2868 | ./atomic-crm copy/doc/developer/deploy.md
+2025-08-12 15:44 | 2868 | ./atomic-crm/doc/developer/deploy.md
+2025-08-12 15:44 | 30 | ./atomic-crm copy/public/logos/Readme.md
+2025-08-12 15:44 | 30 | ./atomic-crm/public/logos/Readme.md
+2025-08-12 15:44 | 301 | ./atomic-crm copy/src/consts.ts
+2025-08-12 15:44 | 301 | ./atomic-crm/src/consts.ts
+2025-08-12 15:44 | 3023 | ./atomic-crm copy/src/notes/NoteInputs.tsx
+2025-08-12 15:44 | 3023 | ./atomic-crm/src/notes/NoteInputs.tsx
+2025-08-12 15:44 | 3130 | ./atomic-crm copy/src/deals/DealList.tsx
+2025-08-12 15:44 | 3130 | ./atomic-crm/src/deals/DealList.tsx
+2025-08-12 15:44 | 3216 | ./atomic-crm copy/.github/CODE_OF_CONDUCT.md
+2025-08-12 15:44 | 3216 | ./atomic-crm/.github/CODE_OF_CONDUCT.md
+2025-08-12 15:44 | 3276 | ./atomic-crm copy/src/activity/ActivityLogContactNoteCreated.tsx
+2025-08-12 15:44 | 3276 | ./atomic-crm/src/activity/ActivityLogContactNoteCreated.tsx
+2025-08-12 15:44 | 3329 | ./atomic-crm copy/src/dashboard/HotContacts.tsx
+2025-08-12 15:44 | 3329 | ./atomic-crm/src/dashboard/HotContacts.tsx
+2025-08-12 15:44 | 333 | ./atomic-crm copy/src/notes/utils.ts
+2025-08-12 15:44 | 333 | ./atomic-crm/src/notes/utils.ts
+2025-08-12 15:44 | 334 | ./atomic-crm copy/src/activity/ActivityLogContext.tsx
+2025-08-12 15:44 | 334 | ./atomic-crm/src/activity/ActivityLogContext.tsx
+2025-08-12 15:44 | 3347 | ./atomic-crm copy/src/deals/DealCreate.tsx
+2025-08-12 15:44 | 3347 | ./atomic-crm/src/deals/DealCreate.tsx
+2025-08-12 15:44 | 3380 | ./atomic-crm copy/src/dashboard/DealsPipeline.tsx
+2025-08-12 15:44 | 3380 | ./atomic-crm/src/dashboard/DealsPipeline.tsx
+2025-08-12 15:44 | 3404 | ./atomic-crm copy/doc/developer/theming.md
+2025-08-12 15:44 | 3404 | ./atomic-crm/doc/developer/theming.md
+2025-08-12 15:44 | 3479 | ./atomic-crm copy/doc/developer/inbound-email-configuration.md
+2025-08-12 15:44 | 3479 | ./atomic-crm/doc/developer/inbound-email-configuration.md
+2025-08-12 15:44 | 3551 | ./atomic-crm copy/src/activity/ActivityLogDealNoteCreated.tsx
+2025-08-12 15:44 | 3551 | ./atomic-crm/src/activity/ActivityLogDealNoteCreated.tsx
+2025-08-12 15:44 | 357 | ./atomic-crm copy/src/companies/index.ts
+2025-08-12 15:44 | 357 | ./atomic-crm/src/companies/index.ts
+2025-08-12 15:44 | 3597 | ./atomic-crm copy/src/tags/TagDialog.tsx
+2025-08-12 15:44 | 3597 | ./atomic-crm/src/tags/TagDialog.tsx
+2025-08-12 15:44 | 3766 | ./atomic-crm copy/src/deals/DealEdit.tsx
+2025-08-12 15:44 | 3766 | ./atomic-crm/src/deals/DealEdit.tsx
+2025-08-12 15:44 | 378 | ./atomic-crm copy/src/misc/useAppBarHeight.ts
+2025-08-12 15:44 | 378 | ./atomic-crm/src/misc/useAppBarHeight.ts
+2025-08-12 15:44 | 38 | ./atomic-crm copy/src/vite-env.d.ts
+2025-08-12 15:44 | 38 | ./atomic-crm/src/vite-env.d.ts
+2025-08-12 15:44 | 3804 | ./atomic-crm copy/src/tasks/TaskEdit.tsx
+2025-08-12 15:44 | 3804 | ./atomic-crm/src/tasks/TaskEdit.tsx
+2025-08-12 15:44 | 3875 | ./atomic-crm copy/README.md
+2025-08-12 15:44 | 3875 | ./atomic-crm/README.md
+2025-08-12 15:44 | 3959 | ./atomic-crm copy/src/login/LoginForm.tsx
+2025-08-12 15:44 | 3959 | ./atomic-crm/src/login/LoginForm.tsx
+2025-08-12 15:44 | 400 | ./atomic-crm copy/src/sales/index.ts
+2025-08-12 15:44 | 400 | ./atomic-crm/src/sales/index.ts
+2025-08-12 15:44 | 4005 | ./atomic-crm copy/doc/developer/customizing.md
+2025-08-12 15:44 | 4005 | ./atomic-crm/doc/developer/customizing.md
+2025-08-12 15:44 | 4334 | ./atomic-crm copy/src/contacts/ContactList.tsx
+2025-08-12 15:44 | 4334 | ./atomic-crm/src/contacts/ContactList.tsx
+2025-08-12 15:44 | 4389 | ./atomic-crm copy/src/deals/DealArchivedList.tsx
+2025-08-12 15:44 | 4389 | ./atomic-crm/src/deals/DealArchivedList.tsx
+2025-08-12 15:44 | 450 | ./atomic-crm copy/src/reportWebVitals.js
+2025-08-12 15:44 | 450 | ./atomic-crm/src/reportWebVitals.js
+2025-08-12 15:44 | 4544 | ./atomic-crm copy/src/companies/CompanyCard.tsx
+2025-08-12 15:44 | 4544 | ./atomic-crm/src/companies/CompanyCard.tsx
+2025-08-12 15:44 | 456 | ./atomic-crm copy/src/tags/RoundButton.tsx
+2025-08-12 15:44 | 456 | ./atomic-crm/src/tags/RoundButton.tsx
+2025-08-12 15:44 | 4560 | ./atomic-crm copy/src/deals/DealInputs.tsx
+2025-08-12 15:44 | 4560 | ./atomic-crm/src/deals/DealInputs.tsx
+2025-08-12 15:44 | 4629 | ./atomic-crm copy/src/dashboard/LatestNotes.tsx
+2025-08-12 15:44 | 4629 | ./atomic-crm/src/dashboard/LatestNotes.tsx
+2025-08-12 15:44 | 469 | ./atomic-crm copy/src/misc/isLinkedInUrl.ts
+2025-08-12 15:44 | 469 | ./atomic-crm/src/misc/isLinkedInUrl.ts
+2025-08-12 15:44 | 472 | ./atomic-crm copy/src/misc/fetchWithTimeout.ts
+2025-08-12 15:44 | 472 | ./atomic-crm/src/misc/fetchWithTimeout.ts
+2025-08-12 15:44 | 4722 | ./atomic-crm copy/src/misc/usePapaParse.tsx
+2025-08-12 15:44 | 4722 | ./atomic-crm/src/misc/usePapaParse.tsx
+2025-08-12 15:44 | 476 | ./atomic-crm copy/src/sales/SaleName.tsx
+2025-08-12 15:44 | 476 | ./atomic-crm/src/sales/SaleName.tsx
+2025-08-12 15:44 | 479 | ./atomic-crm copy/supabase/migrations/20240807082449_remove-aquisition.sql
+2025-08-12 15:44 | 479 | ./atomic-crm/supabase/migrations/20240807082449_remove-aquisition.sql
+2025-08-12 15:44 | 4917 | ./atomic-crm copy/src/dashboard/DashboardStepper.tsx
+2025-08-12 15:44 | 4917 | ./atomic-crm/src/dashboard/DashboardStepper.tsx
+2025-08-12 15:44 | 494 | ./atomic-crm copy/src/contacts/index.tsx
+2025-08-12 15:44 | 494 | ./atomic-crm/src/contacts/index.tsx
+2025-08-12 15:44 | 4998 | ./atomic-crm copy/src/layout/Header.tsx
+2025-08-12 15:44 | 5036 | ./atomic-crm copy/src/contacts/TagsListEdit.tsx
+2025-08-12 15:44 | 5036 | ./atomic-crm/src/contacts/TagsListEdit.tsx
+2025-08-12 15:44 | 506 | ./atomic-crm copy/.github/pull_request_template.md
+2025-08-12 15:44 | 506 | ./atomic-crm/.github/pull_request_template.md
+2025-08-12 15:44 | 520 | ./atomic-crm copy/src/root/CRM.stories.tsx
+2025-08-12 15:44 | 520 | ./atomic-crm/src/root/CRM.stories.tsx
+2025-08-12 15:44 | 5222 | ./atomic-crm copy/CODE_OF_CONDUCT.md
+2025-08-12 15:44 | 5222 | ./atomic-crm/CODE_OF_CONDUCT.md
+2025-08-12 15:44 | 526 | ./atomic-crm copy/.storybook/main.ts
+2025-08-12 15:44 | 526 | ./atomic-crm/.storybook/main.ts
+2025-08-12 15:44 | 5442 | ./atomic-crm copy/src/companies/CompanyInputs.tsx
+2025-08-12 15:44 | 5442 | ./atomic-crm/src/companies/CompanyInputs.tsx
+2025-08-12 15:44 | 549 | ./atomic-crm copy/src/script.tsx
+2025-08-12 15:44 | 549 | ./atomic-crm/src/script.tsx
+2025-08-12 15:44 | 5590 | ./atomic-crm copy/src/dashboard/DealsChart.tsx
+2025-08-12 15:44 | 5590 | ./atomic-crm/src/dashboard/DealsChart.tsx
+2025-08-12 15:44 | 5648 | ./atomic-crm copy/src/login/SignupPage.tsx
+2025-08-12 15:44 | 5648 | ./atomic-crm/src/login/SignupPage.tsx
+2025-08-12 15:44 | 579 | ./atomic-crm copy/src/App.tsx
+2025-08-12 15:44 | 579 | ./atomic-crm/src/App.tsx
+2025-08-12 15:44 | 58 | ./atomic-crm copy/supabase/migrations/20240806124555_task_sales_id.sql
+2025-08-12 15:44 | 58 | ./atomic-crm/supabase/migrations/20240806124555_task_sales_id.sql
+2025-08-12 15:44 | 5817 | ./atomic-crm copy/src/contacts/ContactListContent.tsx
+2025-08-12 15:44 | 5817 | ./atomic-crm/src/contacts/ContactListContent.tsx
+2025-08-12 15:44 | 593 | ./atomic-crm copy/src/dashboard/TasksListEmpty.tsx
+2025-08-12 15:44 | 593 | ./atomic-crm/src/dashboard/TasksListEmpty.tsx
+2025-08-12 15:44 | 604 | ./atomic-crm copy/.github/ISSUE_TEMPLATE/Feature_request.md
+2025-08-12 15:44 | 604 | ./atomic-crm/.github/ISSUE_TEMPLATE/Feature_request.md
+2025-08-12 15:44 | 621 | ./atomic-crm copy/src/index.tsx
+2025-08-12 15:44 | 621 | ./atomic-crm/src/index.tsx
+2025-08-12 15:44 | 628 | ./atomic-crm copy/tsconfig.json
+2025-08-12 15:44 | 628 | ./atomic-crm/tsconfig.json
+2025-08-12 15:44 | 632 | ./atomic-crm copy/src/misc/DialogCloseButton.tsx
+2025-08-12 15:44 | 632 | ./atomic-crm/src/misc/DialogCloseButton.tsx
+2025-08-12 15:44 | 64 | ./atomic-crm copy/src/providers/types.ts
+2025-08-12 15:44 | 64 | ./atomic-crm/src/providers/types.ts
+2025-08-12 15:44 | 6446 | ./atomic-crm copy/doc/developer/supabase-configuration.md
+2025-08-12 15:44 | 6446 | ./atomic-crm/doc/developer/supabase-configuration.md
+2025-08-12 15:44 | 6626 | ./atomic-crm copy/src/notes/Note.tsx
+2025-08-12 15:44 | 6626 | ./atomic-crm/src/notes/Note.tsx
+2025-08-12 15:44 | 6684 | ./atomic-crm copy/src/misc/ImageEditorField.tsx
+2025-08-12 15:44 | 6684 | ./atomic-crm/src/misc/ImageEditorField.tsx
+2025-08-12 15:44 | 702 | ./atomic-crm copy/src/root/i18nProvider.tsx
+2025-08-12 15:44 | 702 | ./atomic-crm/src/root/i18nProvider.tsx
+2025-08-12 15:44 | 709 | ./atomic-crm copy/src/contacts/ContactImportButton.tsx
+2025-08-12 15:44 | 709 | ./atomic-crm/src/contacts/ContactImportButton.tsx
+2025-08-12 15:44 | 710 | ./atomic-crm copy/doc/user/user-management.md
+2025-08-12 15:44 | 710 | ./atomic-crm/doc/user/user-management.md
+2025-08-12 15:44 | 7258 | ./atomic-crm copy/src/tasks/AddTask.tsx
+2025-08-12 15:44 | 7258 | ./atomic-crm/src/tasks/AddTask.tsx
+2025-08-12 15:44 | 7391 | ./atomic-crm copy/src/contacts/useContactImport.tsx
+2025-08-12 15:44 | 7391 | ./atomic-crm/src/contacts/useContactImport.tsx
+2025-08-12 15:44 | 744 | ./atomic-crm copy/src/layout/Layout.tsx
+2025-08-12 15:44 | 744 | ./atomic-crm/src/layout/Layout.tsx
+2025-08-12 15:44 | 7543 | ./atomic-crm copy/src/contacts/ContactInputs.tsx
+2025-08-12 15:44 | 7543 | ./atomic-crm/src/contacts/ContactInputs.tsx
+2025-08-12 15:44 | 7662 | ./atomic-crm copy/src/tasks/Task.tsx
+2025-08-12 15:44 | 7662 | ./atomic-crm/src/tasks/Task.tsx
+2025-08-12 15:44 | 773 | ./atomic-crm copy/src/login/LoginPage.tsx
+2025-08-12 15:44 | 773 | ./atomic-crm/src/login/LoginPage.tsx
+2025-08-12 15:44 | 802 | ./atomic-crm copy/src/misc/Status.tsx
+2025-08-12 15:44 | 802 | ./atomic-crm/src/misc/Status.tsx
+2025-08-12 15:44 | 803 | ./atomic-crm copy/src/companies/CompanyEdit.tsx
+2025-08-12 15:44 | 803 | ./atomic-crm/src/companies/CompanyEdit.tsx
+2025-08-12 15:44 | 827 | ./atomic-crm copy/vite.lib.config.ts
+2025-08-12 15:44 | 827 | ./atomic-crm/vite.lib.config.ts
+2025-08-12 15:44 | 833 | ./atomic-crm copy/src/contacts/TagsList.tsx
+2025-08-12 15:44 | 833 | ./atomic-crm/src/contacts/TagsList.tsx
+2025-08-12 15:44 | 836 | ./atomic-crm copy/src/dashboard/DashboardActivityLog.tsx
+2025-08-12 15:44 | 836 | ./atomic-crm/src/dashboard/DashboardActivityLog.tsx
+2025-08-12 15:44 | 839 | ./atomic-crm copy/src/tags/TagCreateModal.tsx
+2025-08-12 15:44 | 839 | ./atomic-crm/src/tags/TagCreateModal.tsx
+2025-08-12 15:44 | 8472 | ./atomic-crm copy/src/contacts/ContactImportDialog.tsx
+2025-08-12 15:44 | 8472 | ./atomic-crm/src/contacts/ContactImportDialog.tsx
+2025-08-12 15:44 | 848 | ./atomic-crm copy/src/tags/TagChip.tsx
+2025-08-12 15:44 | 848 | ./atomic-crm/src/tags/TagChip.tsx
+2025-08-12 15:44 | 849 | ./atomic-crm copy/doc/Readme.md
+2025-08-12 15:44 | 849 | ./atomic-crm/doc/Readme.md
+2025-08-12 15:44 | 8557 | ./atomic-crm copy/src/companies/CompanyAside.tsx
+2025-08-12 15:44 | 8557 | ./atomic-crm/src/companies/CompanyAside.tsx
+2025-08-12 15:44 | 8719 | ./atomic-crm copy/src/settings/SettingsPage.tsx
+2025-08-12 15:44 | 8719 | ./atomic-crm/src/settings/SettingsPage.tsx
+2025-08-12 15:44 | 877 | ./atomic-crm copy/src/companies/CompanyAvatar.tsx
+2025-08-12 15:44 | 877 | ./atomic-crm/src/companies/CompanyAvatar.tsx
+2025-08-12 15:44 | 897 | ./atomic-crm copy/src/tags/TagEditModal.tsx
+2025-08-12 15:44 | 897 | ./atomic-crm/src/tags/TagEditModal.tsx
+2025-08-12 15:44 | 9016 | ./atomic-crm copy/src/deals/DealListContent.tsx
+2025-08-12 15:44 | 9016 | ./atomic-crm/src/deals/DealListContent.tsx
+2025-08-12 15:44 | 909 | ./atomic-crm copy/supabase/migrations/20250109152531_email_jsonb.sql
+2025-08-12 15:44 | 909 | ./atomic-crm/supabase/migrations/20250109152531_email_jsonb.sql
+2025-08-12 15:44 | 912 | ./atomic-crm copy/src/companies/CompanyCreate.tsx
+2025-08-12 15:44 | 912 | ./atomic-crm copy/src/tasks/TasksIterator.tsx
+2025-08-12 15:44 | 912 | ./atomic-crm/src/companies/CompanyCreate.tsx
+2025-08-12 15:44 | 912 | ./atomic-crm/src/tasks/TasksIterator.tsx
+2025-08-12 15:44 | 914 | ./atomic-crm copy/src/deals/stages.ts
+2025-08-12 15:44 | 914 | ./atomic-crm/src/deals/stages.ts
+2025-08-12 15:44 | 926 | ./atomic-crm copy/src/notes/StatusSelector.tsx
+2025-08-12 15:44 | 926 | ./atomic-crm/src/notes/StatusSelector.tsx
+2025-08-12 15:44 | 97 | ./atomic-crm copy/src/notes/index.ts
+2025-08-12 15:44 | 97 | ./atomic-crm/src/notes/index.ts
+2025-08-12 15:44 | 985 | ./atomic-crm copy/src/misc/ContactOption.tsx
+2025-08-12 15:44 | 985 | ./atomic-crm/src/misc/ContactOption.tsx
+2025-08-13 13:54 | 6833 | ./atomic-crm copy/src/hooks/useArtistTracks.ts
+2025-08-13 13:54 | 6833 | ./atomic-crm/src/hooks/useArtistTracks.ts
+2025-08-13 14:55 | 19113 | ./atomic-crm copy/src/components/GEMSComponents.tsx
+2025-08-13 14:55 | 19113 | ./atomic-crm/src/components/GEMSComponents.tsx
+2025-08-13 14:55 | 8810 | ./atomic-crm copy/src/hooks/useGEMSAnalysis.ts
+2025-08-13 14:55 | 8810 | ./atomic-crm/src/hooks/useGEMSAnalysis.ts
+2025-08-14 10:35 | 5548 | ./atomic-crm copy/src/hooks/useRegressionProspects.ts
+2025-08-14 10:35 | 5548 | ./atomic-crm/src/hooks/useRegressionProspects.ts
+2025-08-14 10:37 | 14736 | ./atomic-crm copy/src/components/RegressionArtistComponents.tsx
+2025-08-14 10:37 | 14736 | ./atomic-crm/src/components/RegressionArtistComponents.tsx
+2025-08-14 12:40 | 4679 | ./atomic-crm copy/src/components/RegressionProspectsWidget.tsx
+2025-08-14 12:40 | 4679 | ./atomic-crm/src/components/RegressionProspectsWidget.tsx
+2025-08-14 12:41 | 12190 | ./atomic-crm copy/src/contacts/RegressionProspectsList.tsx
+2025-08-14 12:41 | 12190 | ./atomic-crm/src/contacts/RegressionProspectsList.tsx
+2025-08-14 13:47 | 1776 | ./atomic-crm copy/src/hooks/useArtistUrls.ts
+2025-08-14 13:47 | 1776 | ./atomic-crm/src/hooks/useArtistUrls.ts
+2025-08-14 14:52 | 722245 | ./atomic-crm copy/package-lock.json
+2025-08-14 15:05 | 7102 | ./atomic-crm copy/src/components/ArtistMomentumChart.tsx
+2025-08-14 15:05 | 7102 | ./atomic-crm/src/components/ArtistMomentumChart.tsx
+2025-08-14 15:41 | 15566 | ./atomic-crm copy/src/hooks/useArtistMetrics.ts
+2025-08-14 15:41 | 15566 | ./atomic-crm/src/hooks/useArtistMetrics.ts
+2025-08-14 16:24 | 54134 | ./GEMS/detailed_bulk_processor copy 4.py
+2025-08-18 10:14 | 899 | ./atomic-crm copy/src/utils/emailTemplates.js
+2025-08-18 10:14 | 899 | ./atomic-crm/src/utils/emailTemplates.js
+2025-08-18 10:38 | 1791 | ./atomic-crm copy/src/useEmailSender.js
+2025-08-18 14:12 | 115 | ./atomic-crm copy/.vercel/project.json
+2025-08-18 14:12 | 115 | ./atomic-crm/.vercel/project.json
+2025-08-19 08:45 | 3036 | ./atomic-crm copy/api/send-email.js
+2025-08-19 08:46 | 2858 | ./atomic-crm copy/artistOutreach.js
+2025-08-19 08:46 | 2858 | ./atomic-crm/artistOutreach.js
+2025-08-19 08:59 | 658 | ./atomic-crm copy/alexanderReply.js
+2025-08-19 08:59 | 658 | ./atomic-crm/alexanderReply.js
+2025-08-19 08:59 | 818 | ./atomic-crm copy/amandaAnalysis.js
+2025-08-19 08:59 | 818 | ./atomic-crm/amandaAnalysis.js
+2025-08-19 11:38 | 11064 | ./atomic-crm copy/src/EmailSequence.jsx.js
+2025-08-19 11:38 | 11064 | ./atomic-crm/src/EmailSequence.jsx.js
+2025-08-19 14:58 | 136 | ./atomic-crm copy/vercel.json
+2025-08-19 16:02 | 547 | ./atomic-crm copy/public/manifest.json
+2025-08-19 16:02 | 547 | ./atomic-crm/public/manifest.json
+2025-08-20 08:48 | 83376 | ./discovery_updated copy.py
+2025-08-20 13:56 | 79504 | ./regression/complete_artist_ml_system 2.py
+2025-08-20 16:37 | 20390 | ./playlistdiscovery/sonic_recommendations.py
+2025-08-20 17:00 | 30830 | ./playlistdiscovery/advanced_sonic_recommendations.py
+2025-08-20 17:05 | 16533 | ./playlistdiscovery/working_sonic_engine.py
+2025-08-22 11:08 | 14109 | ./playlistdiscovery/fixed_sonic_engine.py
+2025-08-22 17:51 | 26234 | ./playlistdiscovery/tier_aware_sonic_engine.py
+2025-08-25 11:55 | 7691 | ./playlistdiscovery/sonic_debugger.py
+2025-08-25 13:04 | 54006 | ./playlistdiscovery/fixed_diverse_engine.py
+2025-08-25 13:21 | 3242 | ./playlistdiscovery/debug_similarity_test.py
+2025-08-26 05:25 | 768665 | ./crawler-progress.json
+2025-08-26 13:28 | 523 | ./playlistdiscovery/check_genres.py
+2025-08-26 14:00 | 70940 | ./playlistdiscovery/fixed_diverse_engine_ugh copy.py
+2025-08-26 14:29 | 67704 | ./playlistdiscovery/fixed_diverse_engine_ugh.py
+2025-08-26 15:07 | 68194 | ./playlistdiscovery/fixed_diverse_engine_ughbefore.py
+2025-08-26 15:16 | 68194 | ./playlistdiscovery/fixed_diverse_engine_enhanced.py
+2025-08-26 15:52 | 2494 | ./playlistdiscovery/quick_test_with_links.py
+2025-08-26 16:12 | 2225 | ./playlistdiscovery/query_playlists.py
+2025-08-26 16:16 | 2545 | ./playlistdiscovery/query_artists_playlists.py
+2025-08-26 16:21 | 1593 | ./playlistdiscovery/show_playlist_format.py
+2025-08-26 16:21 | 2131 | ./playlistdiscovery/quick_playlist_sample.py
+2025-08-26 16:21 | 2890 | ./playlistdiscovery/query_tracks_playlists.py
+2025-08-26 16:34 | 3975 | ./playlistdiscovery/simple_playlist_peek.py
+2025-08-26 16:59 | 2409 | ./playlistdiscovery/test_tier_logic.py
+2025-08-27 07:14 | 1553 | ./playlistdiscovery/add_tier_columns.sql
+2025-08-27 18:48 | 7185 | ./atomic-crm copy/src/root/CRM.tsx
+2025-08-27 19:56 | 5011 | ./atomic-crm copy/src/contacts/ContactListFilter.tsx
+2025-08-27 19:56 | 5011 | ./atomic-crm/src/contacts/ContactListFilter.tsx
+2025-08-28 12:06 | 16135 | ./atomic-crm copy/src/components/TrackComponents.tsx
+2025-08-28 12:06 | 16135 | ./atomic-crm/src/components/TrackComponents.tsx
+2025-08-28 18:24 | 6338 | ./notification_trigger.py
+2025-08-29 08:16 | 2336 | ./atomic-crm copy/src/hooks/useSonicRecommendations.ts
+2025-08-29 08:16 | 2336 | ./atomic-crm/src/hooks/useSonicRecommendations.ts
+2025-08-29 08:33 | 8068 | ./atomic-crm copy/src/types.ts
+2025-08-29 08:33 | 8068 | ./atomic-crm/src/types.ts
+2025-08-29 08:35 | 22500 | ./atomic-crm copy/src/components/SonicRecommendations.tsx
+2025-08-29 08:35 | 22500 | ./atomic-crm/src/components/SonicRecommendations.tsx
+2025-08-29 08:36 | 1669 | ./atomic-crm copy/database/selected_recommendations_table.sql
+2025-08-29 08:36 | 1669 | ./atomic-crm/database/selected_recommendations_table.sql
+2025-08-29 09:35 | 4761 | ./atomic-crm copy/src/hooks/useRecommendationSelections.ts
+2025-08-29 09:35 | 4761 | ./atomic-crm/src/hooks/useRecommendationSelections.ts
+2025-08-29 09:35 | 6338 | ./atomic-crm copy/src/useArtistEmailData.js
+2025-08-29 09:57 | 605 | ./atomic-crm copy/test_data.sql
+2025-08-29 09:57 | 605 | ./atomic-crm/test_data.sql
+2025-09-01 10:26 | 860 | ./create_supabase_function.sql
+2025-09-01 11:56 | 10027 | ./instagramAPI/instagram_scraper_final_v2_optimized.py
+2025-09-02 07:46 | 8457 | ./instagramAPI/scraper_remaining_automated.py
+2025-09-02 19:22 | 7855 | ./auto_trigger.py
+2025-09-02 19:30 | 10027 | ./playlistdiscovery/.claude/agents/music-data-query.md
+2025-09-02 20:53 | 2292 | ./playlistdiscovery/test_editorial_discovery.py
+2025-09-03 09:59 | 8254 | ./atomic-crm copy/.claude/agents/atomic-crm-email-specialist.md
+2025-09-03 10:01 | 6389 | ./atomic-crm copy/.claude/agents/crm-music-producer-optimizer.md
+2025-09-03 10:04 | 11823 | ./atomic-crm copy/.claude/agents/music-data-query.md
+2025-09-03 11:38 | 17956 | ./atomic-crm copy/amanda_hugankiss_data_backup.sql
+2025-09-03 11:38 | 17956 | ./atomic-crm/amanda_hugankiss_data_backup.sql
+2025-09-03 11:39 | 2724 | ./atomic-crm copy/add_test_data_flag.sql
+2025-09-03 11:39 | 2724 | ./atomic-crm/add_test_data_flag.sql
+2025-09-03 11:46 | 6156 | ./atomic-crm copy/add_test_data_flag.js
+2025-09-03 11:46 | 6156 | ./atomic-crm/add_test_data_flag.js
+2025-09-03 11:47 | 4987 | ./atomic-crm copy/MANUAL_STEPS_test_data_flag.md
+2025-09-03 11:47 | 4987 | ./atomic-crm/MANUAL_STEPS_test_data_flag.md
+2025-09-03 11:47 | 6414 | ./atomic-crm copy/restore_amanda_data.js
+2025-09-03 11:47 | 6414 | ./atomic-crm/restore_amanda_data.js
+2025-09-03 12:04 | 4314 | ./InstagramSeed/.claude/agents/chartmetric-api-coder.md
+2025-09-03 12:21 | 10754 | ./InstagramSeed/.claude/agents/music-data-query.md
+2025-09-03 13:14 | 2553 | ./atomic-crm copy/src/hooks/useEmailSender.js
+2025-09-03 13:39 | 205247 | ./atomic-crm copy/supabase/migrations/20250903173951_create_amanda_contact.sql.sql
+2025-09-03 13:39 | 205247 | ./atomic-crm/supabase/migrations/20250903173951_create_amanda_contact.sql.sql
+2025-09-03 13:39 | 719 | ./atomic-crm copy/create_amanda_contact.sql
+2025-09-03 13:39 | 719 | ./atomic-crm/create_amanda_contact.sql
+2025-09-03 14:25 | 9600 | ./atomic-crm copy/api/cron/send-followups.js
+2025-09-03 14:26 | 7323 | ./InstagramSeed/chartmetric_search_final.py
+2025-09-03 14:47 | 6681 | ./regression/quick_candidate_check.py
+2025-09-03 15:06 | 6318 | ./InstagramSeed/enhanced_music_filter.js
+2025-09-03 15:17 | 17531 | ./InstagramSeed/chartmetric_search_analysis.py
+2025-09-03 15:25 | 16833 | ./InstagramSeed/chartmetric_search_results_20250903_152548.json
+2025-09-03 15:27 | 14447 | ./InstagramSeed/chartmetric_search_test.py
+2025-09-03 15:27 | 16833 | ./InstagramSeed/chartmetric_search_results_20250903_152703.json
+2025-09-03 15:29 | 2436 | ./InstagramSeed/simple_search_test.py
+2025-09-03 15:29 | 69268 | ./InstagramSeed/chartmetric_search_results_20250903_152903.json
+2025-09-03 15:30 | 51531 | ./InstagramSeed/combined_search_analysis_20250903_153046.json
+2025-09-03 15:30 | 9076 | ./InstagramSeed/combined_search_analysis.py
+2025-09-03 15:31 | 4839 | ./InstagramSeed/chartmetric_search_conclusions.md
+2025-09-03 15:37 | 10475 | ./InstagramSeed/test_spotify_url_lookup.py
+2025-09-03 15:38 | 11327 | ./InstagramSeed/test_chartmetric_endpoints.py
+2025-09-03 15:39 | 8977 | ./InstagramSeed/debug_chartmetric_api.py
+2025-09-03 15:43 | 16417 | ./InstagramSeed/final_chartmetric_test.py
+2025-09-03 15:44 | 7329 | ./InstagramSeed/verbo_pluriel_test.py
+2025-09-03 15:45 | 8030 | ./InstagramSeed/chartmetric_spotify_url_test_results.py
+2025-09-03 15:55 | 6147 | ./InstagramSeed/test_detailed_url_search.py
+2025-09-03 15:55 | 6502 | ./InstagramSeed/test_url_search.py
+2025-09-03 15:57 | 5340 | ./InstagramSeed/spotify_url_search.py
+2025-09-03 16:07 | 67267 | ./artist-breakout-system/detailed_bulk_processor.py
+2025-09-03 16:30 | 458 | ./InstagramSeed/.claude/settings.local.json
+2025-09-04 07:39 | 7388 | ./sonicconverter/playlistdiscovery/parse_playlists.py
+2025-09-04 07:45 | 5993 | ./sonicconverter/playlistdiscovery/analyze_editorial_playlists.py
+2025-09-04 07:57 | 173499 | ./sonicconverter/playlistdiscovery/tracks_editorial_sample.json
+2025-09-04 07:57 | 7507 | ./sonicconverter/playlistdiscovery/comprehensive_analysis.py
+2025-09-04 08:47 | 5746 | ./sonicconverter/playlistdiscovery/analyze_playlists.py
+2025-09-04 09:08 | 5174 | ./sonicconverter/playlistdiscovery/analyze_editorial_genres.py
+2025-09-04 11:04 | 14401 | ./atomic-crm copy/n8n-email-workflows.json
+2025-09-04 11:04 | 14401 | ./atomic-crm/n8n-email-workflows.json
+2025-09-04 11:07 | 6118 | ./atomic-crm copy/n8n-initial-email-workflow.json
+2025-09-04 11:07 | 6118 | ./atomic-crm/n8n-initial-email-workflow.json
+2025-09-04 11:55 | 7582 | ./atomic-crm copy/n8n-followup-workflow.json
+2025-09-04 11:55 | 7582 | ./atomic-crm/n8n-followup-workflow.json
+2025-09-04 13:25 | 468 | ./atomic-crm copy/src/templates/alexanderReply.js
+2025-09-04 13:58 | 1247 | ./atomic-crm copy/api/webhook/trigger-n8n.js
+2025-09-04 13:58 | 1247 | ./atomic-crm/api/webhook/trigger-n8n.js
+2025-09-04 14:08 | 29935 | ./atomic-crm copy/src/contacts/ContactShow.tsx
+2025-09-04 14:08 | 29935 | ./atomic-crm/src/contacts/ContactShow.tsx
+2025-09-04 16:23 | 3651 | ./atomic-crm copy/src/templates/artistOutreach.js
+2025-09-04 16:24 | 2933 | ./atomic-crm copy/src/templates/followUpSequence.js
+2025-09-04 16:35 | 8492 | ./atomic-crm copy/src/contacts/ContactAside.tsx
+2025-09-04 16:35 | 8492 | ./atomic-crm/src/contacts/ContactAside.tsx
+2025-09-04 16:46 | 2900 | ./atomic-crm copy/src/hooks/useArtistEmailData.js
+2025-09-04 16:47 | 117602 | ./atomic-crm copy/dist/assets/DealList-BPrDMkN0.js
+2025-09-04 16:47 | 2211920 | ./atomic-crm copy/dist/assets/index-C1xT9Qbo.js
+2025-09-04 16:47 | 30 | ./atomic-crm copy/dist/logos/Readme.md
+2025-09-04 16:47 | 502 | ./atomic-crm copy/dist/assets/browser-zDpAQoHp.js
+2025-09-04 16:47 | 547 | ./atomic-crm copy/dist/manifest.json
+2025-09-04 16:51 | 1579 | ./atomic-crm copy/supabase/migrations/20250904000000_auto_populate_contacts_email_jsonb.sql
+2025-09-04 16:51 | 1579 | ./atomic-crm/supabase/migrations/20250904000000_auto_populate_contacts_email_jsonb.sql
+2025-09-04 19:58 | 105242 | ./playlistdiscovery/fixed_diverse_engine_enhanced_final.py
+2025-09-04 20:16 | 233167 | ./atomic-crm copy/contacts_data.json
+2025-09-04 20:16 | 233167 | ./atomic-crm/contacts_data.json
+2025-09-04 20:19 | 158234 | ./atomic-crm copy/all_contacts.json
+2025-09-04 20:19 | 158234 | ./atomic-crm/all_contacts.json
+2025-09-04 20:19 | 2043 | ./atomic-crm copy/fetch_all_contacts.js
+2025-09-04 20:19 | 2043 | ./atomic-crm/fetch_all_contacts.js
+2025-09-04 20:19 | 23761387 | ./atomic-crm copy/complete_contacts.json
+2025-09-04 20:19 | 23761387 | ./atomic-crm/complete_contacts.json
+2025-09-04 20:20 | 7680 | ./atomic-crm copy/analyze_duplicates.js
+2025-09-04 20:20 | 7680 | ./atomic-crm/analyze_duplicates.js
+2025-09-04 20:22 | 7378 | ./atomic-crm copy/analyze_critical_duplicates.js
+2025-09-04 20:22 | 7378 | ./atomic-crm/analyze_critical_duplicates.js
+2025-09-04 20:23 | 4219 | ./atomic-crm copy/duplicate_analysis_summary.md
+2025-09-04 20:23 | 4219 | ./atomic-crm/duplicate_analysis_summary.md
+2025-09-04 21:28 | 107771 | ./artist-breakout-system/fixed_gems_pipeline_v2.py
+2025-09-05 08:18 | 5645 | ./playlistdiscovery/supabase_schema.sql
+2025-09-05 08:19 | 11886 | ./playlistdiscovery/supabase_inserter.py
+2025-09-05 08:21 | 6981 | ./playlistdiscovery/test_api_connection.py
+2025-09-05 08:22 | 2 | ./playlistdiscovery/demo_editorial_data_20250905_082232.json
+2025-09-05 08:22 | 4908 | ./playlistdiscovery/demo_extraction.py
+2025-09-05 08:24 | 2 | ./playlistdiscovery/demo_editorial_data_20250905_082458.json
+2025-09-05 08:25 | 2 | ./playlistdiscovery/demo_editorial_data_20250905_082515.json
+2025-09-05 08:35 | 5137 | ./playlistdiscovery/EXTRACTION_SUMMARY.md
+2025-09-05 08:42 | 27156 | ./playlistdiscovery/editorial_playlist_extractor.py
+2025-09-05 08:44 | 7933 | ./playlistdiscovery/quick_playlist_test.py
+2025-09-05 08:45 | 103011 | ./playlistdiscovery/playlist_discovery_test.json
+2025-09-05 08:55 | 27810 | ./InstagramSeed/crawler.js
+2025-09-05 09:00 | 24718 | ./playlistdiscovery/optimized_editorial_extractor.py
+2025-09-05 09:07 | 713 | ./playlistdiscovery/quick_isrc_test_results_20250905_090731.json
+2025-09-05 09:07 | 7253 | ./playlistdiscovery/quick_isrc_test.py
+2025-09-05 09:08 | 3241 | ./playlistdiscovery/track_structure_investigation_20250905_090823.json
+2025-09-05 09:08 | 5403 | ./playlistdiscovery/investigate_track_structure.py
+2025-09-05 09:11 | 18821 | ./playlistdiscovery/final_efficient_extractor.py
+2025-09-05 09:11 | 389843 | ./playlistdiscovery/final_editorial_data_test_20250905_091113.json
+2025-09-05 09:12 | 1109 | ./playlistdiscovery/final_summary_test_20250905_091225.json
+2025-09-05 09:12 | 389843 | ./playlistdiscovery/final_editorial_data_test_20250905_091225.json
+2025-09-05 09:14 | 26722 | ./playlistdiscovery/production_editorial_extractor.py
+2025-09-05 09:15 | 5973 | ./playlistdiscovery/EXTRACTION_FIXES_SUMMARY.md
+2025-09-05 09:16 | 1109 | ./playlistdiscovery/final_summary_test_20250905_091628.json
+2025-09-05 09:16 | 389843 | ./playlistdiscovery/final_editorial_data_test_20250905_091628.json
+2025-09-05 09:34 | 2569 | ./playlistdiscovery/production_summary_20250905_093437.json
+2025-09-05 09:34 | 4308748 | ./playlistdiscovery/production_editorial_playlists_20250905_093437.json
+2025-09-05 10:21 | 43312 | ./playlistdiscovery/scaled_production_extractor.py
+2025-09-05 10:22 | 222209 | ./playlistdiscovery/scaled_editorial_chunk_000_20250905_102227.json
+2025-09-05 10:22 | 222209 | ./playlistdiscovery/scaled_editorial_final_20250905_102227.json
+2025-09-05 10:22 | 2271 | ./playlistdiscovery/scaled_extraction_summary_20250905_102227.json
+2025-09-05 10:22 | 388 | ./playlistdiscovery/extraction_progress_20250905_102211.json
+2025-09-05 10:23 | 6995 | ./playlistdiscovery/run_scaled_extraction.py
+2025-09-05 10:24 | 7719 | ./playlistdiscovery/SCALED_EXTRACTION_README.md
+2025-09-05 10:30 | 4279238 | ./playlistdiscovery/scaled_editorial_chunk_000_20250905_103059.json
+2025-09-05 10:36 | 392 | ./playlistdiscovery/extraction_progress_20250905_102513.json
+2025-09-05 10:36 | 4318664 | ./playlistdiscovery/scaled_editorial_chunk_001_20250905_103608.json
+2025-09-05 10:36 | 4610 | ./playlistdiscovery/scaled_extraction_summary_20250905_103608.json
+2025-09-05 10:36 | 8597900 | ./playlistdiscovery/scaled_editorial_final_20250905_103608.json
+2025-09-05 11:10 | 17541 | ./playlistdiscovery/deep_editorial_discovery.py
+2025-09-05 11:11 | 2437 | ./playlistdiscovery/editorial_discovery_analysis_20250905_111124.json
+2025-09-05 11:11 | 9765 | ./playlistdiscovery/analyze_existing_discovery.py
+2025-09-05 11:12 | 12382 | ./playlistdiscovery/editorial_playlist_reality_report.py
+2025-09-05 11:15 | 24442 | ./playlistdiscovery/editorial_discovery_investigation.py
+2025-09-05 11:19 | 13330 | ./playlistdiscovery/quick_editorial_investigation.py
+2025-09-05 11:19 | 4279801 | ./playlistdiscovery/scaled_editorial_chunk_000_20250905_111946.json
+2025-09-05 11:20 | 1313 | ./playlistdiscovery/quick_editorial_analysis_20250905_112051.json
+2025-09-05 11:22 | 16402 | ./playlistdiscovery/editorial_reality_check.py
+2025-09-05 11:22 | 1988 | ./playlistdiscovery/test_this_is_playlists.py
+2025-09-05 11:22 | 7637 | ./playlistdiscovery/editorial_playlist_reality_report_20250905_112219.json
+2025-09-05 11:25 | 4318971 | ./playlistdiscovery/scaled_editorial_chunk_001_20250905_112513.json
+2025-09-05 11:30 | 4339985 | ./playlistdiscovery/scaled_editorial_chunk_002_20250905_113024.json
+2025-09-05 11:35 | 4275402 | ./playlistdiscovery/scaled_editorial_chunk_003_20250905_113531.json
+2025-09-05 11:39 | 19610533 | ./playlistdiscovery/scaled_editorial_final_20250905_113901.json
+2025-09-05 11:39 | 2396382 | ./playlistdiscovery/scaled_editorial_chunk_004_20250905_113901.json
+2025-09-05 11:39 | 395 | ./playlistdiscovery/extraction_progress_20250905_110812.json
+2025-09-05 11:39 | 4657 | ./playlistdiscovery/scaled_extraction_summary_20250905_113902.json
+2025-09-05 13:11 | 2980 | ./playlistdiscovery/create_editorial_playlists_table.py
+2025-09-05 13:37 | 2501 | ./playlistdiscovery/apply_schema.py
+2025-09-05 13:37 | 5100 | ./playlistdiscovery/create_table_workaround.py
+2025-09-05 13:39 | 10075 | ./playlistdiscovery/playlist_gems_analyzer.py
+2025-09-05 13:42 | 158 | ./playlistdiscovery/playlist_sonic_profiles_20250905_134252.json
+2025-09-05 13:42 | 8130 | ./playlistdiscovery/simple_playlist_gems.py
+2025-09-05 13:57 | 245 | ./playlistdiscovery/editorial_playlist_sonic_profiles_20250905_135745.json
+2025-09-05 14:01 | 109625 | ./playlistdiscovery/editorial_playlist_sonic_profiles_20250905_140136.json
+2025-09-05 14:01 | 11473 | ./playlistdiscovery/playlist_gems_integration.py
+2025-09-05 14:02 | 14754 | ./playlistdiscovery/playlist_aware_sonic_engine.py
+2025-09-05 14:03 | 434 | ./playlistdiscovery/playlist_aware_recommendations_20250905_140322.json
+2025-09-05 14:31 | 237 | ./GEMS/.claude/settings.local.json
+2025-09-05 14:53 | 4274271 | ./playlistdiscovery/scaled_editorial_chunk_000_20250905_145336.json
+2025-09-05 14:58 | 4322129 | ./playlistdiscovery/scaled_editorial_chunk_001_20250905_145849.json
+2025-09-05 15:04 | 4337721 | ./playlistdiscovery/scaled_editorial_chunk_002_20250905_150401.json
+2025-09-05 15:09 | 4279460 | ./playlistdiscovery/scaled_editorial_chunk_003_20250905_150902.json
+2025-09-05 15:11 | 19606954 | ./playlistdiscovery/scaled_editorial_final_20250905_151149.json
+2025-09-05 15:11 | 2393381 | ./playlistdiscovery/scaled_editorial_chunk_004_20250905_151149.json
+2025-09-05 15:11 | 393 | ./playlistdiscovery/extraction_progress_20250905_144129.json
+2025-09-05 15:11 | 4653 | ./playlistdiscovery/scaled_extraction_summary_20250905_151149.json
+2025-09-06 09:11 | 71438 | ./regression/artist_ml_system 2.py
+2025-09-06 13:56 | 8625 | ./playlistdiscovery/create_editorial_playlist_schema.sql
+2025-09-06 14:00 | 8647 | ./playlistdiscovery/schema.sql
+2025-09-06 14:01 | 11953 | ./playlistdiscovery/execute_schema.py
+2025-09-06 18:46 | 11880 | ./playlistdiscovery/import_editorial_playlists.py
+2025-09-06 18:48 | 10144 | ./regression/email_investigation.py
+2025-09-06 18:50 | 6436330 | ./regression/all_artist_emails.json
+2025-09-06 18:50 | 6909 | ./regression/comprehensive_email_query.py
+2025-09-06 20:43 | 7326 | ./playlistdiscovery/playlist_tracks_gems_processor.py
+2025-09-07 07:58 | 6011 | ./playlistdiscovery/simple_bulk_processor_playlists 2.py
+2025-09-07 10:46 | 1452 | ./playlistdiscovery/test_genre_mapping.py
+2025-09-07 11:06 | 4484 | ./playlistdiscovery/genre_analysis_check.py
+2025-09-07 11:09 | 2078 | ./playlistdiscovery/query_tracks.py
+2025-09-07 11:09 | 5457 | ./playlistdiscovery/analyze_tracks.py
+2025-09-07 11:11 | 2365 | ./playlistdiscovery/test_spotify_api.py
+2025-09-07 11:32 | 4548 | ./playlistdiscovery/query_gems_playlist_comparison.py
+2025-09-07 12:31 | 23887 | ./artist-breakout-system/production_genre_mapping.py
+2025-09-07 12:32 | 38533 | ./GEMS/genre_mapping.json
+2025-09-07 12:32 | 38533 | ./artist-breakout-system/genre_mapping.json
+2025-09-07 12:57 | 1771 | ./playlistdiscovery/test_country_mapping.py
+2025-09-09 05:34 | 80801 | ./artist-breakout-system/complete_artist_ml_system_backup.py
+2025-09-09 05:48 | 6741 | ./regression/email_analysis.py
+2025-09-09 09:27 | 10607 | ./regression/conversion_queries.sql
+2025-09-09 09:28 | 12967 | ./regression/focused_conversion_analysis.py
+2025-09-09 09:41 | 11993 | ./regression/detailed_bottleneck_analysis.py
+2025-09-09 09:41 | 9746 | ./regression/full_scale_analysis.py
+2025-09-09 09:44 | 8261 | ./regression/efficient_bottleneck_summary.py
+2025-09-09 09:45 | 9562 | ./regression/validation_queries.py
+2025-09-09 09:46 | 6818 | ./regression/BOTTLENECK_ANALYSIS_SUMMARY.md
+2025-09-09 11:14 | 4319 | ./regression/.claude/agents/chartmetric-api-coder.md
+2025-09-09 11:23 | 84854 | ./regression/discovery_updated_backup.py
+2025-09-09 11:24 | 6510 | ./get_establishment_date.py
+2025-09-09 12:14 | 1572 | ./regression/add_template_columns.sql
+2025-09-09 12:37 | 4690 | ./regression/test_email_templates.py
+2025-09-09 17:09 | 21508 | ./regression/email_templates.py
+2025-09-09 17:34 | 10129 | ./regression/conversion_analysis_report.md
+2025-09-09 17:41 | 10895 | ./regression/conversion_rate_analysis.py
+2025-09-09 17:41 | 2308 | ./regression/conversion_rates.json
+2025-09-09 17:42 | 12352 | ./regression/conversion_rate_analysis_v2.py
+2025-09-09 17:42 | 2 | ./regression/conversion_rates_v2.json
+2025-09-09 17:44 | 13433 | ./regression/conversion_analysis_direct.py
+2025-09-09 17:45 | 4023 | ./regression/conversion_benchmarks_final.md
+2025-09-09 19:01 | 9858 | ./regression/conversion_rates_to_json.py
+2025-09-09 19:04 | 10041 | ./regression/conversion_rates_sample.py
+2025-09-09 19:04 | 5885 | ./regression/conversion_rates_by_genre_tier.json
+2025-09-09 19:25 | 18813 | ./regression/create_conversion_rates_mapped.py
+2025-09-09 19:29 | 25834 | ./regression/conversion_rates_final_mapped.json
+2025-09-09 19:40 | 5620 | ./regression/analyze_conversion_rates.py
+2025-09-09 19:42 | 8212 | ./regression/gems_conversion_analysis.py
+2025-09-09 19:43 | 9432 | ./regression/conversion_rate_summary.py
+2025-09-09 19:43 | 9979 | ./regression/full_gems_analysis.py
+2025-09-09 19:50 | 11385 | ./regression/conversion_analysis.py
+2025-09-09 20:00 | 52531 | ./regression/conversion_data.json
+2025-09-09 20:01 | 5339 | ./regression/conversion_detailed_analysis.py
+2025-09-09 20:01 | 6062 | ./regression/conversion_mode_analysis.py
+2025-09-09 20:02 | 4137 | ./regression/conversion_mode_summary.md
+2025-09-09 20:07 | 13109 | ./regression/generate_conversion_rates.py
+2025-09-09 20:08 | 16012 | ./regression/generate_conversion_rates_v2.py
+2025-09-09 20:08 | 31323 | ./regression/conversion_rates_mode_based.json
+2025-09-09 20:18 | 2279 | ./regression/genre_debug.py
+2025-09-09 20:20 | 31699 | ./regression/conversion_rates_final.json
+2025-09-09 20:20 | 8150 | ./regression/conversion_calculator.py
+2025-09-09 20:27 | 12952 | ./regression/full_conversion_rate_analysis.py
+2025-09-09 20:28 | 2996 | ./regression/test_api.py
+2025-09-09 20:29 | 13809 | ./regression/efficient_conversion_analysis.py
+2025-09-10 07:09 | 16754 | ./regression/efficient_conversion_rates.json
+2025-09-10 09:56 | 23064 | ./artist-breakout-system/ml_agent.py
+2025-09-10 10:12 | 3561 | ./atomic-crm copy/package.json
+2025-09-10 10:18 | 2 | ./artist-breakout-system/conversion_benchmarks_20250910_101830.json
+2025-09-10 10:19 | 2 | ./artist-breakout-system/conversion_benchmarks_20250910_101910.json
+2025-09-10 10:30 | 2 | ./artist-breakout-system/conversion_benchmarks_20250910_103049.json
+2025-09-10 11:04 | 1710 | ./atomic-crm copy/src/root/defaultConfiguration.ts
+2025-09-10 11:04 | 1710 | ./atomic-crm/src/root/defaultConfiguration.ts
+2025-09-10 11:14 | 613 | ./atomic-crm copy/.claude/settings.local.json
+2025-09-10 11:50 | 2 | ./artist-breakout-system/conversion_benchmarks_20250910_115022.json
+2025-09-10 16:07 | 307 | ./artist-breakout-system/.claude/settings.local.json
+2025-09-10 16:08 | 4552 | ./artist-breakout-system/check_schema.py
+2025-09-10 16:08 | 9162 | ./artist-breakout-system/db_analysis.py
+2025-09-10 16:10 | 13844 | ./artist-breakout-system/corrected_db_analysis.py
+2025-09-10 16:11 | 18048 | ./artist-breakout-system/final_db_analysis.py
+2025-09-10 16:12 | 5381 | ./artist-breakout-system/database_analysis_summary.md
+2025-09-10 16:18 | 10736 | ./artist-breakout-system/check_timestamp_formats.py
+2025-09-10 16:20 | 10651 | ./artist-breakout-system/check_timestamp_direct_sql.py
+2025-09-10 16:21 | 3194 | ./artist-breakout-system/timestamp_analysis_results.md
+2025-09-10 16:21 | 7343 | ./artist-breakout-system/test_timestamp_analysis.py
+2025-09-10 16:26 | 4341 | ./artist-breakout-system/.claude/agents/ml-breakout-predictor.md
+2025-09-10 16:26 | 4573 | ./artist-breakout-system/.claude/agents/sql-artist-breakout-predictor.md
+2025-09-10 16:26 | 4677 | ./artist-breakout-system/.claude/agents/master-orchestrator.md
+2025-09-10 16:27 | 3958 | ./artist-breakout-system/.claude/agents/master-pitch-generator.md
+2025-09-10 16:27 | 4234 | ./artist-breakout-system/.claude/agents/conversion-benchmark-analyzer.md
+2025-09-10 16:27 | 5000 | ./artist-breakout-system/.claude/agents/trajectory-matching-agent.md
+2025-09-10 16:31 | 14448 | ./artist-breakout-system/database_investigation.py
+2025-09-10 16:34 | 8610 | ./artist-breakout-system/quick_investigation.py
+2025-09-10 16:35 | 4367 | ./artist-breakout-system/table_structure_check.py
+2025-09-10 16:39 | 9699 | ./artist-breakout-system/corrected_investigation.py
+2025-09-10 16:42 | 4951 | ./artist-breakout-system/debug_data_structure.py
+2025-09-10 16:47 | 2608 | ./artist-breakout-system/debug_pitch_error.py
+2025-09-11 07:48 | 5863 | ./n8nEmailer/.claude/agents/gmail-reply-router.md
+2025-09-11 07:48 | 6136 | ./n8nEmailer/.claude/agents/system-orchestration-master.md
+2025-09-11 07:48 | 6838 | ./n8nEmailer/.claude/agents/n8n-workflow-architect.md
+2025-09-11 07:48 | 7025 | ./n8nEmailer/.claude/agents/supabase-validation-gate.md
+2025-09-11 07:48 | 7336 | ./n8nEmailer/.claude/agents/gmail-threading-orchestrator.md
+2025-09-11 07:49 | 6385 | ./n8nEmailer/.claude/agents/draft-to-auto-graduation.md
+2025-09-11 07:49 | 6690 | ./n8nEmailer/.claude/agents/sendgrid-pro-optimizer.md
+2025-09-11 07:49 | 6721 | ./n8nEmailer/.claude/agents/amanda-ai-template-architect.md
+2025-09-11 15:59 | 28858 | ./artist-breakout-system/trajectory_agent.py
+2025-09-11 20:09 | 4422 | ./artist-breakout-system/diagnostics.py
+2025-09-12 06:12 | 34232 | ./artist-breakout-system/pitch_agent.py
+2025-09-12 08:42 | 2 | ./artist-breakout-system/conversion_benchmarks_20250912_084235.json
+2025-09-12 08:45 | 2 | ./artist-breakout-system/conversion_benchmarks_20250912_084516.json
+2025-09-12 08:45 | 2 | ./artist-breakout-system/conversion_benchmarks_20250912_084550.json
+2025-09-12 09:44 | 2 | ./artist-breakout-system/conversion_benchmarks_20250912_094443.json
+2025-09-12 10:49 | 3487 | ./artist-breakout-system/conversion_benchmarks_20250912_104919.json
+2025-09-12 11:50 | 68626 | ./artist-breakout-system/orchestrator.py
+2025-09-12 13:10 | 4971 | ./artist-breakout-system/conversion_benchmarks_20250912_131035.json
+2025-09-12 13:20 | 19124 | ./artist-breakout-system/conversion_agent.py
+2025-09-12 13:45 | 3320 | ./artist-breakout-system/dump_unmapped_genres.py
+2025-09-12 16:25 | 2237 | ./artist-breakout-system/genres_unmapped_report.json
+2025-09-12 16:32 | 10283 | ./artist-breakout-system/conversion_benchmarks_20250912_163219.json
+2025-09-12 16:32 | 10283 | ./artist-breakout-system/latest_benchmarks.json
+2025-09-12 17:58 | 53826 | ./artist-breakout-system/data_agent.py
+2025-09-12 18:38 | 2219 | ./InstagramSeed/discover_progress.json
+2025-09-12 23:15 | 1249907 | ./InstagramSeed/crawler-progress.json
+2025-09-14 07:06 | 6412 | ./playlistdiscovery/.claude/agents/chartmetric-playlist-extractor.md
+2025-09-14 09:01 | 8926 | ./playlistdiscovery/simple_bulk_processor_playlists.py
+2025-09-15 14:56 | 1034 | ./playlistdiscovery/playlists_gems_analytics_simple.sql
+2025-09-15 15:11 | 7096 | ./playlistdiscovery/create_playlist_view.py
+2025-09-15 15:12 | 2176 | ./playlistdiscovery/simple_playlist_analytics.sql
+2025-09-15 15:14 | 2510 | ./playlistdiscovery/SIMPLE_playlists_gems_analytics.sql
+2025-09-15 15:14 | 9477 | ./playlistdiscovery/FINAL_playlists_gems_analytics.sql
+2025-09-15 15:37 | 5851 | ./playlistdiscovery/inspect_supabase.py
+2025-09-15 15:37 | 881 | ./playlistdiscovery/supabase_inspection_report.json
+2025-09-15 15:50 | 6478 | ./playlistdiscovery/denormalize_gems_into_playlist_tracks.py
+2025-09-15 16:25 | 4854 | ./playlistdiscovery/backfill_playlist_tracks_from_gems.py
+2025-09-16 09:32 | 6919 | ./playlistdiscovery/playlists_gems_analytics_view.sql
+2025-09-16 09:48 | 7344 | ./playlistdiscovery/inspect_supabase_client.py
+2025-09-16 13:59 | 18744 | ./playlistdiscovery/editorial_fit_writer.py
+2025-09-16 14:36 | 1618 | ./playlistdiscovery/editorial_playlist_track_features.sql
+2025-09-16 14:39 | 4750 | ./playlistdiscovery/playlists_gems_emotions_full.sql
+2025-09-16 19:57 | 23745 | ./playlistdiscovery/editorial_fit_tracklevel.py
+2025-09-22 11:17 | 88743 | ./discovery_updated 2.py
+2025-09-22 12:01 | 32242 | ./InstagramSeed/discover_crawled_artists.py
+2025-09-25 12:13 | 716 | ./googleads/get_refresh_token.py
+2025-09-25 12:18 | 1351 | ./googleads/generate_refresh_token.py
+2025-09-25 12:27 | 6181 | ./googleads/sync_customer_match.py
+2025-09-25 13:03 | 9743 | ./googleads/create_website_traffic_campaign.py
+2025-09-29 11:02 | 6431 | ./googleads/sync_customer_match_supabase.py
+2025-09-29 17:47 | 2553 | ./atomic-crm/src/hooks/useEmailSender.js
+2025-09-29 19:35 | 80801 | ./regression/complete_artist_ml_system_backup_ORIGINAL.py
+2025-09-29 19:40 | 0 | ./atomic-crm/CLAUDE.local.md
+2025-09-30 09:44 | 52115 | ./regression/conversion_benchmarks.json
+2025-09-30 11:53 | 4235 | ./regression/demo_individual_analysis.py
+2025-09-30 11:55 | 3521 | ./regression/test_individual_analysis.py
+2025-09-30 12:17 | 10450 | ./regression/high_converting_pop_artists.json
+2025-09-30 12:17 | 7823 | ./regression/find_high_converting_pop_artists.py
+2025-09-30 12:37 | 6289 | ./sonicconverter-web/find_test_artists.js
+2025-09-30 12:37 | 6289 | ./sonicconverter/main/find_test_artists.js
+2025-09-30 13:01 | 8556 | ./regression/find_production_issues.js
+2025-09-30 13:02 | 10159 | ./regression/compare_production_quality.js
+2025-09-30 15:25 | 7087 | ./regression/process_similar_tracks.js
+2025-09-30 15:29 | 11311 | ./regression/find_similar_tracks.js
+2025-09-30 15:29 | 56 | ./regression/top3_isrcs.json
+2025-09-30 16:03 | 6805 | ./regression/analyze_email_gems_overlap.js
+2025-09-30 16:04 | 6474 | ./regression/debug_data_structure.js
+2025-09-30 16:05 | 9669 | ./regression/find_email_gems_overlap.js
+2025-10-01 09:59 | 31207 | ./regression/conversion_opportunity_analyzer.py
+2025-10-01 10:36 | 80819 | ./regression/complete_artist_ml_system_backup 2.py
+2025-10-01 11:05 | 22739 | ./regression/production_opportunity_engine.py
+2025-10-01 11:29 | 2408 | ./regression/test_sonic_matching.py
+2025-10-01 11:41 | 31818 | ./regression/sonic_conversion_matcher.py
+2025-10-01 12:36 | 15827 | ./sonicconverter-web/fast_sonic_matcher.py
+2025-10-01 12:36 | 15827 | ./sonicconverter/main/fast_sonic_matcher.py
+2025-10-01 12:46 | 8481 | ./sonicconverter-web/artist_scenarios_and_pitch.md
+2025-10-01 12:46 | 8481 | ./sonicconverter/main/artist_scenarios_and_pitch.md
+2025-10-01 12:56 | 12850 | ./sonicconverter-web/weighted_sonic_matcher.py
+2025-10-01 12:56 | 12850 | ./sonicconverter/main/weighted_sonic_matcher.py
+2025-10-01 14:05 | 1906 | ./sonicconverter-web/test_tessa_matcher.py
+2025-10-01 14:05 | 1906 | ./sonicconverter/main/test_tessa_matcher.py
+2025-10-01 14:21 | 15828 | ./sonicconverter-web/optimized_sonic_matcher.py
+2025-10-01 14:21 | 15828 | ./sonicconverter/main/optimized_sonic_matcher.py
+2025-10-01 14:25 | 1103 | ./sonicconverter-web/get_tessa_match_tracks.py
+2025-10-01 14:25 | 1103 | ./sonicconverter/main/get_tessa_match_tracks.py
+2025-10-01 14:27 | 1896 | ./sonicconverter-web/show_tessa_track_names.py
+2025-10-01 14:27 | 1896 | ./sonicconverter/main/show_tessa_track_names.py
+2025-10-01 14:32 | 1989 | ./sonicconverter-web/test_drumma_boy.py
+2025-10-01 14:32 | 1989 | ./sonicconverter/main/test_drumma_boy.py
+2025-10-01 14:33 | 2035 | ./sonicconverter-web/test_rock_artist.py
+2025-10-01 14:33 | 2035 | ./sonicconverter/main/test_rock_artist.py
+2025-10-01 14:43 | 18761 | ./sonicconverter-web/final_sonic_matcher_backup.py
+2025-10-01 14:43 | 18761 | ./sonicconverter/main/final_sonic_matcher_backup.py
+2025-10-01 15:02 | 1103 | ./regression/get_tessa_match_tracks.py
+2025-10-01 15:02 | 12850 | ./regression/weighted_sonic_matcher.py
+2025-10-01 15:02 | 15827 | ./regression/fast_sonic_matcher.py
+2025-10-01 15:02 | 15828 | ./regression/optimized_sonic_matcher.py
+2025-10-01 15:02 | 18761 | ./regression/final_sonic_matcher_backup.py
+2025-10-01 15:02 | 1896 | ./regression/show_tessa_track_names.py
+2025-10-01 15:02 | 1906 | ./regression/test_tessa_matcher.py
+2025-10-01 15:02 | 1989 | ./regression/test_drumma_boy.py
+2025-10-01 15:02 | 2035 | ./regression/test_rock_artist.py
+2025-10-01 15:02 | 8481 | ./regression/artist_scenarios_and_pitch.md
+2025-10-01 16:16 | 6300 | ./sonicconverter-web/email_coverage_analysis.py
+2025-10-01 16:16 | 6300 | ./sonicconverter/main/email_coverage_analysis.py
+2025-10-01 16:24 | 14109 | ./regression/.claude/agents/music-data-query.md
+2025-10-01 18:27 | 21264 | ./regression/complete_outreach_engine.py
+2025-10-01 19:01 | 18464 | ./sonicconverter-web/final_sonic_matcher_baccard.py
+2025-10-01 19:01 | 18464 | ./sonicconverter/main/final_sonic_matcher_baccard.py
+2025-10-01 19:04 | 14288 | ./sonicconverter-web/complete_outreach_engine.py
+2025-10-01 19:04 | 14288 | ./sonicconverter/main/complete_outreach_engine.py
+2025-10-02 09:11 | 14908 | ./sonicconverter-web/emotion_feature_mapper.py
+2025-10-02 09:11 | 14908 | ./sonicconverter-web/sonicemotionconversion/emotion_feature_mapper.py
+2025-10-02 09:11 | 14908 | ./sonicconverter/main/emotion_feature_mapper.py
+2025-10-02 09:11 | 14908 | ./sonicconverter/main/sonicemotionconversion/emotion_feature_mapper.py
+2025-10-02 10:42 | 12763 | ./sonicconverter-web/granular_production_analyzer.py
+2025-10-02 10:42 | 12763 | ./sonicconverter-web/sonicemotionconversion/granular_production_analyzer.py
+2025-10-02 10:42 | 12763 | ./sonicconverter/main/granular_production_analyzer.py
+2025-10-02 10:42 | 12763 | ./sonicconverter/main/sonicemotionconversion/granular_production_analyzer.py
+2025-10-02 13:37 | 79507 | ./regression/complete_artist_ml_system_backup.py
+2025-10-02 14:47 | 14798 | ./sonicconverter-web/sonicemotionconversion/production_outreach_engine.py
+2025-10-02 14:47 | 14798 | ./sonicconverter/main/sonicemotionconversion/production_outreach_engine.py
+2025-10-02 15:54 | 24456 | ./sonicconverter-web/sonicemotionconversion/consensus_production_analyzer.py
+2025-10-02 15:54 | 24456 | ./sonicconverter/main/sonicemotionconversion/consensus_production_analyzer.py
+2025-10-02 19:18 | 11883 | ./sonicconverter-web/sonicemotionconversion/emotion_conversion_analyzer.py
+2025-10-02 19:18 | 11883 | ./sonicconverter/main/sonicemotionconversion/emotion_conversion_analyzer.py
+2025-10-03 14:58 | 19340 | ./regression/final_sonic_matcher.py
+2025-10-03 19:37 | 2 | ./sonicconverter/main/cache/emotion_cache.json
+2025-10-03 21:38 | 23010 | ./sonicconverter-web/final_sonic_matcher_snapshot.py
+2025-10-03 21:38 | 23010 | ./sonicconverter/main/final_sonic_matcher_snapshot.py
+2025-10-04 11:15 | 30848 | ./sonicconverter-web/final_sonic_matcher_cached.py
+2025-10-04 11:15 | 30848 | ./sonicconverter/main/final_sonic_matcher_cached.py
+2025-10-06 13:05 | 35295 | ./sonicconverter-web/final_sonic_matcher_current.py
+2025-10-06 13:05 | 35295 | ./sonicconverter-web/sonicemotionconversion/final_sonic_matcher.py
+2025-10-06 13:05 | 35295 | ./sonicconverter/main/final_sonic_matcher_current.py
+2025-10-06 13:05 | 35295 | ./sonicconverter/main/sonicemotionconversion/final_sonic_matcher.py
+2025-10-06 13:32 | 2921 | ./sonicconverter-web/AGENTS.md
+2025-10-06 13:32 | 2921 | ./sonicconverter/main/AGENTS.md
+2025-10-06 18:54 | 38835 | ./sonicconverter-web/final_sonic_matcher_experiment.py
+2025-10-06 18:54 | 38835 | ./sonicconverter/main/final_sonic_matcher_experiment.py
+2025-10-07 13:28 | 57046 | ./sonicconverter-web/final_sonic_matcher 2.py
+2025-10-07 13:28 | 57046 | ./sonicconverter/main/final_sonic_matcher 2.py
+2025-10-07 13:29 | 4602 | ./sonicconverter-web/SPEED_OPTIMIZATION_GUIDE.md
+2025-10-07 13:29 | 4602 | ./sonicconverter/main/SPEED_OPTIMIZATION_GUIDE.md
+2025-10-07 13:51 | 2963 | ./sonicconverter-web/FINAL_SUMMARY.md
+2025-10-07 13:51 | 2963 | ./sonicconverter/main/FINAL_SUMMARY.md
+2025-10-07 14:37 | 16652 | ./sonicconverter-web/parameter_optimizer.py
+2025-10-07 14:37 | 16652 | ./sonicconverter/main/parameter_optimizer.py
+2025-10-07 14:52 | 5785 | ./sonicconverter-web/build_test_matrix.py
+2025-10-07 14:52 | 5785 | ./sonicconverter/main/build_test_matrix.py
+2025-10-07 15:14 | 39318 | ./sonicconverter-web/test_matrix.json
+2025-10-07 15:14 | 39318 | ./sonicconverter/main/test_matrix.json
+2025-10-07 15:44 | 6073 | ./sonicconverter-web/test_all_combos.py
+2025-10-07 15:44 | 6073 | ./sonicconverter/main/test_all_combos.py
+2025-10-07 15:44 | 6413 | ./sonicconverter-web/tune_combo.py
+2025-10-07 15:44 | 6413 | ./sonicconverter/main/tune_combo.py
+2025-10-07 16:00 | 37433 | ./sonicconverter-web/test_results.json
+2025-10-07 16:00 | 37433 | ./sonicconverter/main/test_results.json
+2025-10-09 11:44 | 5270 | ./sonicconverter-web/formation_date_parser.py
+2025-10-09 11:44 | 5270 | ./sonicconverter/main/formation_date_parser.py
+2025-10-10 11:59 | 70586 | ./sonicconverter-web/final_sonic_matcher.py
+2025-10-10 11:59 | 70586 | ./sonicconverter/main/final_sonic_matcher.py
+2025-10-13 09:53 | 289 | ./sonicconverter/main/.claude/settings.local.json
+2025-10-13 11:46 | 3108 | ./regression/explore_schema.py
+2025-10-13 12:11 | 2853 | ./query_artist_emails.py
+2025-10-13 12:13 | 3003 | ./count_artists_no_email_anywhere.py
+2025-10-13 12:14 | 3998 | ./count_no_email_proper.py
+2025-10-13 12:18 | 1152 | ./query_no_email_with_website.sql
+2025-10-13 12:20 | 1106 | ./export_artists_for_website_scraping.sql
+2025-10-13 12:33 | 1838 | ./websiteAPI/README.md
+2025-10-13 12:33 | 840 | ./websiteAPI/create_table.sql
+2025-10-13 12:37 | 11209 | ./websiteAPI/website_scraper.py
+2025-10-13 14:12 | 7639 | ./websiteAPI/website_scraper_fast.py
+2025-10-14 07:40 | 7364 | ./websiteAPI/sync_emails_to_crm.py
+2025-10-14 08:03 | 549 | ./atomic-crm/supabase/migrations/20251014000000_add_email_alternatives.sql
+2025-10-14 08:05 | 1000 | ./websiteAPI/apply_migration.py
+2025-10-14 08:07 | 1701 | ./websiteAPI/add_email_alternatives_column.py
+2025-10-14 08:08 | 5990 | ./websiteAPI/sync_emails_primary_only.py
+2025-10-14 08:15 | 2896 | ./websiteAPI/check_bella_heidi.py
+2025-10-14 08:16 | 2811 | ./websiteAPI/sync_artists_to_contacts.py
+2025-10-14 08:16 | 699 | ./websiteAPI/check_contacts_schema.py
+2025-10-14 08:17 | 3467 | ./websiteAPI/sync_artist_emails_to_contacts_jsonb.py
+2025-10-14 08:19 | 2163 | ./websiteAPI/check_why_missing.py
+2025-10-14 08:20 | 2087 | ./websiteAPI/sync_all_now.py
+2025-10-14 08:55 | 1039 | ./atomic-crm/supabase/migrations/20251014000001_auto_sync_artist_email_to_contacts.sql
+2025-10-14 08:55 | 1259 | ./websiteAPI/apply_trigger.py
+2025-10-14 09:36 | 32877 | ./GEMS/streamlined_bulk_processor 2.py
+2025-10-14 15:46 | 25301 | ./atomic-crm/AUTOMATION_PLAN.md
+2025-10-15 19:58 | 11407 | ./playlistdiscovery/import_playlists_and_curators.py
+2025-10-15 19:59 | 583 | ./playlistdiscovery/fix_import_order.py
+2025-10-15 20:09 | 829 | ./playlistdiscovery/add_playlist_columns.sql
+2025-10-15 20:10 | 11806 | ./playlistdiscovery/import_playlists_and_curators_fixed.py
+2025-10-15 20:27 | 9159 | ./playlistdiscovery/import_curators_simple.py
+2025-10-16 11:06 | 4394 | ./sonicconverter-web/compare_artist_cohorts.py
+2025-10-16 11:06 | 4394 | ./sonicconverter/main/compare_artist_cohorts.py
+2025-10-16 11:06 | 83106 | ./sonicconverter-web/cohort_comparison_results.json
+2025-10-16 11:06 | 83106 | ./sonicconverter/main/cohort_comparison_results.json
+2025-10-16 11:09 | 1972 | ./sonicconverter-web/print_all_consensus.py
+2025-10-16 11:09 | 1972 | ./sonicconverter/main/print_all_consensus.py
+2025-10-16 12:03 | 2022 | ./sonicconverter/supabase/migrations/20250211103000_create_production_outreach_reports.sql
+2025-10-16 15:48 | 6405140 | ./playlistdiscovery/curators_enriched.json
+2025-10-16 16:17 | 309683 | ./playlistdiscovery/curator_upsert_progress.json
+2025-10-16 16:30 | 2322 | ./atomic-crm/vite.config.ts
+2025-10-16 16:40 | 3831 | ./atomic-crm copy/src/templates/amandaAnalysis.js
+2025-10-16 17:43 | 2106 | ./playlistdiscovery/add_columns.py
+2025-10-16 17:43 | 732 | ./playlistdiscovery/add_mood_activity_columns.sql
+2025-10-16 17:46 | 960 | ./playlistdiscovery/add_all_csv_columns.sql
+2025-10-16 17:47 | 6713 | ./playlistdiscovery/import_playlists.py
+2025-10-16 18:00 | 7943 | ./playlistdiscovery/import_latest.py
+2025-10-16 18:11 | 10452 | ./playlistdiscovery/import_oct16_only.py
+2025-10-16 18:17 | 10851 | ./playlistdiscovery/import_both_files.py
+2025-10-16 18:17 | 9960 | ./playlistdiscovery/temp_import_1.py
+2025-10-17 08:29 | 1820 | ./playlistdiscovery/create_curators_table.sql
+2025-10-17 13:25 | 2684 | ./regression/add_regression_columns.sql
+2025-10-19 10:19 | 23572 | ./GEMS/production_genre_mapping.py
+2025-10-19 10:52 | 71967 | ./GEMS/detailed_bulk_processor.py
+2025-10-19 10:54 | 11721 | ./GEMS/simple_bulk_processor.py
+2025-10-20 08:42 | 6732 | ./atomic-crm/src/useArtistEmailData.js
+2025-10-20 09:23 | 4431 | ./atomic-crm/src/hooks/useArtistEmailData.js
+2025-10-20 17:24 | 861 | ./atomic-crm/scripts/check-schema.js
+2025-10-21 05:40 | 1278 | ./atomic-crm/supabase/migrations/20251020000000_add_sequence_tracking.sql
+2025-10-21 05:47 | 1184 | ./atomic-crm/scripts/check-prospect.js
+2025-10-21 06:27 | 941 | ./atomic-crm/scripts/reset-prospect.js
+2025-10-21 12:07 | 1489 | ./atomic-crm/scripts/check-lydia.js
+2025-10-21 12:10 | 1238 | ./atomic-crm/scripts/check-alnev-urls.js
+2025-10-21 12:10 | 1717 | ./atomic-crm/scripts/check-sent-prospects.js
+2025-10-21 12:11 | 1325 | ./atomic-crm/scripts/find-instagram-urls.js
+2025-10-21 12:13 | 6645 | ./atomic-crm/scripts/preview-emails.js
+2025-10-25 10:15 | 4426 | ./atomic-crm/src/templates/amandaAnalysis.js
+2025-10-25 10:15 | 799 | ./atomic-crm/src/templates/alexanderReply.js
+2025-10-28 19:40 | 3197 | ./atomic-crm/scripts/get-gmail-refresh-token.js
+2025-10-30 09:24 | 1187 | ./atomic-crm/supabase/migrations/20251021000000_create_email_events.sql
+2025-11-03 09:22 | 73357 | ./regression/artist_ml_system.py
+2025-11-06 09:05 | 1818 | ./GEMS/emotion_combo_labels.json
+2025-11-06 09:21 | 4753 | ./GEMS/build_emotion_labels.py
+2025-11-06 10:56 | 2300 | ./atomic-crm/src/templates/artistOutreach.backup.js
+2025-11-06 11:29 | 5828 | ./atomic-crm/src/templates/followUpSequence.backup.js
+2025-11-07 05:59 | 39927 | ./sonicconverter-web/consensus_production_analyzer.py
+2025-11-07 05:59 | 39927 | ./sonicconverter/main/consensus_production_analyzer.py
+2025-11-07 08:15 | 3008 | ./atomic-crm/scripts/preview-next-outreach.js
+2025-11-07 08:58 | 2183 | ./atomic-crm/scripts/clear-unsent-reports.js
+2025-11-07 09:00 | 2231 | ./atomic-crm/scripts/check-prospect-stats.js
+2025-11-10 11:04 | 71302 | ./sonicconverter-web/dialed_in_sonic_matcher.py
+2025-11-11 08:48 | 2003 | ./atomic-crm/supabase/migrations/20251106000000_email_deliverability_metrics.sql
+2025-11-12 07:52 | 1402 | ./atomic-crm/scripts/remove-julio.js
+2025-11-13 15:44 | 7930 | ./atomic-crm/scripts/README.md
+2025-11-13 16:02 | 3528 | ./atomic-crm/scripts/debug-gmail.js
+2025-11-13 16:04 | 2263 | ./atomic-crm/scripts/debug-gmail-today.js
+2025-11-13 16:08 | 2901 | ./atomic-crm/scripts/find-joel.js
+2025-11-13 16:09 | 1224 | ./atomic-crm/scripts/find-joel-db.js
+2025-11-13 16:09 | 1818 | ./atomic-crm/scripts/find-dynamite.js
+2025-11-13 16:10 | 3068 | ./atomic-crm/scripts/find-dynamite-email.js
+2025-11-13 16:11 | 2025 | ./atomic-crm/scripts/check-forwarded.js
+2025-11-13 16:11 | 2510 | ./atomic-crm/scripts/find-all-recent.js
+2025-11-13 16:14 | 649 | ./atomic-crm/scripts/exchange-code.js
+2025-11-13 16:36 | 1988 | ./atomic-crm/scripts/check-deliverability.js
+2025-11-14 07:02 | 1202 | ./atomic-crm/scripts/check-replied-artists.js
+2025-11-14 07:36 | 1694 | ./atomic-crm/scripts/unpause-artist.js
+2025-11-14 07:40 | 2436 | ./atomic-crm/scripts/verify-replies.js
+2025-11-14 07:42 | 1961 | ./atomic-crm/scripts/unpause-bulk.js
+2025-11-14 07:45 | 2019 | ./atomic-crm/scripts/re-pause-artists.js
+2025-11-22 06:35 | 3066 | ./instagramAPI/debug_scraper.py
+2025-11-22 06:35 | 4155 | ./atomic-crm/scripts/check-failed-sequences.js
+2025-11-22 06:37 | 2339 | ./instagramAPI/test_pagination.py
+2025-11-22 06:37 | 2922 | ./atomic-crm/scripts/debug-track-query.js
+2025-11-22 07:45 | 1785 | ./instagramAPI/check_total.py
+2025-11-22 08:21 | 3390 | ./instagramAPI/trace_pagination.py
+2025-11-22 08:25 | 2205 | ./instagramAPI/find_row_offset.py
+2025-11-22 08:26 | 3119 | ./instagramAPI/check_duplicates.py
+2025-11-22 08:27 | 3172 | ./instagramAPI/test_range.py
+2025-11-22 08:29 | 2672 | ./instagramAPI/verify_fix.py
+2025-11-30 06:43 | 6117 | ./brand_catalog_fetch.py
+2025-11-30 13:37 | 44810 | ./sonicconverter-web/production_outreach_engine.py
+2025-11-30 13:37 | 44810 | ./sonicconverter/main/production_outreach_engine.py
+2025-11-30 13:38 | 40789 | ./sonicconverter-web/production_outreach_engine 2.py
+2025-11-30 13:38 | 40789 | ./sonicconverter/main/production_outreach_engine 2.py
+2025-12-02 12:57 | 1326 | ./atomic-crm/supabase/migrations/20251021000500_create_email_events_external_view.sql
+2025-12-02 13:43 | 22762 | ./atomic-crm/src/deliverability/DeliverabilityDashboard.tsx
+2025-12-02 16:36 | 138 | ./bad_tracks_fix_progress.json
+2025-12-04 12:08 | 6724 | ./sonicconverter-web/bulk_generate_outreach_reports.v2.py
+2025-12-04 12:08 | 6724 | ./sonicconverter/main/bulk_generate_outreach_reports.v2.py
+2025-12-05 10:56 | 7779 | ./JobsApi/fetch_audio_jobs.py
+2025-12-08 09:01 | 5069 | ./sonicconverter/main/production_genre_mapping.py
+2025-12-08 09:11 | 137111 | ./sonicconverter-web/last_analysis.json
+2025-12-08 09:11 | 137111 | ./sonicconverter/main/last_analysis.json
+2025-12-08 09:11 | 29295 | ./sonicconverter-web/analyze_spotify_track.py
+2025-12-08 09:11 | 29295 | ./sonicconverter/main/analyze_spotify_track.py
+2025-12-08 09:54 | 1751 | ./atomic-crm/scripts/preview-artist-outreach-v2.js
+2025-12-08 10:31 | 3631 | ./atomic-crm/scripts/pause-sequence.js
+2025-12-09 12:24 | 17259 | ./sonicconverter-web/emotion_conversion_analyzer.py
+2025-12-09 12:24 | 17259 | ./sonicconverter/main/emotion_conversion_analyzer.py
+2025-12-09 13:04 | 13823 | ./atomic-crm/src/templates/artistOutreach.js
+2025-12-11 08:27 | 74420 | ./discovery.py
+2025-12-11 08:27 | 99629 | ./discovery_updated.py
+2025-12-11 08:28 | 19958 | ./playlistdiscovery/track_centric_extractor.py
+2025-12-11 08:28 | 70306 | ./discoverycopy.py
+2025-12-11 08:28 | 75153 | ./discovery_updated (1).py
+2025-12-11 09:08 | 2876 | ./atomic-crm/api/webhook/email-reply.js
+2025-12-11 09:14 | 4171 | ./atomic-crm/scripts/mark-replied.js
+2025-12-16 08:33 | 3776 | ./atomic-crm/src/templates/artistOutreach.gapV2.js
+2025-12-16 08:33 | 3859 | ./atomic-crm/src/templates/artistOutreach.overV2.js
+2025-12-16 08:33 | 3870 | ./atomic-crm/src/templates/artistOutreach.nicheV2.js
+2025-12-16 12:31 | 3617 | ./atomic-crm/supabase/migrations/20251216000000_meta_ads_customer_list.sql
+2025-12-16 12:47 | 3076 | ./atomic-crm/scripts/export-meta-ads-list.js
+2025-12-21 11:37 | 3248 | ./atomic-crm/supabase/migrations/20251221000000_conversation_tracking.sql
+2025-12-21 11:39 | 2431 | ./atomic-crm/src/templates/checkinSequence.js
+2025-12-21 14:03 | 5054 | ./atomic-crm/scripts/backfill-threads.js
+2025-12-21 14:33 | 20291 | ./atomic-crm/src/conversations/ConversationDashboard.tsx
+2025-12-21 15:12 | 3439 | ./atomic-crm/scripts/conversation-breakdown.js
+2025-12-21 15:24 | 3159 | ./atomic-crm/scripts/find-hot-leads.js
+2025-12-28 21:17 | 2701 | ./query_nyc_events.py
+2025-12-28 21:21 | 4296 | ./query_us_events.py
+2025-12-28 21:26 | 6669 | ./query_events_comprehensive.py
+2025-12-28 21:29 | 4172 | ./query_unique_artists.py
+2025-12-29 06:46 | 4727 | ./query_artist_data_quality.py
+2025-12-29 06:49 | 7222 | ./query_email_coverage.py
+2025-12-29 09:08 | 6335 | ./query_fashion_ready_posts.py
+2025-12-29 09:09 | 3913 | ./find_overlap.py
+2025-12-29 09:09 | 4113 | ./check_instagram_posts_table.py
+2025-12-30 10:35 | 552 | ./regression/.claude/settings.local.json
+2026-01-01 17:12 | 5183 | ./ORCHESTRATOR_USAGE.md
+2026-01-01 17:34 | 32182 | ./scraper_orchestrator.py
+2026-01-02 07:49 | 2774 | ./RUN_ALL_SCRAPERS.md
+2026-01-02 07:49 | 2955 | ./run_all_scrapers.py
+2026-01-02 13:39 | 5873 | ./playlistdiscovery/backfill_curator_followers_from_playlists.py
+2026-01-02 14:03 | 2577 | ./test_playlist_endpoint.py
+2026-01-02 14:07 | 1215 | ./test_track_fetch.py
+2026-01-02 14:16 | 5035 | ./playlistdiscovery/TRACK_BACKFILL_README.md
+2026-01-02 14:17 | 5333 | ./test_all_playlist_endpoints.py
+2026-01-03 07:22 | 3618 | ./playlistdiscovery/test_track_fetch_complete.py
+2026-01-03 07:23 | 826 | ./playlistdiscovery/add_track_fetch_columns.sql
+2026-01-03 07:46 | 721 | ./playlistdiscovery/check_playlists.py
+2026-01-03 07:47 | 2702 | ./playlistdiscovery/backfill_cm_playlist_ids.py
+2026-01-03 12:14 | 2095 | ./playlistdiscovery/backfill_cm_ids_simple.py
+2026-01-03 13:02 | 41972 | ./playlistdiscovery/PLAYLIST_DISCOVERY_SYSTEM.md
+2026-01-05 08:31 | 3479 | ./apollo_upsert.py
+2026-01-05 08:39 | 6532 | ./create_apollo_table.sql
+2026-01-05 08:53 | 2913 | ./check_apollo_matches.py
+2026-01-05 08:54 | 5823 | ./check_apollo_matches_v2.py
+2026-01-05 09:00 | 5862 | ./analyze_email_overlap.py
+2026-01-05 09:09 | 6811 | ./apollo_domain_matches.py
+2026-01-05 11:43 | 15244 | ./playlistdiscovery/gems_emotion_detector.py
+2026-01-05 11:43 | 2172 | ./playlistdiscovery/create_gems_playlists_table.sql
+2026-01-05 11:44 | 5128 | ./playlistdiscovery/playlist_gems_processor.py
+2026-01-05 11:48 | 607 | ./playlistdiscovery/.claude/settings.local.json
+2026-01-05 11:57 | 5399 | ./playlistdiscovery/PLAYLIST_DISCOVERY_README.md
+2026-01-05 12:09 | 23572 | ./playlistdiscovery/production_genre_mapping.py
+2026-01-05 12:09 | 38533 | ./playlistdiscovery/genre_mapping.json
+2026-01-05 14:03 | 10143 | ./playlistdiscovery/fetch_contactable_curator_tracks.py
+2026-01-06 11:42 | 1991 | ./atomic-crm/CLAUDE.md
+2026-01-06 12:23 | 8741 | ./atomic-crm/scripts/sync-my-replies.js
+2026-01-06 13:56 | 5909 | ./atomic-crm/AI_CHECKIN_SYSTEM.md
+2026-01-06 19:12 | 65238 | ./playlistdiscovery/import_playlists_and_curators_incremental.py
+2026-01-06 21:53 | 31188 | ./playlistdiscovery/contactable_curator_discovery_progress.json
+2026-01-08 20:31 | 113147 | ./playlistdiscovery/playlist_gems_pipeline.py
+2026-01-09 05:58 | 3776 | ./atomic-crm/src/templates/artistOutreach.gapV3.js
+2026-01-09 05:59 | 3777 | ./atomic-crm/src/templates/artistOutreach.overV3.js
+2026-01-09 05:59 | 3778 | ./atomic-crm/src/templates/artistOutreach.nicheV3.js
+2026-01-11 11:29 | 110087 | ./GEMS/fixed_gems_pipeline_v3.py
+2026-01-11 11:38 | 5266 | ./atomic-crm/scripts/draft-checkins.js
+2026-01-14 08:33 | 3197 | ./atomic-crm/scripts/preview-ai-checkin.js
+2026-01-14 08:42 | 11541 | ./atomic-crm/src/templates/checkinAI.js
+2026-01-15 14:34 | 10623 | ./atomic-crm/api/cron/send-checkins.js
+2026-01-15 14:34 | 14773 | ./atomic-crm/api/cron/send-followups.js
+2026-01-15 14:34 | 2018 | ./atomic-crm/src/useEmailSender.js
+2026-01-15 14:34 | 3602 | ./atomic-crm/api/send-email.js
+2026-01-16 09:20 | 3567 | ./atomic-crm/src/templates/artistOutreach.gapV4.js
+2026-01-16 09:20 | 3568 | ./atomic-crm/src/templates/artistOutreach.overV4.js
+2026-01-16 09:20 | 3569 | ./atomic-crm/src/templates/artistOutreach.nicheV4.js
+2026-01-17 17:34 | 125834 | ./discovery_events_work_backup.py
+2026-01-17 17:36 | 1419 | ./add_recent_track_columns.sql
+2026-01-18 13:08 | 15686 | ./test_opener_generation.py
+2026-01-18 16:54 | 1296 | ./atomic-crm/src/templates/artistOutreach.gapV5.js
+2026-01-18 16:55 | 1297 | ./atomic-crm/src/templates/artistOutreach.overV5.js
+2026-01-18 16:55 | 1298 | ./atomic-crm/src/templates/artistOutreach.nicheV5.js
+2026-01-23 04:31 | 43544 | ./playlistdiscovery/playlist_streamlined_processor.py
+2026-01-24 15:54 | 2010 | ./atomic-crm/scripts/temp-check-replies.js
+2026-01-26 06:20 | 7016 | ./sonicconverter-web/bulk_generate_outreach_reports.py
+2026-01-26 06:20 | 7016 | ./sonicconverter/main/bulk_generate_outreach_reports.py
+2026-01-26 13:57 | 2768 | ./regression/check_duplicates.py
+2026-01-26 13:58 | 3302 | ./regression/cleanup_duplicates.py
+2026-01-26 15:57 | 684 | ./create_tracks_lyrics.sql
+2026-01-26 18:38 | 13846 | ./lyrics_enrichment_daemon.js
+2026-01-27 00:04 | 107 | ./lyrics_daemon_state.json
+2026-01-27 11:54 | 1911 | ./test_match.js
+2026-01-27 13:59 | 4260 | ./GENIUS_LYRICS_SYSTEM.md
+2026-01-27 14:39 | 509 | ./add_lyric_emotion_columns.sql
+2026-01-27 15:26 | 14623 | ./analyze_lyric_emotions.py
+2026-01-29 10:11 | 36676 | ./atomic-crm/scripts/send-sequence.js
+2026-01-29 10:25 | 7992 | ./atomic-crm/PROSPECT_AUDIT.md
+2026-01-29 14:12 | 2214 | ./atomic-crm/src/utils/emailFormatting.js
+2026-02-03 10:28 | 72852 | ./sonicconverter/main/dialed_in_sonic_matcher.py
+2026-02-03 12:04 | 28326 | ./sonicconverter/main/build_gems_universe_cache.py
+2026-02-03 18:53 | 1219 | ./sonicconverter-web/start.py
+2026-02-04 08:04 | 19195 | ./genius_lyrics_daemon.js
+2026-02-04 11:32 | 134953 | ./regression/ml_system_50to250k.py
+2026-02-04 20:08 | 96831 | ./regression/complete_artist_ml_system.py
+2026-02-04 20:12 | 133456 | ./regression/complete_artist_ml_system_main.py
+2026-02-06 05:49 | 8454 | ./atomic-crm/SESSION_SUMMARY.md
+2026-02-08 09:51 | 38684 | ./sonicconverter-web/genre_mapping.json
+2026-02-09 11:06 | 49 | ./qr-tracker/scan_count.json
+2026-02-09 11:06 | 968 | ./qr-tracker/scans.json
+2026-02-09 11:12 | 13931 | ./atomic-crm/src/sticker-scans/StickerScansDashboard.tsx
+2026-02-09 11:13 | 822 | ./create_sticker_scans_table.sql
+2026-02-09 11:20 | 169 | ./qr-tracker/package.json
+2026-02-09 20:10 | 9123 | ./qr-tracker/index.js
+2026-02-22 16:38 | 49446 | ./generate_openers_for_prospects.backup.py
+2026-02-25 19:34 | 117602 | ./atomic-crm/dist/assets/DealList-DD3c5gzN.js
+2026-02-25 19:34 | 2296941 | ./atomic-crm/dist/assets/index-KbdnTCVD.js
+2026-02-25 19:34 | 30 | ./atomic-crm/dist/logos/Readme.md
+2026-02-25 19:34 | 502 | ./atomic-crm/dist/assets/browser-DefOinTe.js
+2026-02-25 19:34 | 547 | ./atomic-crm/dist/manifest.json
+2026-02-26 08:08 | 13585 | ./sonicconverter-web/email_sender.py
+2026-02-26 09:24 | 1631 | ./atomic-crm/api/cm-tracks.js
+2026-02-26 09:38 | 250 | ./atomic-crm/vercel.json
+2026-02-26 10:00 | 1850 | ./atomic-crm/api/cm-stats.js
+2026-02-26 11:15 | 5807 | ./atomic-crm/api/cm-backfill.js
+2026-02-26 20:06 | 17597 | ./atomic-crm/src/deal-calculator/DealCalculatorPage.tsx
+2026-02-26 20:45 | 1087 | ./sonicconverter-web/migrations/001_analysis_jobs.sql
+2026-02-27 09:18 | 425 | ./sonicconverter-web/migrations/002_track_playlists_cache.sql
+2026-02-27 15:32 | 6624 | ./sonicconverter-web/job_manager.py
+2026-02-27 19:08 | 8974 | ./sonicconverter-web/curator_scraper.py
+2026-03-09 14:06 | 11860 | ./scripts/backfill_reference_artists.py
+2026-03-11 08:20 | 22353 | ./atomic-crm/src/templates/sharedSanitizers.js
+2026-03-13 08:18 | 1971 | ./fix_greetings.py
+2026-03-14 11:28 | 197 | ./production_genre_mapping.py
+2026-03-14 12:37 | 22929 | ./instagramAPI/scraper_remaining_fixed.py
+2026-03-14 12:42 | 11814 | ./websiteAPI/website_scraper_efficient.py
+2026-03-14 12:55 | 11375 | ./pm2/scrape-artist.py
+2026-03-14 13:36 | 599 | ./atomic-crm/src/pipeline/PipelineDashboard.tsx
+2026-03-14 13:36 | 8341 | ./atomic-crm/src/root/CRM.tsx
+2026-03-14 13:37 | 6993 | ./atomic-crm/src/layout/Header.tsx
+2026-03-15 07:32 | 15025 | ./pm2/backfill-failed.py
+2026-03-15 07:37 | 243 | ./pm2/production_genre_mapping.py
+2026-03-15 10:03 | 3485 | ./atomic-crm/scripts/dump-reply-threads.js
+2026-03-15 10:50 | 4017 | ./atomic-crm/package.json
+2026-03-15 10:50 | 741965 | ./atomic-crm/package-lock.json
+2026-03-15 11:00 | 14636 | ./atomic-crm/scripts/draft-replies.js
+2026-03-15 12:53 | 332 | ./pm2/package.json
+2026-03-15 12:53 | 34325 | ./pm2/package-lock.json
+2026-03-16 02:51 | 18994 | ./facebookAPI/facebook_scraper.py
+2026-03-16 02:52 | 11525 | ./facebookAPI/facebook_scraper_automated.py
+2026-03-19 13:22 | 66290 | ./sonicconverter-web/chartmetric_lookup.py
+2026-03-20 17:05 | 116060 | ./GEMS/fixed_gems_pipeline_v2.py
+2026-03-21 06:35 | 117514 | ./sonicconverter-web/SonicConverter_Investor_Deck.pptx
+2026-03-22 10:26 | 30321 | ./sonicconverter-web/track_matcher.py
+2026-03-23 15:26 | 10348 | ./atomic-crm/.claude/helpers/statusline.js
+2026-03-23 15:26 | 12815 | ./atomic-crm/.claude-flow/CAPABILITIES.md
+2026-03-23 15:26 | 1847 | ./atomic-crm/.claude/helpers/memory.js
+2026-03-23 15:26 | 187 | ./atomic-crm/.claude-flow/security/audit-status.json
+2026-03-23 15:26 | 2121 | ./atomic-crm/.claude/helpers/router.js
+2026-03-23 15:26 | 2829 | ./atomic-crm/.claude/commands/claude-flow-memory.md
+2026-03-23 15:26 | 289 | ./atomic-crm/.claude-flow/metrics/learning.json
+2026-03-23 15:26 | 2982 | ./atomic-crm/.claude/helpers/github-safe.js
+2026-03-23 15:26 | 3113 | ./atomic-crm/.claude/helpers/README.md
+2026-03-23 15:26 | 337 | ./atomic-crm/.claude-flow/metrics/swarm-activity.json
+2026-03-23 15:26 | 3626 | ./atomic-crm/.claude/commands/claude-flow-help.md
+2026-03-23 15:26 | 3719 | ./atomic-crm/.claude/helpers/session.js
+2026-03-23 15:26 | 496 | ./atomic-crm/.mcp.json
+2026-03-23 15:26 | 5277 | ./atomic-crm/.claude/commands/claude-flow-swarm.md
+2026-03-23 15:26 | 530 | ./atomic-crm/.claude-flow/metrics/v3-progress.json
+2026-03-23 15:26 | 7778 | ./atomic-crm/.claude/settings.json
+2026-03-24 12:16 | 32809 | ./sonicconverter-web/mac_worker.py
+2026-03-24 12:17 | 26333 | ./sonicconverter-web/audio_analyzer.py
+2026-03-24 16:02 | 24001 | ./playlistdiscovery/fetch_playlists_by_followers.py
+2026-03-24 17:27 | 13402 | ./sonicconverter-web/SonicConverter_Investor_Brief.docx
+2026-03-25 17:54 | 194 | ./sonicconverter-web/production_genre_mapping.py
+2026-03-25 18:01 | 51328 | ./GEMS/streamlined_bulk_processor_recent_track.py
+2026-03-25 18:29 | 96050 | ./atomic-crm/.claude-flow/data/auto-memory-store.json
+2026-03-25 19:04 | 327 | ./atomic-crm/supabase/migrations/20260325000000_instagram_follow_pending.sql
+2026-03-26 07:49 | 2318 | ./pm2/export-ig-cookies.js
+2026-03-26 13:12 | 53396 | ./GEMS/streamlined_bulk_processor.py
+2026-03-27 07:50 | 2795 | ./atomic-crm/src/templates/artistOutreach.overV6.js
+2026-03-27 08:56 | 2794 | ./atomic-crm/src/templates/artistOutreach.gapV6.js
+2026-03-27 08:56 | 2796 | ./atomic-crm/src/templates/artistOutreach.nicheV6.js
+2026-03-27 10:32 | 1806 | ./pixellab/.claude/settings.local.json
+2026-03-27 11:02 | 8650 | ./pm2/resource-switcher.py
+2026-03-30 06:34 | 76530 | ./sonicconverter-web/static/app.js
+2026-03-30 08:34 | 9494 | ./sonicconverter-web/export_artist_emails.py
+2026-03-30 09:10 | 366 | ./sonicconverter-web/playlist_fetch_progress.json
+2026-03-30 19:19 | 93698 | ./sonicconverter-web/generate_openers_for_prospects.py
+2026-03-31 09:18 | 3307 | ./atomic-crm/src/templates/artistOutreach.managerV6.js
+2026-04-01 05:49 | 3017 | ./atomic-crm/src/templates/followUpSequence.js
+2026-04-01 09:31 | 961 | ./atomic-crm/.claude/settings.local.json
+2026-04-02 15:04 | 101452 | ./generate_openers_for_prospects.py
+2026-04-05 06:31 | 29915 | ./sonicconverter-web/build_gems_universe_cache.py
+2026-04-05 18:52 | 0 | ./notebookLm/pipeline/__init__.py
+2026-04-05 18:54 | 4277 | ./notebookLm/pipeline/avatar_video.py
+2026-04-05 18:54 | 6495 | ./notebookLm/pipeline/post_production.py
+2026-04-05 19:10 | 6766 | ./notebookLm/pipeline/research.py
+2026-04-06 06:14 | 1111 | ./notebookLm/output/why-does-my-music-sound-bad-on-spotify/script.md
+2026-04-06 09:08 | 654 | ./pm2/discovery.config.json
+2026-04-06 09:49 | 150272 | ./discovery_events_work.py
+2026-04-06 20:30 | 10647 | ./notebookLm/pipeline/queries.py
+2026-04-06 20:31 | 279 | ./notebookLm/.claude/settings.local.json
+2026-04-06 21:08 | 4804 | ./notebookLm/output/batch_blog_report_20260406_210836.json
+2026-04-06 21:09 | 15245 | ./notebookLm/generate_content.py
+2026-04-07 07:40 | 2022 | ./notebookLm/output/batch_blog_report_20260407_074013.json
+2026-04-07 08:12 | 7003 | ./notebookLm/pipeline/blog.py
+2026-04-07 08:12 | 80771 | ./notebookLm/pipeline/consolidated_topics.py
+2026-04-07 08:55 | 456 | ./notebookLm/output/how-to-find-a-music-producer/blog_metadata.json
+2026-04-07 08:56 | 477 | ./notebookLm/output/how-to-find-a-mixing-and-mastering-engineer/blog_metadata.json
+2026-04-07 08:57 | 430 | ./notebookLm/output/music-producer-for-hire/blog_metadata.json
+2026-04-07 08:57 | 484 | ./notebookLm/output/best-online-mixing-and-mastering-services/blog_metadata.json
+2026-04-07 08:58 | 474 | ./notebookLm/output/recording-studio-brooklyn-nyc/blog_metadata.json
+2026-04-07 08:59 | 476 | ./notebookLm/output/how-much-does-mixing-and-mastering-cost/blog_metadata.json
+2026-04-07 08:59 | 481 | ./notebookLm/output/grammy-nominated-billboard-charting-producer/blog_metadata.json
+2026-04-07 09:00 | 481 | ./notebookLm/output/how-much-does-a-music-producer-cost/blog_metadata.json
+2026-04-07 09:01 | 450 | ./notebookLm/output/affordable-mixing-and-mastering/blog_metadata.json
+2026-04-07 09:01 | 475 | ./notebookLm/output/how-to-get-your-song-mixed-and-mastered/blog_metadata.json
+2026-04-07 09:02 | 470 | ./notebookLm/output/how-to-work-with-a-producer-remotely/blog_metadata.json
+2026-04-07 09:02 | 482 | ./notebookLm/output/should-you-mix-and-master-your-own-music/blog_metadata.json
+2026-04-07 09:03 | 473 | ./notebookLm/output/ai-mastering-vs-human-mastering/blog_metadata.json
+2026-04-07 09:04 | 461 | ./notebookLm/output/why-does-my-music-sound-bad/blog_metadata.json
+2026-04-07 09:04 | 466 | ./notebookLm/output/what-does-a-music-producer-actually-do/blog_metadata.json
+2026-04-07 09:05 | 464 | ./notebookLm/output/why-does-my-music-sound-bad-on-social-media/blog_metadata.json
+2026-04-07 09:06 | 457 | ./notebookLm/output/why-is-my-song-quiet-on-spotify/blog_metadata.json
+2026-04-07 09:06 | 473 | ./notebookLm/output/spotify-loudness-standards-for-musicians/blog_metadata.json
+2026-04-07 09:07 | 464 | ./notebookLm/output/is-my-mix-ready-for-mastering/blog_metadata.json
+2026-04-07 09:08 | 444 | ./notebookLm/output/how-to-release-music-independently/blog_metadata.json
+2026-04-07 09:08 | 465 | ./notebookLm/output/is-my-song-good-enough-to-release/blog_metadata.json
+2026-04-07 09:09 | 460 | ./notebookLm/output/how-to-get-on-spotify-playlists/blog_metadata.json
+2026-04-07 09:10 | 462 | ./notebookLm/output/what-is-dolby-atmos-music/blog_metadata.json
+2026-04-07 09:21 | 2343 | ./notebookLm/output/batch_blog_report_20260407_092124.json
+2026-04-07 09:28 | 6412 | ./notebookLm/output/ai-mastering-vs-human-mastering/blog.md
+2026-04-07 09:28 | 6435 | ./notebookLm/output/best-online-mixing-and-mastering-services/blog.md
+2026-04-07 09:28 | 6622 | ./notebookLm/output/how-to-get-your-song-mixed-and-mastered/blog.md
+2026-04-07 09:28 | 6668 | ./notebookLm/output/what-does-a-music-producer-actually-do/blog.md
+2026-04-07 09:28 | 6789 | ./notebookLm/output/grammy-nominated-billboard-charting-producer/blog.md
+2026-04-07 09:28 | 6790 | ./notebookLm/output/how-to-find-a-mixing-and-mastering-engineer/blog.md
+2026-04-07 09:28 | 6802 | ./notebookLm/output/why-does-my-music-sound-bad/blog.md
+2026-04-07 09:28 | 6968 | ./notebookLm/output/should-you-mix-and-master-your-own-music/blog.md
+2026-04-07 09:28 | 6971 | ./notebookLm/output/how-to-work-with-a-producer-remotely/blog.md
+2026-04-07 09:28 | 7138 | ./notebookLm/output/how-to-find-a-music-producer/blog.md
+2026-04-07 09:28 | 7149 | ./notebookLm/output/affordable-mixing-and-mastering/blog.md
+2026-04-07 09:28 | 7169 | ./notebookLm/output/how-much-does-a-music-producer-cost/blog.md
+2026-04-07 09:28 | 7171 | ./notebookLm/output/music-producer-for-hire/blog.md
+2026-04-07 09:28 | 7187 | ./notebookLm/output/why-does-my-music-sound-bad-on-social-media/blog.md
+2026-04-07 09:28 | 7273 | ./notebookLm/output/how-to-get-on-spotify-playlists/blog.md
+2026-04-07 09:28 | 7350 | ./notebookLm/output/spotify-loudness-standards-for-musicians/blog.md
+2026-04-07 09:28 | 7381 | ./notebookLm/output/how-to-release-music-independently/blog.md
+2026-04-07 09:28 | 7514 | ./notebookLm/output/what-is-dolby-atmos-music/blog.md
+2026-04-07 09:28 | 7768 | ./notebookLm/output/recording-studio-brooklyn-nyc/blog.md
+2026-04-07 09:28 | 7859 | ./notebookLm/output/how-much-does-mixing-and-mastering-cost/blog.md
+2026-04-07 09:28 | 8104 | ./notebookLm/output/why-is-my-song-quiet-on-spotify/blog.md
+2026-04-07 09:28 | 8174 | ./notebookLm/output/is-my-song-good-enough-to-release/blog.md
+2026-04-07 09:28 | 8244 | ./notebookLm/output/is-my-mix-ready-for-mastering/blog.md
+2026-04-07 15:11 | 24237 | ./atomic-crm/.claude-flow/data/intelligence-snapshot.json
+2026-04-08 10:56 | 10036 | ./pm2/instagram-follow-after-send.js
+2026-04-08 16:06 | 3621 | ./pm2/backfill-instagram-user-ids.js
+2026-04-08 20:09 | 226798 | ./GEMS/gems_checkpoint_recent.json
+2026-04-08 20:39 | 190 | ./targeted_sweep_checkpoint.json
+2026-04-09 07:43 | 19917 | ./pm2/dashboard.js
+2026-04-09 10:22 | 16873 | ./sonicconverter-web/SonicConverter_Investor_Brief_v2.docx
+2026-04-10 08:16 | 4685 | ./atomic-crm/scripts/validate-emails.js
+2026-04-10 08:24 | 70035 | ./atomic-crm/scripts/send-sequence.v2.js
+2026-04-10 10:36 | 221 | ./.mcp.json
+2026-04-10 13:18 | 167997 | ./atomic-crm/.claude-flow/data/ranked-context.json
+2026-04-10 13:18 | 368 | ./atomic-crm/.claude-flow/sessions/current.json
+2026-04-10 13:18 | 52555 | ./atomic-crm/.claude-flow/data/graph-state.json
+2026-04-12 08:32 | 65000 | ./atomic-crm/scripts/find-deal-ready.js
+2026-04-12 10:19 | 5848 | ./atomic-crm/scripts/sync-conversations.js
+2026-04-12 10:44 | 14137 | ./atomic-crm/scripts/sync-gmail-replies.js
+2026-04-12 11:35 | 513 | ./disco-notify/ecosystem.config.js
+2026-04-12 13:39 | 6508 | ./disco-notify/disco_pushover.py
+2026-04-12 19:58 | 24230 | ./pixellab/final_v3/MDF_Ancient_-_Sunday/metadata.json
+2026-04-12 20:11 | 29598 | ./pixellab/final_v3/MDF_Adult_-_Saturday/metadata.json
+2026-04-12 20:12 | 26464 | ./pixellab/final_v3/MDF_Teen_-_Friday/metadata.json
+2026-04-12 20:17 | 17233 | ./pixellab/final_v3/MDF_Baby_-_Thursday/metadata.json
+2026-04-12 20:17 | 6815 | ./pixellab/final_v3/MDF_Egg_-_Wednesday/metadata.json
+2026-04-13 06:30 | 10810 | ./pm2/pm2-ecosystem.config.js
+2026-04-13 06:31 | 347 | ./pm2/.claude/settings.local.json
+2026-04-13 13:03 | 21656 | ./pixellab/final_v4/MDF_Baby_-_Thursday/metadata.json
+2026-04-13 13:03 | 31622 | ./pixellab/final_v4/MDF_Teen_-_Friday/metadata.json
+2026-04-13 13:03 | 34236 | ./pixellab/final_v4/MDF_Adult_-_Saturday/metadata.json
+2026-04-13 13:38 | 13326 | ./pixellab/final_v4/MDF_Egg_-_Wednesday/metadata.json
+2026-04-13 13:43 | 28868 | ./pixellab/final_v4/MDF_Ancient_-_Sunday/metadata.json
+2026-04-15 12:26 | 173366 | ./sonicconverter-web/app.py
+2026-04-15 14:46 | 744 | ./sonicconverter-web/.claude/settings.local.json
+2026-04-15 18:54 | 114 | ./genius_daemon_state.json
+2026-04-15 18:58 | 12716 | ./sonicconverter-web/PreExisting_IP_Statement.docx
+2026-04-15 19:00 | 155 | ./discovery_checkpoint.json
+2026-04-15 19:00 | 38 | ./disco-notify/.disco_notify_state.json

@@ -1,0 +1,198 @@
+2026-04-15 12:27:43 -0400 | ee39684 | Skip unrealistic dynamic range recs (target < 15 dB)
+2026-03-30 07:56:55 -0400 | ab87411 | Fix false idle after deploys: track SSE subscribers + more API paths
+2026-03-30 06:39:26 -0400 | 767d4bc | Add Spotify Editorial Playlists card
+2026-03-29 10:10:50 -0400 | d80d124 | Add Hotjar tracking, stop enrichment when tab closes
+2026-03-26 07:30:22 -0400 | b095f9f | Logout kills active enrichment, resets activity, resumes pipelines
+2026-03-25 15:27:07 -0400 | c016187 | Fix live forecast math, cap crest factor recs, ensure low<=high
+2026-03-25 15:18:30 -0400 | 510e083 | Fix campaign forecast range ordering: ensure low <= high
+2026-03-25 15:00:47 -0400 | c6dc9de | Fix campaign streams math, clearer labels, save rate explanation
+2026-03-24 13:46:08 -0400 | 2d7df01 | Update CTAs: Book Consultation via cal.com, remove emoji
+2026-03-24 12:22:16 -0400 | c814594 | Fix zero danceability: BPM-based fallback when beat frames are sparse
+2026-03-24 12:02:14 -0400 | 5e80964 | Fix scan cap: only decrement on success, not on attempt
+2026-03-24 11:53:51 -0400 | 34c9322 | Default to Spotify URL tab on session restore too
+2026-03-24 11:52:35 -0400 | 1400565 | Queue system, scan cap UX, genre hint, stale job filter, logout resume
+2026-03-24 11:05:24 -0400 | 288155b | Add login/signup system with NDA clickwrap and scan caps
+2026-03-24 09:54:18 -0400 | 7dee139 | Green/red ROI numbers, playlist accordion, Spotify link fix
+2026-03-24 05:23:19 -0400 | 86901b5 | Fix Campaign Forecast grid: move followers + revenue above total row
+2026-03-24 05:04:59 -0400 | 5b8a045 | Remove cached GEMS and preview fallbacks — always use Mac worker
+2026-03-24 04:54:17 -0400 | 2791716 | Resource-switcher fix, collapsible playlists, live Campaign Forecast
+2026-03-24 04:45:22 -0400 | 026ab5d | Change "tracks" to "new releases" in Campaign Forecast Why This Matters
+2026-03-23 22:19:40 -0400 | 68f246a | Update Campaign Forecast: clearer labels, total streams line, simpler ROI
+2026-03-23 21:46:59 -0400 | 80313e7 | Fix mac worker reliability: auto-retry failed jobs, Loopback recovery, 150s timeout
+2026-03-23 09:33:58 -0400 | 3b64768 | Fix stale consensus comment (50% not 70%), clarify danceability label
+2026-03-22 10:27:10 -0400 | f07627b | Boost candidates sharing primary genre family by 5%
+2026-03-22 10:11:12 -0400 | e5be20d | Fix NameError: est_save renamed to save_low/save_high in print
+2026-03-22 10:04:44 -0400 | f940aea | Show estimated save rate as range based on conversion tiers
+2026-03-22 06:12:39 -0400 | fa93c85 | Add estimated save rate from follower conversion proxy
+2026-03-21 14:53:21 -0400 | b5e731f | Update forecast sources: verified citations with links
+2026-03-21 14:39:12 -0400 | dc85c15 | Campaign forecast: add algorithmic thesis, sources, and VC-ready breakdown
+2026-03-21 14:19:21 -0400 | d1b837c | Campaign forecast: add cost breakdown, ROI, and per-curator sonic match
+2026-03-21 13:06:09 -0400 | 997867d | Add Campaign Forecast card — predict streams from curator pitching
+2026-03-21 12:26:17 -0400 | c7f66f8 | Use core genres (primary + 3 secondaries) for family filtering
+2026-03-21 11:28:34 -0400 | 08e152c | Use primary genre only for family filtering — CM secondaries too noisy
+2026-03-21 10:57:58 -0400 | 3ec562b | Hard-filter matches with zero genre family overlap
+2026-03-20 17:15:16 -0400 | 0e44fe1 | Fix production rec math, add stereo/THD/true-peak features
+2026-03-20 16:51:26 -0400 | 390ea17 | Mac worker: pause GEMS/discovery in process_job + verify playback before each sample
+2026-03-20 07:49:20 -0400 | 9a66187 | Show live curator checking status in enrichment progress bar
+2026-03-20 07:34:14 -0400 | 15c86bc | Fix SSE reconnect: store enrichment progress for catch-up on reconnect
+2026-03-19 13:35:37 -0400 | 3e15046 | Fix UnboundLocalError: remove redundant inner import of _genre_families
+2026-03-19 13:23:48 -0400 | 566830a | Filter garbage CM secondary genres using incompatible pairs
+2026-03-19 13:17:00 -0400 | 9718a74 | Validate CM genres against user dropdown, prevent bad genre override
+2026-03-19 13:09:26 -0400 | 21b4a6c | Fix genre matching: split on / in genre parser, add metal vs hip-hop pairs
+2026-03-19 12:51:55 -0400 | 431a654 | Add curator CSV download and email for Spotify URL scans
+2026-03-19 12:34:29 -0400 | c9ff359 | Keep GEMS paused during enrichment: update _last_api_activity each batch
+2026-03-19 11:30:54 -0400 | d58d837 | Fix: insert job directly as pending_features in one Supabase call
+2026-03-19 10:46:38 -0400 | c253c54 | Fix 500 error: job_id undefined when cache used in analyze-url
+2026-03-19 10:34:46 -0400 | 4ce749d | Fix artist card for file uploads, fix stat card text clipping
+2026-03-19 08:50:29 -0400 | af3d94b | Add collision detection to sonicconverter bar labels (matches Website2)
+2026-03-19 08:48:43 -0400 | 8bf8fc7 | Fix stat card text wrapping: nowrap + smaller clamp range
+2026-03-19 08:24:18 -0400 | a259d8c | Fix stat cards overflowing container: clamp text, overflow hidden
+2026-03-19 08:16:31 -0400 | 305d32e | Reduce enrichment gate timeout from 30s to 2s — prevents stalled enrichment
+2026-03-19 08:03:40 -0400 | 24a3cb4 | Fix: only create pending_features job when Mac worker is needed
+2026-03-19 07:25:41 -0400 | 48264a6 | Match GEMS pipeline exactly: add audio routing check, use 1.5s settle
+2026-03-19 07:19:33 -0400 | 6ea9068 | Increase seek settle time to 3s for reliable Spotify buffering
+2026-03-19 07:00:56 -0400 | 65d6935 | Use cached features on Railway, scan fresh on localhost only
+2026-03-19 02:29:17 -0400 | b6ab639 | Fix enrichment blocking forever: add 30s timeout on gate wait
+2026-03-19 02:18:27 -0400 | fde17a6 | Wrap sonic breakdown in result-card to match page width
+2026-03-19 02:16:30 -0400 | 2c100bb | Tighten sonic breakdown cards: smaller text, uniform sizing
+2026-03-19 02:02:03 -0400 | 4308a8e | Longer pause after stopping GEMS and before play to let Spotify settle
+2026-03-19 01:52:55 -0400 | 6470fb5 | Force clean Spotify state before playback: transfer + pause + play
+2026-03-19 01:45:38 -0400 | 5767e85 | Match GEMS device selection: prefer MacBook or active device
+2026-03-19 01:25:32 -0400 | 009289a | Add Audience Match card for double-validated artists
+2026-03-18 19:27:14 -0400 | c9d3fcb | Add track name to artist card, filter out matches without genre
+2026-03-18 19:16:20 -0400 | 4350c27 | Cap dynamic_range at 60 in Mac worker extraction (matches audio_analyzer fix)
+2026-03-18 18:37:31 -0400 | a83405b | Verify Spotify playback started before capture, retry up to 3 times
+2026-03-18 18:26:58 -0400 | ada3ed6 | Move GEMS pause/resume to main loop — always resumes even on timeout
+2026-03-18 16:13:20 -0400 | 3f9d790 | Fix negative fan gap in deal calculator fallback path
+2026-03-18 15:33:06 -0400 | 2e91489 | Mac worker pauses GEMS/discovery directly before audio capture
+2026-03-18 14:54:41 -0400 | 0da9055 | Pause local scripts before deal calculator Mac worker capture
+2026-03-18 13:29:07 -0400 | 1471d1e | Add polling heartbeat log to Mac worker for debugging
+2026-03-18 13:11:20 -0400 | e017739 | Fix Mac worker hanging: add job timeout and poll error handling
+2026-03-18 13:06:41 -0400 | 39e9a26 | Revert artist_name to show all track artists, always scan fresh, fix resource-switcher timing
+2026-03-18 12:41:24 -0400 | c023317 | Rework Where You Stand: credible revenue, fresh scans, layout overhaul
+2026-03-17 20:02:28 -0400 | 8b313d1 | Add "Where You Stand" conversion comparison to sonicconverter
+2026-03-14 12:47:11 -0400 | 06188e3 | Fix pipeline status endpoint: JSON can't serialize float('inf')
+2026-03-14 12:32:32 -0400 | a9007df | Add resource switching: auto-pause local scripts when web users are active
+2026-03-12 12:22:50 -0400 | 15795eb | Fix events fetch skipped when Supabase has listener data
+2026-03-12 11:30:39 -0400 | 3fdf9a5 | Pull all platform history from Supabase artists_history for deal calculator
+2026-03-11 18:43:33 -0400 | f9a5081 | Fix inflated touring revenue: use median face-value ticket price with $500 cap
+2026-03-11 11:53:55 -0400 | 6dffc52 | Add p99 conversion percentile, try p99 before giving up on above-p95 artists
+2026-03-11 11:45:39 -0400 | c2a1f0f | Remove fake gap estimates for above-p95 artists with peer data
+2026-03-11 11:40:47 -0400 | a490953 | Handle above-p95 artists: estimate conversion improvement from sonic gap count
+2026-03-11 11:26:59 -0400 | 48cae01 | Add p95 to peer comparison, fix $25/fan revenue, compute conversion opportunity for top performers
+2026-03-11 08:13:20 -0400 | 2c1c38c | Add local network IP to CORS for mobile testing
+2026-03-10 12:00:05 -0400 | 71b2caf | Fix event fetch: raise_for_status so _retry handles 429s
+2026-03-10 11:48:33 -0400 | 9a8b487 | Fetch past+future events from Chartmetric API for annualized touring stats
+2026-03-10 11:30:07 -0400 | 8111b4a | Add debug logging for cm_id in event lookup
+2026-03-10 11:15:09 -0400 | 6e1481b | Add upcoming events from artist_events table to deal lookup response
+2026-03-08 16:34:08 -0400 | 2599192 | Override tier_count with sonic peer count for all artists, not just underperformers
+2026-03-08 15:57:29 -0400 | 21af856 | Fix revenue estimate: $1/fan instead of $25/fan
+2026-03-08 15:35:48 -0400 | cbced2e | Use sonic peer count instead of full tier count in peer comparison
+2026-03-05 12:36:45 -0500 | a2f7bf8 | Add localhost:3002 to CORS origins for local dev
+2026-03-05 12:32:25 -0500 | 1550da7 | Add contract agreement to checkout + Affirm/Klarna BNPL support
+2026-03-04 06:25:24 -0500 | 81ecb05 | Add Stripe checkout + lead capture endpoints for deal calculator funnel
+2026-03-02 15:04:33 -0500 | 7f4af90 | Add platform_multiplier to deal/lookup response (cross-platform revenue)
+2026-03-02 13:34:20 -0500 | 0d745bc | Add historical listener data to deal/lookup for real growth projections
+2026-03-02 12:35:34 -0500 | a5d9160 | Filter sonic conversion opportunity by same tier
+2026-03-02 11:34:27 -0500 | 81eaf91 | Use Mac worker for sonic analysis in deal/lookup (not preview URL)
+2026-03-02 11:27:55 -0500 | 7478c94 | Fix NameError: replace undefined logger with print statements
+2026-03-02 11:15:29 -0500 | 7522692 | Add full sonic analysis pipeline to deal/lookup endpoint
+2026-03-01 19:45:10 -0500 | 393407c | Fix ValueError: use int(float()) for string listener counts like '2475.0'
+2026-03-01 19:35:42 -0500 | d7cac0f | Fix TypeError in deal_lookup: cast listeners/followers to int
+2026-03-01 18:31:49 -0500 | c5e1298 | Add CORS origins for FBS main site and deal calculator lookup endpoint
+2026-02-28 12:20:45 -0500 | 6033d30 | Fix curator contact resolution: call CM API when local table has no contact info
+2026-02-28 12:15:35 -0500 | f3e66f0 | Add enrichment debug logging: artist name, tier, ISRC, playlist count per match
+2026-02-28 07:00:44 -0500 | 804dc6d | Suppress soft emotions (tenderness/nostalgia/etc.) for extreme metal
+2026-02-28 06:38:22 -0500 | cd81c48 | Tune extreme metal emotions to match actual GEMS cache distribution
+2026-02-28 06:35:07 -0500 | 74be67c | Add extreme_metal emotion group for black/death/brutal/doom genres
+2026-02-27 22:20:30 -0500 | 9fbc8db | Strip "rock" from target genre families for extreme metal matching
+2026-02-27 20:43:57 -0500 | 2703aff | Fix UnboundLocalError: move _EXTREME set outside conditional branches
+2026-02-27 20:31:46 -0500 | 8bbb30e | Steepen genre penalties for extreme metal: 40% no-genre, 35% different-family
+2026-02-27 20:23:48 -0500 | abe87c7 | Strip broad parent genres for extreme metal, add black+rock incompatible pair
+2026-02-27 20:08:05 -0500 | dc8f602 | Fix false sonic matches: metal sub-genre incompatible pairs, steeper penalties, genre group fix
+2026-02-27 19:47:06 -0500 | 47cf51c | Block metal/indie/lofi/pop/emo/skramz genre clashes, steepen penalty
+2026-02-27 19:42:00 -0500 | 6985fdf | Show progress immediately when playlists phase starts
+2026-02-27 19:36:05 -0500 | a6be04a | Show batch progress during enrichment so it doesn't look stuck
+2026-02-27 19:29:23 -0500 | e8fad7c | Skip slow CM API call when local curators table already checked
+2026-02-27 19:12:19 -0500 | 61d2e48 | Fix 'Enriching: emails undefined' progress text
+2026-02-27 19:11:14 -0500 | 09326a2 | Fix all 5 broken RapidAPI calls in curator scraper
+2026-02-27 19:06:52 -0500 | c3abbd5 | Store scraped emails for curators without CM ID, add name-based cache lookup
+2026-02-27 19:04:40 -0500 | 10f7c83 | Add visible logging to curator scraper for debugging
+2026-02-27 18:49:35 -0500 | 434c5d6 | Only show curators with real contact info (not just Spotify profile)
+2026-02-27 18:48:34 -0500 | 7d981ad | Fix duplicate curators on SSE reconnect
+2026-02-27 18:44:24 -0500 | 6e8faba | Cap to 5000, add reference artist/track to curator contacts table
+2026-02-27 18:40:04 -0500 | 3332a81 | Show real total match count on All Artists tab
+2026-02-27 18:37:29 -0500 | 653f1de | Auto-reconnect SSE on disconnect to keep enrichment flowing
+2026-02-27 18:31:54 -0500 | 6dfbc49 | Cache audio features by ISRC for consistent results across runs
+2026-02-27 18:22:17 -0500 | e27be97 | Fix curators: use owner_id as curator ID, show Spotify profile as contact
+2026-02-27 18:02:01 -0500 | f8c9ae4 | Enhanced curator resolution: editorial_playlists + CM playlist ID
+2026-02-27 17:54:23 -0500 | 7e6c5c1 | Resolve curator IDs via editorial_playlists table
+2026-02-27 17:52:27 -0500 | 5acd5be | Debug: log raw CM playlist fields to find owner/curator IDs
+2026-02-27 17:47:46 -0500 | 0503eb6 | Fix tier toggle destroying playlists on re-render
+2026-02-27 17:37:19 -0500 | c4b93a0 | Fix tier toggle: increase all_matches cap from 500 to 2000
+2026-02-27 17:29:16 -0500 | 52f4715 | Add flattery debug logging to URL path
+2026-02-27 17:23:22 -0500 | b5ae665 | Upsert playlist-track data into playlist_tracks on every scan
+2026-02-27 17:08:56 -0500 | 86a2d6c | Use local curators table (143K) before CM API, fix trajectory sort
+2026-02-27 16:50:53 -0500 | 24f171a | Add tier toggle, batch enrichment, fix trajectory sorting
+2026-02-27 16:00:54 -0500 | ea79045 | Fix URL analysis: return 20 trajectory targets instead of 3
+2026-02-27 15:54:32 -0500 | 7def959 | Add curator scraper diagnostic logging, fix email_source field name
+2026-02-27 15:49:17 -0500 | 8e346ff | Fix CM rate limiter: add thread lock, respect 1 req/s plan limit
+2026-02-27 15:33:54 -0500 | 8d2150c | Fix all_playlists not persisting for SSE catch-up, add curator diagnostic logging
+2026-02-27 15:29:14 -0500 | 9b3796a | Upsert analyzed track audio features into gems_complete_analysis on every Spotify URL scan
+2026-02-27 14:40:44 -0500 | a72883d | Add Show More pagination to Trajectory Targets (3 at a time, up to 20)
+2026-02-27 14:38:34 -0500 | 5dce25f | Move curator resolution back to separate phase after playlists
+2026-02-27 14:13:50 -0500 | 1d6d11d | Match curator table link colors to site accent
+2026-02-27 14:11:12 -0500 | 8ccd19c | Only show curators with contact info, add diagnostic logging
+2026-02-27 13:38:07 -0500 | 57be4fb | Fix 502: use async polling for Mac worker instead of blocking event loop
+2026-02-27 12:38:06 -0500 | f98dd12 | Trigger redeploy
+2026-02-27 12:33:09 -0500 | 6cfd450 | Cache curator contacts in Supabase (30-day TTL)
+2026-02-27 12:05:30 -0500 | d1c4803 | Stream curator contacts inline with playlists, show all social links
+2026-02-27 11:31:12 -0500 | 8728021 | Add CSV export for playlists + curator contacts
+2026-02-27 10:33:03 -0500 | f6c14cd | Enrich displayed matches first, then fill wider pool up to 200
+2026-02-27 10:31:54 -0500 | 0fe73c6 | Fall back to track artist tier when user has no registration tier
+2026-02-27 10:31:16 -0500 | 14d2531 | Fix tier: use user's own tier from registration, not track artist's tier
+2026-02-27 10:24:07 -0500 | c92c63f | Skip web player devices in Mac worker — only use Spotify desktop app
+2026-02-27 10:04:10 -0500 | 5b8d4eb | Wire up CM curator contacts, min 1 follower, grab curator IDs
+2026-02-27 09:57:52 -0500 | 8f8fd87 | Rename playlists section to 'Playlist Opportunities' with wider pool context
+2026-02-27 09:47:10 -0500 | ef8d24a | Port emotions, production recs, flattery to URL endpoint; cap enrichment at 200
+2026-02-27 09:31:24 -0500 | 241ed50 | Use full genre-filtered pool for playlist enrichment, not tier-filtered
+2026-02-27 09:20:44 -0500 | b8ea706 | Add playlist caching, dedup, freshness scoring, stale filtering
+2026-02-27 07:44:13 -0500 | 0e81d68 | Fix Mac worker integration: poll Supabase directly, target device, 90s timeout
+2026-02-26 20:46:10 -0500 | a02fd76 | Rewrite mac_worker to use GEMS pipeline approach for audio capture
+2026-02-26 20:42:03 -0500 | 1eeb34d | Try Spotify preview first, Mac worker as fallback for URL analysis
+2026-02-26 20:36:43 -0500 | 7d1edfb | Auto-detect genre from Chartmetric for Spotify URL analysis
+2026-02-26 20:33:19 -0500 | fefc420 | Move analyze button outside file-only container so it works in URL mode
+2026-02-26 20:11:22 -0500 | dd64908 | Add SSE streaming, all-match pagination, playlists, credits, curator emails, Spotify URL analysis
+2026-02-25 19:32:38 -0500 | 5707f29 | Include genre_mapping.json in deploys
+2026-02-09 10:39:34 -0500 | 0595acc | Add Pushover notifications for new analyzer leads
+2026-02-09 08:36:55 -0500 | 5e1f2a2 | Increase Chartmetric retry delays for rate limiting
+2026-02-09 07:50:15 -0500 | 86124f6 | Add Google Analytics and Facebook Pixel tracking
+2026-02-08 11:20:05 -0500 | 7c6c1cf | Clean up genre taxonomy - move obvious genres from unknown to proper families
+2026-02-08 09:37:42 -0500 | 0ff297a | Add Supabase retry logic, expand dropdown to all genre families, fix k-pop in exclusive families
+2026-02-06 14:07:17 -0500 | ecac8b5 | Increase match pool to 20K, fix flattery debug output, show shared families
+2026-02-06 13:22:55 -0500 | 818e8a0 | Add specific values to production recommendations (You → Target format)
+2026-02-06 13:11:26 -0500 | 2087b79 | Fix artist name display, always fetch 500 matches, default to micro tier
+2026-02-06 12:33:39 -0500 | 3a16812 | Fix UnboundLocalError for cand_pronoun in flattery
+2026-02-06 12:20:57 -0500 | de18390 | Trigger redeploy for cache refresh
+2026-02-06 12:07:48 -0500 | ccdda62 | Improve genre filtering and UI refinements
+2026-02-05 09:25:13 -0500 | d37b72b | Add real-time Chartmetric lookup for unknown artists
+2026-02-04 19:37:11 -0500 | ade2246 | Add trajectory targets, comprehensive genre mapping, and cache improvements
+2026-02-04 11:13:05 -0500 | 719a727 | Fix conversion recommendation wording
+2026-02-04 10:58:50 -0500 | 564a6df | Add genre family clustering with cross-family penalty
+2026-02-04 10:23:30 -0500 | 4c2a6eb | Remove genre from similarity score, use as filter only
+2026-02-03 18:54:17 -0500 | 801af0f | Download cache from GCS at startup
+2026-02-03 18:04:03 -0500 | d84a45a | Trigger redeploy
+2026-02-03 18:01:44 -0500 | ae8c892 | Update analyzer UI and email template
+2026-02-03 16:46:50 -0500 | f539db2 | Make floating pies bigger, slower, spawn fewer per click
+2026-02-03 16:44:54 -0500 | a5203b4 | Fix pie paths to include /static/ prefix
+2026-02-03 16:43:04 -0500 | f533d95 | Add floating pies spawner on click
+2026-02-03 16:17:40 -0500 | f425c8d | Score all tracks, dedupe by artist keeping best match
+2026-02-03 09:47:55 -0500 | 8582cd1 | Remove logo from email
+2026-02-03 09:46:39 -0500 | f39c1e7 | Update email colors to match FBS dark grey theme
+2026-02-03 09:41:42 -0500 | 2ea0fac | Hide 'Your Rate' and opportunity blurb when no Spotify match
+2026-02-03 09:37:13 -0500 | d0a8970 | Add disabled styles for btn-secondary
+2026-02-03 09:33:13 -0500 | ae94a14 | Require genre selection before analyzing
+2026-02-03 09:30:22 -0500 | 162978d | Change card/surface colors from purple to neutral dark grey
+2026-02-03 09:28:13 -0500 | aa34b74 | Add FBS background texture and dark grey color
+2026-02-03 09:10:57 -0500 | b541694 | Fix startup to handle missing cache gracefully
+2026-02-03 08:44:29 -0500 | 44fb629 | Initial commit: SonicConverter Analyzer
