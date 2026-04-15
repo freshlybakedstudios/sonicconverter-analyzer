@@ -568,6 +568,10 @@ def _format_rec(feat: str, consensus: dict) -> str:
     # GEMS 4-second samples bias toward compressed moments, making targets too low
     if feat == 'crest_factor' and peer_val < 6.0:
         return None
+    # Skip dynamic_range recs when target is below p5 of GEMS universe (<15 dB)
+    # 4-second samples understate true dynamic range — don't recommend unrealistic targets
+    if feat == 'dynamic_range' and direction == 'lower' and peer_val < 15.0:
+        return None
     count = consensus['count']
     total = consensus['total']
 
