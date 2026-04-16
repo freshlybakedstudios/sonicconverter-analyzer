@@ -75,14 +75,19 @@ def _rate_wait():
 
 
 def _retry(fn, *args, **kwargs):
-    """Retry with backoff on 429/5xx — same pattern as discovery_events_work.py."""
+    """Retry with backoff on 401/429/5xx — same pattern as discovery_events_work.py."""
     delay = 2.0
     for attempt in range(MAX_RETRIES):
         try:
             return fn(*args, **kwargs)
         except HTTPError as e:
             status = getattr(e.response, 'status_code', None)
-            if status == 429:
+            if status == 401:
+                # Token expired — invalidate cache so next get_cm_token() fetches fresh
+                logger.warning(f"CM 401 — invalidating token cache")
+                invalidate_cm_token()
+                raise
+            elif status == 429:
                 retry_after = e.response.headers.get('Retry-After')
                 if retry_after:
                     try:
