@@ -1969,13 +1969,21 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             'curators_found': 0, 'phase': 'playlists',
         })
 
+        _no_subscriber_since = None  # Track when subscribers disappeared
+
         for batch_start in range(0, total, BATCH_SIZE):
-            # Stop enrichment if no one is listening (tab closed)
+            # Stop enrichment if no one is listening (tab closed) — 30s grace for reconnects
             if job_id not in sse_subscribers or not sse_subscribers[job_id]:
-                print(f"Enrichment [{job_id[:8]}]: No SSE subscribers — stopping (tab closed)")
-                job_mgr.update_job(job_id, status='stale')
-                _notify_local_pipeline('user_idle')
-                return
+                if _no_subscriber_since is None:
+                    _no_subscriber_since = time.time()
+                    print(f"Enrichment [{job_id[:8]}]: No SSE subscribers — waiting 30s for reconnect")
+                elif time.time() - _no_subscriber_since > 30:
+                    print(f"Enrichment [{job_id[:8]}]: No SSE subscribers for 30s — stopping (tab closed)")
+                    job_mgr.update_job(job_id, status='stale')
+                    _notify_local_pipeline('user_idle')
+                    return
+            else:
+                _no_subscriber_since = None
 
             # Keep activity alive so resource-switcher doesn't resume GEMS mid-enrichment
             _last_api_activity = time.time()
