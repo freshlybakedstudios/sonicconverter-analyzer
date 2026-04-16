@@ -113,6 +113,13 @@ _cached_token = None
 _token_ts = 0.0
 
 
+def invalidate_cm_token():
+    """Force next get_cm_token call to fetch a fresh token."""
+    global _cached_token, _token_ts
+    _cached_token = None
+    _token_ts = 0.0
+
+
 def get_cm_token(refresh_token: str) -> str | None:
     """Get a bearer token, caching for 55 minutes."""
     global _cached_token, _token_ts

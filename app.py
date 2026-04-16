@@ -38,6 +38,7 @@ from audio_analyzer import extract_features
 from chartmetric_lookup import (
     lookup_artist_by_spotify,
     get_cm_token,
+    invalidate_cm_token,
     fetch_listener_history,
     fetch_artist_events,
     _resolve_isrc_to_cm_track_id,
@@ -1992,6 +1993,12 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             if not _enrichment_gate.wait(timeout=2):
                 _enrichment_gate.set()  # Force open — never block enrichment
                 _enrichment_gate.set()
+            # Refresh CM token each batch — prevents 401s when token expires mid-enrichment
+            token = get_cm_token(refresh_token)
+            if not token:
+                print(f"Enrichment [{job_id[:8]}]: CM token refresh failed at batch {batch_start // BATCH_SIZE + 1}")
+                break
+
             batch = sorted_matches[batch_start:batch_start + BATCH_SIZE]
             batch_playlists = []
 
@@ -2065,7 +2072,35 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
 
                 except Exception as e:
-                    print(f"Enrichment [{job_id[:8]}]: Playlist failed for {isrc}: {e}")
+                    # On 401, force token refresh and retry once
+                    if '401' in str(e):
+                        print(f"Enrichment [{job_id[:8]}]: 401 for {isrc} — refreshing CM token")
+                        invalidate_cm_token()
+                        token = get_cm_token(refresh_token)
+                        if token:
+                            try:
+                                cm_track_id = _resolve_isrc_to_cm_track_id(token, isrc)
+                                if cm_track_id:
+                                    playlists = _fetch_track_playlists_structured(
+                                        token, cm_track_id, isrc=isrc,
+                                        artist_name=m.get('name', ''),
+                                        track_name=m.get('track_name', ''),
+                                    )
+                                    print(f"Enrichment [{job_id[:8]}]:   -> retry OK, {len(playlists) if playlists else 0} playlists")
+                                    if playlists:
+                                        similarity = m.get('similarity', 0)
+                                        conf_boost = 0.5 if match_key in confidence_map else 0.0
+                                        for pl in playlists:
+                                            pl['sonic_match'] = m.get('name', '')
+                                            pl['track_name'] = m.get('track_name', '')
+                                            pl['sonic_similarity'] = similarity
+                                            pl['score'] = _compute_playlist_score(
+                                                similarity, pl.get('followers', 0), conf_boost)
+                                        batch_playlists.extend(playlists)
+                            except Exception as retry_e:
+                                print(f"Enrichment [{job_id[:8]}]: Retry also failed for {isrc}: {retry_e}")
+                    else:
+                        print(f"Enrichment [{job_id[:8]}]: Playlist failed for {isrc}: {e}")
                     job_mgr.update_job(job_id, progress={'playlists': f'{idx+1}/{total}'})
 
             # --- Batch step B: Curator contacts for this batch's playlists ---
