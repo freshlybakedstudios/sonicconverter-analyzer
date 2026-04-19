@@ -240,10 +240,22 @@ def _load_genre_mapping():
 _load_genre_mapping()
 
 
+_REGION_PREFIXES = (
+    'us ', 'uk ', 'australian ', 'brazilian ', 'canadian ', 'french ',
+    'german ', 'japanese ', 'mexican ', 'indian ', 'korean ', 'latin ',
+    'east asia ', 'southeast asian ', 'african ', 'european ', 'mena ',
+    'oceania ', 'scandinavian ', 'spanish ', 'italian ', 'dutch ',
+    'russian ', 'chinese ', 'turkish ', 'arabic ', 'nordic ',
+    'colombian ', 'argentine ', 'chilean ', 'peruvian ', 'swedish ',
+    'norwegian ', 'danish ', 'finnish ', 'polish ', 'czech ',
+)
+
+
 def _genre_families(*genre_strings: str) -> Set[str]:
     """Resolve genre families from raw genre strings using the comprehensive mapping.
 
     Tries full genre term match first (e.g. "melodic death metal" → metal),
+    then strips regional prefixes (e.g. "us hip-hop" → "hip-hop" → hip-hop),
     then falls back to individual word matching (e.g. "metal" → metal).
     """
     families: Set[str] = set()
@@ -255,11 +267,20 @@ def _genre_families(*genre_strings: str) -> Set[str]:
         for term in terms:
             if term in _GENRE_FAMILY_MAP:
                 families.add(_GENRE_FAMILY_MAP[term])
-            else:
-                # Word-level fallback for unrecognised multi-word genres
-                for word in term.split():
-                    if word in _GENRE_FAMILY_MAP:
-                        families.add(_GENRE_FAMILY_MAP[word])
+                continue
+            # Strip regional prefix and retry (e.g. "us hip-hop" → "hip-hop")
+            stripped = term
+            for prefix in _REGION_PREFIXES:
+                if term.startswith(prefix):
+                    stripped = term[len(prefix):]
+                    break
+            if stripped != term and stripped in _GENRE_FAMILY_MAP:
+                families.add(_GENRE_FAMILY_MAP[stripped])
+                continue
+            # Word-level fallback for unrecognised multi-word genres
+            for word in term.split():
+                if word in _GENRE_FAMILY_MAP:
+                    families.add(_GENRE_FAMILY_MAP[word])
     return families
 
 
@@ -495,7 +516,7 @@ class TrackMatcher:
         # e.g. The Prodigy: "electronic, dance, rock, breakbeat" = good, "uk hip-hop/rap" = noise
         if genre_hint and ',' in genre_hint:
             genre_parts = [g.strip() for g in genre_hint.split(',')]
-            core_genres = ', '.join(genre_parts[:4])  # primary + first 3 secondaries
+            core_genres = ', '.join(genre_parts[:6])  # primary + first 5 secondaries
             target_fams = _genre_families(core_genres)
         else:
             target_fams = _genre_families(genre_hint)
@@ -611,7 +632,13 @@ class TrackMatcher:
                             # Completely different family → hard filter
                             # e.g. pure hip-hop matching electronic, or pure pop matching metal
                             continue
-                        elif cand_fams - target_fams:
+                        # Penalise weak overlap — candidate shares few of the user's families
+                        # e.g. pure electronic DJ matching a hip-hop/r&b/electronic/rock artist
+                        overlap_ratio = len(overlap) / len(target_fams)
+                        if overlap_ratio < 0.5:
+                            # Shares <50% of families → significant penalty
+                            similarity *= (0.82 + 0.18 * overlap_ratio)  # 10-18% penalty
+                        if cand_fams - target_fams:
                             # Crossover — shares a family but also has a foreign one
                             similarity *= 0.96
                     # Boost candidates that share the PRIMARY genre family
