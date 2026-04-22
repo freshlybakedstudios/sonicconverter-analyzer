@@ -2148,6 +2148,20 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             for curator_info in batch_curators:
                 try:
                     curators_checked += 1
+
+                    # Check for tab closed every 10 curators
+                    if curators_checked % 10 == 0:
+                        if job_id not in sse_subscribers or not sse_subscribers[job_id]:
+                            if _no_subscriber_since is None:
+                                _no_subscriber_since = time.time()
+                            elif time.time() - _no_subscriber_since > 30:
+                                print(f"Enrichment [{job_id[:8]}]: No SSE subscribers for 30s (during curator resolve) — stopping")
+                                job_mgr.update_job(job_id, status='stale')
+                                _notify_local_pipeline('user_idle')
+                                return
+                        else:
+                            _no_subscriber_since = None
+
                     cm_cid = curator_info.get('cm_curator_id')
                     # Live status so UI doesn't look frozen
                     _sse_publish(job_id, 'enrichment_progress', {
