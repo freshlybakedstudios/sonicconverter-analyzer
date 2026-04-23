@@ -133,20 +133,27 @@ def update_job(job_id: str, status: str, features: dict = None):
 # ---------------------------------------------------------------------------
 _spotify_bearer = None
 _spotify_bearer_ts = 0
+_using_backup = False
 
 
-def _get_spotify_token():
-    """Get Spotify Web API bearer token (user auth via refresh token or client creds)."""
-    global _spotify_bearer, _spotify_bearer_ts
-    if _spotify_bearer and (time.time() - _spotify_bearer_ts) < 3500:
+def _get_spotify_token(force_backup=False):
+    """Get Spotify Web API bearer token. Falls back to backup credentials on 429."""
+    global _spotify_bearer, _spotify_bearer_ts, _using_backup
+    if _spotify_bearer and (time.time() - _spotify_bearer_ts) < 3500 and not force_backup:
         return _spotify_bearer
 
-    client_id = os.getenv('SPOTIFY_CLIENT_ID')
-    client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
-    refresh_token = os.getenv('SPOTIFY_REFRESH_TOKEN')
+    if force_backup or _using_backup:
+        client_id = os.getenv('SPOTIFY_CLIENT_ID_BACKUP')
+        client_secret = os.getenv('SPOTIFY_CLIENT_SECRET_BACKUP')
+        refresh_token = os.getenv('SPOTIFY_REFRESH_TOKEN_BACKUP')
+        label = 'backup'
+    else:
+        client_id = os.getenv('SPOTIFY_CLIENT_ID')
+        client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
+        refresh_token = os.getenv('SPOTIFY_REFRESH_TOKEN')
+        label = 'primary'
 
     if refresh_token and client_id and client_secret:
-        # User auth — needed for playback control
         resp = requests.post(
             'https://accounts.spotify.com/api/token',
             data={
@@ -160,11 +167,22 @@ def _get_spotify_token():
         if resp.status_code == 200:
             _spotify_bearer = resp.json()['access_token']
             _spotify_bearer_ts = time.time()
+            if force_backup and not _using_backup:
+                _using_backup = True
+                print(f"Switched to backup Spotify credentials")
             return _spotify_bearer
-        print(f"Spotify refresh failed: {resp.status_code} {resp.text[:100]}")
+        print(f"Spotify refresh failed ({label}): {resp.status_code} {resp.text[:100]}")
 
     print("No SPOTIFY_REFRESH_TOKEN set — cannot control playback")
     return None
+
+
+def _switch_to_backup():
+    """Force switch to backup Spotify credentials."""
+    global _spotify_bearer, _spotify_bearer_ts
+    _spotify_bearer = None
+    _spotify_bearer_ts = 0
+    return _get_spotify_token(force_backup=True)
 
 
 def _extract_track_id(url: str) -> str | None:
@@ -177,19 +195,34 @@ def _extract_track_id(url: str) -> str | None:
 
 
 def _get_track_info(track_id: str) -> dict | None:
-    """Get track metadata (duration, playability)."""
+    """Get track metadata (duration, playability). Retries on 429."""
     token = _get_spotify_token()
     if not token:
         return None
-    resp = requests.get(
-        f'https://api.spotify.com/v1/tracks/{track_id}',
-        headers={'Authorization': f'Bearer {token}'},
-        params={'market': 'US'},
-        timeout=10,
-    )
-    if resp.status_code == 200:
-        return resp.json()
-    print(f"Track info failed: {resp.status_code}")
+    for attempt in range(5):
+        resp = requests.get(
+            f'https://api.spotify.com/v1/tracks/{track_id}',
+            headers={'Authorization': f'Bearer {token}'},
+            params={'market': 'US'},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 429:
+            retry_after = int(resp.headers.get('Retry-After', 5))
+            if retry_after > 60:
+                # Long ban — switch to backup credentials
+                print(f"Track info 429 — Retry-After {retry_after}s, switching to backup")
+                token = _switch_to_backup()
+                if token:
+                    continue
+            else:
+                print(f"Track info 429 — waiting {retry_after}s (attempt {attempt+1}/5)")
+                time.sleep(retry_after)
+                continue
+        print(f"Track info failed: {resp.status_code}")
+        return None
+    print(f"Track info failed: 429 after 5 retries")
     return None
 
 

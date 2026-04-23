@@ -2652,12 +2652,21 @@ async def analyze_url(
     cm_data = None
     user_cm_id = None
 
-    if sp_token and sp_secret:
+    # Try primary Spotify credentials, fall back to backup on 429
+    sp_creds = [(sp_token, sp_secret)]
+    sp_backup_id = os.getenv('SPOTIFY_CLIENT_ID_BACKUP')
+    sp_backup_secret = os.getenv('SPOTIFY_CLIENT_SECRET_BACKUP')
+    if sp_backup_id and sp_backup_secret:
+        sp_creds.append((sp_backup_id, sp_backup_secret))
+
+    for cred_id, cred_secret in sp_creds:
+        if not cred_id or not cred_secret:
+            continue
         try:
             auth_resp = requests.post(
                 'https://accounts.spotify.com/api/token',
                 data={'grant_type': 'client_credentials'},
-                auth=(sp_token, sp_secret),
+                auth=(cred_id, cred_secret),
                 timeout=10,
             )
             if auth_resp.status_code == 200:
@@ -2667,6 +2676,9 @@ async def analyze_url(
                     headers={'Authorization': f'Bearer {sp_bearer}'},
                     timeout=10,
                 )
+                if track_resp.status_code == 429:
+                    print(f"  URL analysis: Spotify 429 on track lookup, trying backup credentials")
+                    continue
                 if track_resp.status_code == 200:
                     track_data = track_resp.json()
                     preview_url = track_data.get('preview_url')
@@ -2678,6 +2690,7 @@ async def analyze_url(
                     if artists:
                         ext_urls = artists[0].get('external_urls', {})
                         artist_spotify_url = ext_urls.get('spotify', '')
+                    break
         except Exception as e:
             print(f"Spotify API failed: {e}")
 
