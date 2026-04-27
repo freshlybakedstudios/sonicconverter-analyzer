@@ -143,7 +143,7 @@
       <!-- SIGNUP FORM -->
       <div id="signup-view" class="hidden">
         <h2>Create Account</h2>
-        <p class="section-sub">Sign up to unlock the SonicConverter analyzer.</p>
+        <p class="section-sub">Sign up to unlock the Sonic Analyzer.</p>
         <form id="signup-form" class="form-card">
           <div class="form-group">
             <label for="signup-name">Name</label>
@@ -170,9 +170,18 @@
           <div class="nda-container">
             <span class="nda-label">Terms of Use & Non-Disclosure Agreement</span>
             <div class="nda-scroll-box" id="nda-text">
-              <h2>SonicConverter — Terms of Use & Non-Disclosure Agreement</h2>
+              <div class="nda-summary">
+                <strong>In plain English:</strong>
+                <ul>
+                  <li>Use the tool for your own music — share your results with collaborators, managers, or labels.</li>
+                  <li>Don't reverse-engineer it, copy how it works, or use it to help build a competing product.</li>
+                  <li>Your audio isn't stored after analysis. Your name and email are kept securely so we can deliver results.</li>
+                </ul>
+                <span class="nda-summary-note">Full legal terms below.</span>
+              </div>
+              <h2>Sonic Analyzer — Terms of Use & Non-Disclosure Agreement</h2>
               <p><strong>Last updated: March 2026</strong></p>
-              <p>By registering for and using SonicConverter ("the Service"), you agree to the following terms. If you do not agree, do not register or use the Service.</p>
+              <p>By registering for and using Sonic Analyzer ("the Service"), you agree to the following terms. If you do not agree, do not register or use the Service.</p>
               <h2>1. Confidential Information</h2>
               <p>The Service, including its audio analysis algorithms, sonic profiling methods, matching technology, database structures, artist intelligence features, and all underlying source code, is the confidential and proprietary property of Alexander Almgren, d/b/a Freshly Baked Studios ("Producer"). This includes but is not limited to:</p>
               <ul>
@@ -198,7 +207,7 @@
               <ul>
                 <li>Use the Service for your personal music production and career development purposes</li>
                 <li>Share your own analysis results (your track's sonic profile, genre classification, and production recommendations) with collaborators, managers, or labels</li>
-                <li>Reference the Service publicly (e.g., "analyzed with SonicConverter by Freshly Baked Studios")</li>
+                <li>Reference the Service publicly (e.g., "analyzed with Sonic Analyzer by Freshly Baked Studios")</li>
               </ul>
               <h2>4. Your Data</h2>
               <ul>
@@ -273,7 +282,7 @@
       <div class="upload-header">
         <h2>Analyze Your Track</h2>
         <div class="user-info">
-          <span class="scans-badge" id="scans-badge"></span>
+          <span class="scans-badge hidden" id="scans-badge"></span>
           <a href="#" id="logout-btn" class="logout-link">Log out</a>
         </div>
       </div>
@@ -573,6 +582,22 @@
   <a href="https://cal.freshlybakedstudios.com/freshlybakedstudios/30min" class="floating-cta hidden" id="floating-cta">
     <span class="cta-text">Book Consultation</span>
   </a>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-blurb">
+        <strong>Sonic Analyzer</strong> by Freshly Baked Studios — sonic-level artist matching for music producers and labels.
+      </div>
+      <div class="footer-links">
+        <a href="https://freshlybakedstudios.com" target="_blank" rel="noopener">freshlybakedstudios.com</a>
+        <span class="footer-sep">·</span>
+        <a href="mailto:alex@freshlybakedstudios.com">alex@freshlybakedstudios.com</a>
+        <span class="footer-sep">·</span>
+        <a href="https://cal.freshlybakedstudios.com/freshlybakedstudios/30min" target="_blank" rel="noopener">Book a call</a>
+      </div>
+      <div class="footer-meta">© 2026 Freshly Baked Studios. All rights reserved.</div>
+    </div>
+  </footer>
 
   <script src="/static/app.js"></script>
 </body>
