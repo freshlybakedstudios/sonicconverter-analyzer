@@ -1,5 +1,5 @@
 """
-FastAPI server for the SonicConverter web analyzer.
+FastAPI server for the Sonic Analyzer web app.
 Preloads the 1.2 GB GEMS universe cache at startup, then serves:
   POST /api/register  — capture lead (name + email)
   POST /api/analyze   — upload audio, return sonic breakdown + matches
@@ -184,7 +184,7 @@ async def lifespan(app: FastAPI):
     enrichment_pool.shutdown(wait=False)
 
 
-app = FastAPI(title="SonicConverter Analyzer", lifespan=lifespan)
+app = FastAPI(title="Sonic Analyzer", lifespan=lifespan)
 
 # CORS — allow the Firebase-hosted frontend + localhost dev + Railway
 app.add_middleware(
@@ -832,7 +832,7 @@ def _send_reset_email(email: str, reset_token: str) -> bool:
     <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
                 max-width:500px;margin:0 auto;background:#141213;color:#eee;padding:32px;border-radius:12px">
       <h2 style="color:#fff;margin:0 0 16px">Reset Your Password</h2>
-      <p style="color:#ccc">Click the button below to reset your SonicConverter password. This link expires in 1 hour.</p>
+      <p style="color:#ccc">Click the button below to reset your Sonic Analyzer password. This link expires in 1 hour.</p>
       <div style="text-align:center;margin:24px 0">
         <a href="{reset_url}" style="background:#4ecdc4;color:#000;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">Reset Password</a>
       </div>
@@ -846,7 +846,7 @@ def _send_reset_email(email: str, reset_token: str) -> bool:
     message = Mail(
         from_email='noreply@freshlybakedstudios.com',
         to_emails=email,
-        subject='Reset your SonicConverter password',
+        subject='Reset your Sonic Analyzer password',
         html_content=HtmlContent(html),
     )
     try:
@@ -925,7 +925,7 @@ async def signup(
         pass  # duplicate or missing columns — fine
 
     send_pushover_notification(
-        "New SonicConverter Signup",
+        "New Sonic Analyzer Signup",
         f"{name}\n{email}\nNDA: {NDA_VERSION}"
     )
     print(f"Signup: {email} (NDA {NDA_VERSION})")
@@ -3905,7 +3905,7 @@ async def serve_index():
     index = static_dir / 'index.html'
     if index.exists():
         return FileResponse(str(index))
-    return {"message": "SonicConverter API is running. Put index.html in static/"}
+    return {"message": "Sonic Analyzer API is running. Put index.html in static/"}
 
 
 # ---------------------------------------------------------------------------

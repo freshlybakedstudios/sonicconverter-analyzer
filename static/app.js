@@ -1,4 +1,4 @@
-// SonicConverter Analyzer — Frontend logic
+// Sonic Analyzer — Frontend logic
 // Handles: registration, file upload, analysis, results rendering
 
 const API_URL = ''; // Same origin when served by FastAPI; set to ngrok URL for remote
@@ -62,14 +62,17 @@ function _authSuccess(data) {
 
 function _updateScans(remaining) {
   const badge = $('#scans-badge');
-  if (badge && remaining != null) {
-    if (remaining >= 999) {
-      badge.textContent = '';
-    } else if (remaining <= 0) {
-      badge.innerHTML = '0 scans remaining — <a href="mailto:alex@freshlybakedstudios.com" style="color:#4ecdc4">contact us</a>';
-    } else {
-      badge.textContent = `${remaining} scans remaining`;
-    }
+  if (!badge) return;
+  if (remaining == null || remaining >= 999) {
+    badge.classList.add('hidden');
+    badge.textContent = '';
+    return;
+  }
+  badge.classList.remove('hidden');
+  if (remaining <= 0) {
+    badge.innerHTML = '0 scans remaining — <a href="mailto:alex@freshlybakedstudios.com" style="color:#4ecdc4">contact us</a>';
+  } else {
+    badge.textContent = `${remaining} scans remaining`;
   }
 }
 
