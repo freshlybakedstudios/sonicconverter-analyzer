@@ -820,15 +820,20 @@ function renderResults(data) {
     const listeners = (userProfile.listeners || 0);
 
     if (hasUserRate) {
-      const peerCount = (comp.peer_count || 0).toLocaleString();
+      const peerCountRaw = comp.peer_count || 0;
+      const poolTotalRaw = comp.peer_pool_total || peerCountRaw;
+      const peerCount = peerCountRaw.toLocaleString();
+      const peerScope = (poolTotalRaw > peerCountRaw)
+        ? `${peerCount} of ${poolTotalRaw.toLocaleString()} sonic peers (those with conversion data)`
+        : `${peerCount} sonic peers`;
 
       if (fans > 0 && atTop) {
-        oppEl.innerHTML = `You're already in the <span class="fan-number">top 25%</span> of ${peerCount} sonic peers. Reaching the top 1% (${target.toFixed(1)}%) would convert an estimated <span class="fan-number">${fans.toLocaleString()} additional listeners into followers</span> — each one a direct line to your releases, merch drops, and tour dates via Spotify push notifications.`;
+        oppEl.innerHTML = `You're already in the <span class="fan-number">top 25%</span> of ${peerScope}. Reaching the top 1% (${target.toFixed(1)}%) would convert an estimated <span class="fan-number">${fans.toLocaleString()} additional listeners into followers</span> — each one a direct line to your releases, merch drops, and tour dates via Spotify push notifications.`;
       } else if (fans > 0) {
         const monthlyFans = Math.round(fans / 12);
-        oppEl.innerHTML = `Across ${peerCount} sonic peers, the top 25% convert at <span class="fan-number">${target.toFixed(1)}%</span>. Closing that gap means an estimated <span class="fan-number">${fans.toLocaleString()} new followers/year</span> (~${monthlyFans.toLocaleString()}/month) — each one receiving push notifications for your releases, merch drops, and tour dates.`;
+        oppEl.innerHTML = `Across ${peerScope}, the top 25% convert at <span class="fan-number">${target.toFixed(1)}%</span>. Closing that gap means an estimated <span class="fan-number">${fans.toLocaleString()} new followers/year</span> (~${monthlyFans.toLocaleString()}/month) — each one receiving push notifications for your releases, merch drops, and tour dates.`;
       } else {
-        oppEl.innerHTML = `You're converting at <span class="fan-number">${cr.toFixed(1)}%</span> — above the top 1% of ${peerCount} sonic peers. Your listener-to-follower conversion is exceptional.`;
+        oppEl.innerHTML = `You're converting at <span class="fan-number">${cr.toFixed(1)}%</span> — above the top 1% of ${peerScope}. Your listener-to-follower conversion is exceptional.`;
       }
       show(oppEl);
 
@@ -1092,8 +1097,11 @@ function renderMatchView() {
     if (matchView === 'tier' && userTier) {
       label = `Showing ${Math.min(matchesShown, totalCount)} of ${totalCount} ${userTier} matches`;
     } else {
-      const realTotal = totalAllMatches > totalCount ? ` (${totalAllMatches.toLocaleString()} total)` : '';
-      label = `Showing ${Math.min(matchesShown, totalCount)} of ${totalCount.toLocaleString()} matches${realTotal}`;
+      const hidden = Math.max(totalAllMatches - totalCount, 0);
+      const hiddenNote = hidden > 0
+        ? ` · ${hidden.toLocaleString()} hidden (missing genre data)`
+        : '';
+      label = `Showing ${Math.min(matchesShown, totalCount)} of ${totalCount.toLocaleString()} matches${hiddenNote}`;
     }
     matchCounter.textContent = label;
     show(matchCounter);

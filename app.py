@@ -1496,6 +1496,7 @@ async def analyze(
                     'peer_bottom_25': round(sorted_conv[n // 4], 2),
                     'peer_p99': round(sorted_conv[min(n - 1, int(n * 0.99))], 2),
                     'peer_count': len(sorted_conv),
+                    'peer_pool_total': len(matches),
                 }
 
             # Fan gap: how many additional followers if you hit top 25%
@@ -3019,6 +3020,7 @@ async def analyze_url(
                 'peer_bottom_25': round(sorted_conv[n // 4], 2),
                 'peer_p99': round(sorted_conv[min(n - 1, int(n * 0.99))], 2),
                 'peer_count': len(sorted_conv),
+                'peer_pool_total': len(all_found),
             }
 
         additional_fans = 0
