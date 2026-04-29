@@ -70,7 +70,7 @@ function _updateScans(remaining) {
   }
   badge.classList.remove('hidden');
   if (remaining <= 0) {
-    badge.innerHTML = '0 scans remaining — <a href="mailto:alex@freshlybakedstudios.com" style="color:#4ecdc4">contact us</a>';
+    badge.innerHTML = '0 scans remaining — <a href="mailto:almgren@freshlybakedstudios.com" style="color:#4ecdc4">contact us</a>';
   } else {
     badge.textContent = `${remaining} scans remaining`;
   }
