@@ -657,16 +657,59 @@ def _generate_recommendations(features: dict, matches: list,
 
         MIN_CONSENSUS_POOL = 10
         if len(with_conversion) >= MIN_CONSENSUS_POOL:
-            conversions = sorted([m['conversion_rate'] for m in with_conversion])
-            # Try top 25% first
-            t25 = conversions[int(len(conversions) * 0.75)]
-            top_25 = [m for m in with_conversion if m['conversion_rate'] >= t25]
+            # Composite track-level cohort score:
+            #   0.45 sp_track_popularity (Spotify popularity, recency-weighted, save-rate adjacent)
+            #   0.25 cm_track_score      (Chartmetric composite track momentum)
+            #   0.20 total_playlists     (editorial + user, curator+fan distribution)
+            #   0.10 conversion_rate     (artist-level listener->follower stickiness)
+            # When cm_track_score is null on a row, its 0.25 redistributes to pop and playlist:
+            #   0.60 pop + 0.25 playlist + 0.15 conversion
+            import bisect
+
+            def _pct_rank(value, sorted_pool):
+                """Percentile rank in [0,1]. None or empty pool -> 0.5 (neutral)."""
+                if value is None or not sorted_pool:
+                    return 0.5
+                return bisect.bisect_left(sorted_pool, value) / len(sorted_pool)
+
+            def _safe_int(v):
+                try:
+                    return int(v) if v is not None else 0
+                except (TypeError, ValueError):
+                    return 0
+
+            # Build sorted pools once for percentile lookups across this match set
+            pop_pool = sorted([m['sp_track_popularity'] for m in with_conversion
+                               if m.get('sp_track_popularity') is not None])
+            cm_pool = sorted([m['cm_track_score'] for m in with_conversion
+                              if m.get('cm_track_score') is not None])
+            plist_pool = sorted([_safe_int(m.get('editorial_playlists')) + _safe_int(m.get('user_playlists'))
+                                 for m in with_conversion])
+            conv_pool = sorted([m['conversion_rate'] for m in with_conversion
+                                if m.get('conversion_rate') is not None])
+
+            def _composite_score(m):
+                pop_pct = _pct_rank(m.get('sp_track_popularity'), pop_pool)
+                cm_pct = (_pct_rank(m.get('cm_track_score'), cm_pool)
+                          if m.get('cm_track_score') is not None else None)
+                plist_total = _safe_int(m.get('editorial_playlists')) + _safe_int(m.get('user_playlists'))
+                plist_pct = _pct_rank(plist_total, plist_pool)
+                conv_pct = _pct_rank(m.get('conversion_rate'), conv_pool)
+                if cm_pct is not None:
+                    return 0.45 * pop_pct + 0.25 * cm_pct + 0.20 * plist_pct + 0.10 * conv_pct
+                return 0.60 * pop_pct + 0.25 * plist_pct + 0.15 * conv_pct
+
+            # Score every match, preserve the same percentile-based fallback chain
+            scored = [(_composite_score(m), m) for m in with_conversion]
+            scores_sorted = sorted(s for s, _ in scored)
+            t25 = scores_sorted[int(len(scores_sorted) * 0.75)]
+            top_25 = [m for s, m in scored if s >= t25]
             if len(top_25) >= MIN_CONSENSUS_POOL:
                 high_converter_ids = [str(m['artist_id']) for m in top_25]
             else:
                 # Expand to top 50%
-                t50 = conversions[int(len(conversions) * 0.50)]
-                top_50 = [m for m in with_conversion if m['conversion_rate'] >= t50]
+                t50 = scores_sorted[int(len(scores_sorted) * 0.50)]
+                top_50 = [m for s, m in scored if s >= t50]
                 if len(top_50) >= MIN_CONSENSUS_POOL:
                     high_converter_ids = [str(m['artist_id']) for m in top_50]
                 else:
