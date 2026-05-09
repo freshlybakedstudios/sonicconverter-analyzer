@@ -670,6 +670,18 @@ class TrackMatcher:
                 'listeners': listeners,
                 'followers': followers,
                 'conversion_rate': conversion_rate,
+                # Track-level momentum signals from the universe cache.
+                # Populated from tracks.sp_track_popularity / cm_track_score (or the
+                # recent_track_* equivalents when recent track filled this slot — the
+                # cache builder unifies key names). Either may be None for older rows
+                # that haven't been backfilled yet; downstream callers use .get(...).
+                'sp_track_popularity': track_data.get('sp_track_popularity'),
+                'cm_track_score': track_data.get('cm_track_score'),
+                # Track-level playlist counts (Spotify editorial + user) — same
+                # unified shape: source is top-track or recent-track depending on
+                # which pass populated this row in the cache.
+                'editorial_playlists': track_data.get('editorial_playlists', 0),
+                'user_playlists': track_data.get('user_playlists', 0),
                 'similarity': round(similarity, 4),
                 'emotion_overlap': emotion_overlap,
                 'track_name': track_data.get('top_track', ''),
