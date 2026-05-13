@@ -727,55 +727,101 @@ function renderResults(data) {
   const comp = (userProfile && userProfile.conversion_comparison) || {};
   const hasUserRate = userProfile && userProfile.conversion_rate != null;
 
-  // Track-level momentum panel (renders if scanned track was in our universe)
+  // Track-level momentum panel — shows the scanned track's standing vs sonic peers
+  // using popularity / CM score / playlist count, with a composite-percentile bar
+  // styled like the artist-level one.
   const tm = userProfile && userProfile.track_momentum;
   const tmPanel = $('#track-momentum');
   if (tm && tmPanel) {
-    const tmRows = $('#track-momentum-rows');
-    tmRows.innerHTML = '';
     function fmtNum(n) {
       if (n == null) return 'N/A';
       if (typeof n === 'number' && n > 0 && n < 1) return n.toFixed(2);
+      if (typeof n === 'number' && n >= 1000) return n.toLocaleString(undefined, {maximumFractionDigits: 0});
       return Math.round(n).toLocaleString();
     }
-    function row(label, scanned, stats, pct) {
+    function pctLabel(pct) {
+      // Plain-English bucketing for the percentile number on each row.
+      if (pct == null) return 'no peer data';
+      const p = Math.round(pct * 100);
+      if (p >= 99) return `top 1%`;
+      if (p >= 90) return `top 10%`;
+      if (p >= 75) return `top 25%`;
+      if (p >= 50) return `above average`;
+      if (p >= 25) return `below average`;
+      return `bottom 25%`;
+    }
+
+    // === Composite percentile bar (0–100 scale, fixed ticks) ===
+    const compPct = Math.round((tm.composite_percentile || 0) * 100);
+    $('#tm-bar-fill').style.width = compPct + '%';
+    $('#tm-bar-dot').style.left = compPct + '%';
+    // Build labels row
+    const tmLabels = $('#tm-bar-labels');
+    tmLabels.innerHTML = '';
+    const labels = [
+      { pos: 25, name: 'p25',   priority: 1 },
+      { pos: 50, name: 'Median', priority: 2 },
+      { pos: 75, name: 'Top 25%', priority: 4 },
+      { pos: 99, name: 'Top 1%', priority: 3 },
+      { pos: compPct, name: 'You', cls: 'conv-bar-label-you', priority: 5 },
+    ];
+    const MIN_GAP = 9;
+    const sorted = [...labels].sort((a, b) => b.priority - a.priority);
+    const kept = [];
+    for (const l of sorted) {
+      if (kept.every(k => Math.abs(k.pos - l.pos) >= MIN_GAP)) kept.push(l);
+    }
+    for (const l of kept) {
+      const div = document.createElement('div');
+      div.className = 'conv-bar-label ' + (l.cls || '');
+      div.style.left = l.pos + '%';
+      div.innerHTML = `<span>${l.name}</span><span>${l.pos}</span>`;
+      tmLabels.appendChild(div);
+    }
+
+    // === Plain-English summary line ===
+    let summary;
+    if (compPct >= 90) summary = `Your track is in the <strong>top 10%</strong> of its sonic cohort — performing better than nearly every track that sounds like it.`;
+    else if (compPct >= 75) summary = `Your track is in the <strong>top 25%</strong> of its sonic cohort — outperforming most tracks that sound like it.`;
+    else if (compPct >= 50) summary = `Your track is <strong>above average</strong> for its sonic cohort — doing better than most similar-sounding tracks.`;
+    else if (compPct >= 25) summary = `Your track is <strong>below average</strong> for its sonic cohort — there's headroom on the momentum side.`;
+    else summary = `Your track is in the <strong>bottom 25%</strong> of its sonic cohort — the biggest lifts here are playlist pitching and Spotify popularity growth.`;
+    $('#tm-summary').innerHTML = summary;
+
+    // === Three metric rows (cleaner labels) ===
+    const tmRows = $('#track-momentum-rows');
+    tmRows.innerHTML = '';
+    function row(label, sublabel, scanned, stats, pct) {
       const div = document.createElement('div');
       div.className = 'track-momentum-row';
       const valCls = (scanned == null) ? 'tm-value na' : 'tm-value';
       const pctStr = pct != null
-        ? `p${Math.round(pct * 100)} of ${stats ? stats.count.toLocaleString() : '?'} peers`
+        ? `<span class="tm-pct">${pctLabel(pct)}</span> of ${stats ? stats.count.toLocaleString() : '?'} sonic peers`
         : 'no comparable peer data';
       const peerStr = stats
-        ? `median ${fmtNum(stats.median)} · p75 ${fmtNum(stats.p75)} · p99 ${fmtNum(stats.p99)}`
+        ? `<br>peer median ${fmtNum(stats.median)} · top 25% ${fmtNum(stats.p75)} · top 1% ${fmtNum(stats.p99)}`
         : '';
       div.innerHTML = `
-        <span class="tm-label">${label}</span>
+        <span class="tm-label">${label}<small>${sublabel}</small></span>
         <span class="${valCls}">${scanned != null ? fmtNum(scanned) : 'N/A'}</span>
-        <span class="tm-peers">${pctStr}${peerStr ? ' &middot; ' + peerStr : ''}</span>`;
+        <span class="tm-peers">${pctStr}${peerStr}</span>`;
       tmRows.appendChild(div);
     }
-    row('Spotify Popularity', tm.scanned_popularity, tm.pop_stats, tm.percentile_popularity);
-    row('Chartmetric Score',  tm.scanned_cm_score,   tm.cm_stats,  tm.percentile_cm_score);
-    row('Playlists',          tm.scanned_playlists,  tm.playlists_stats, tm.percentile_playlists);
+    row('Spotify Popularity', 'Spotify’s 0–100 recency-weighted score', tm.scanned_popularity, tm.pop_stats, tm.percentile_popularity);
+    row('Chartmetric Score',  'Multi-platform composite (0–100)', tm.scanned_cm_score, tm.cm_stats, tm.percentile_cm_score);
+    row('Playlist Placements', 'Editorial + user playlists combined', tm.scanned_playlists, tm.playlists_stats, tm.percentile_playlists);
 
-    $('#tm-peer-count').textContent = `vs ${tm.peer_count.toLocaleString()} sonic peers`;
+    $('#tm-peer-count').textContent = `vs ${tm.peer_count.toLocaleString()} tracks that sound like yours`;
 
-    const compPct = Math.round((tm.composite_percentile || 0) * 100);
-    let compMsg;
-    if (compPct >= 75) compMsg = `Your track sits in the <strong>top 25%</strong> of its sonic cohort (composite percentile <strong>${compPct}</strong>).`;
-    else if (compPct >= 50) compMsg = `Your track is above the median of its sonic cohort (composite percentile <strong>${compPct}</strong>).`;
-    else if (compPct >= 25) compMsg = `Your track is below the median of its sonic cohort (composite percentile <strong>${compPct}</strong>).`;
-    else compMsg = `Your track is in the bottom 25% of its sonic cohort (composite percentile <strong>${compPct}</strong>) — biggest lift available from playlist pitching and popularity growth.`;
-    $('#track-momentum-composite').innerHTML = compMsg;
-
+    // === Gap line: only shown for tracks BELOW top 25% of cohort ===
     const gapEl = $('#track-momentum-gap');
-    if (tm.gap_additional_revenue && tm.gap_additional_revenue > 0 && tm.gap_target_listeners) {
+    if (tm.gap_additional_revenue && tm.gap_additional_revenue > 0 && tm.gap_target_listeners && compPct < 75) {
       const cur = (tm.gap_current_revenue || 0).toLocaleString();
       const tgt = (tm.gap_target_revenue || 0).toLocaleString();
       const tgtListeners = tm.gap_target_listeners.toLocaleString();
       const additional = tm.gap_additional_revenue.toLocaleString();
-      gapEl.innerHTML = `<strong>Closing the gap to top 25% peers:</strong> tracks in the top 25% of this sonic cohort belong to artists with a median of <strong>${tgtListeners} monthly listeners</strong> — typically generating <strong>$${tgt}/year</strong> at $${tm.revenue_per_listener.toFixed(2)}/listener (Loud &amp; Clear 2025). Yours is $${cur}/year. <strong>+$${additional}/year potential</strong> if your track reached that peer tier.
-        <span class="gap-note">Empirical correlation from your actual peer pool — what artists with tracks at this level typically have. Not a personal forecast.</span>`;
+      gapEl.innerHTML = `<strong>What "closing the gap" looks like:</strong> tracks in the top 25% of this sonic cohort belong to artists with a median of <strong>${tgtListeners} monthly listeners</strong> — typically earning <strong>$${tgt}/year</strong> in Spotify streaming royalties (at $${tm.revenue_per_listener.toFixed(2)}/listener, Loud &amp; Clear 2025). You're currently at $${cur}/year. <strong>+$${additional}/year potential</strong> if your track reached that peer tier.
+        <span class="gap-note">Peer-typical correlation from your actual sonic cohort — what artists with tracks at this level typically have. Not a personal forecast.</span>`;
       gapEl.style.display = 'block';
     } else {
       gapEl.style.display = 'none';
@@ -825,9 +871,10 @@ function renderResults(data) {
       $('#conv-tick-target').style.display = 'none';
     }
 
-    // Fan label on the gap
+    // Fan label on the gap — suppressed when track-momentum panel is rendering
+    // (the new panel's gap line covers this story more honestly).
     const fanLabel = $('#conv-fan-label');
-    if (hasUserRate && fans > 0 && target > cr) {
+    if (hasUserRate && fans > 0 && target > cr && !tm) {
       fanLabel.textContent = '+' + fans.toLocaleString() + ' fans';
       fanLabel.style.marginLeft = toPos(cr) + '%';
       fanLabel.style.width = (toPos(target) - toPos(cr)) + '%';
@@ -942,7 +989,19 @@ function renderResults(data) {
         $('#conv-revenue-title').textContent = 'Estimated Spotify Revenue';
         const earningsEl = $('#conv-tier-earnings');
 
-        if (fans > 0) {
+        // Show the "with gap closed" projection ONLY when there's no track-momentum
+        // gap line already doing this job. The new track-level panel projects gap
+        // revenue via empirical peer-typical artist listeners at composite p75 —
+        // that's a cleaner, less inflated number than the old artist-level
+        // additional_fans projection (which was built on the made-up conversion
+        // formula). When the new panel is present, just show current revenue.
+        const hasTrackMomentumGap = !!(tm && tm.gap_additional_revenue
+                                       && tm.gap_additional_revenue > 0
+                                       && tm.gap_target_listeners
+                                       && Math.round((tm.composite_percentile || 0) * 100) < 75);
+        const suppressOldGap = !!tm;  // any track_momentum present → use the new panel's gap math
+
+        if (fans > 0 && !suppressOldGap) {
           earningsEl.innerHTML = `
             <div class="conv-tier-row">
               <span class="conv-tier-label">Current (${fmtNum(listeners)} listeners)</span>
@@ -951,6 +1010,13 @@ function renderResults(data) {
             <div class="conv-tier-row">
               <span class="conv-tier-label">With gap closed (+${fans.toLocaleString()} fans)</span>
               <span class="conv-tier-val conv-tier-val-projected">${fmtRev(projectedRev)}/year</span>
+            </div>
+          `;
+        } else if (fans > 0 && suppressOldGap) {
+          earningsEl.innerHTML = `
+            <div class="conv-tier-row">
+              <span class="conv-tier-label">Current (${fmtNum(listeners)} listeners)</span>
+              <span class="conv-tier-val">${fmtRev(currentRev)}/year</span>
             </div>
           `;
         } else {
