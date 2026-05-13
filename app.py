@@ -1529,12 +1529,32 @@ async def analyze(
 
         # Build conversion comparison vs matched artists (works with or without Spotify URL)
         MAX_REASONABLE_CONVERSION = 15.0
+        # Raw followers/listener ratio — the industry-standard metric (Chartlex,
+        # Chartmetric). See memory/reference_conversion_metrics_research.md for
+        # benchmark sources. conversion_rate * (4.3/0.1) / 100 is mathematically
+        # equivalent, but the raw ratio has documented bucketing thresholds.
+        MAX_REASONABLE_RATIO = MAX_REASONABLE_CONVERSION / 2.326  # ≈ 6.45
+        u_fol_listener_ratio = None
+        if u_listeners > 0 and u_followers > 0:
+            u_fol_listener_ratio = round(u_followers / u_listeners, 3)
+        if u_fol_listener_ratio is not None and u_fol_listener_ratio > MAX_REASONABLE_RATIO:
+            u_fol_listener_ratio = MAX_REASONABLE_RATIO
+
         if u_listeners > 0 and matches:
             match_conversions = [
                 m['conversion_rate'] for m in matches
                 if m.get('conversion_rate') is not None
                 and 0 < m['conversion_rate'] <= MAX_REASONABLE_CONVERSION
             ]
+            # Raw ratio peer pool — same artists, just expressed as fol/listener
+            match_ratios = []
+            for m in matches:
+                ml = m.get('listeners') or 0
+                mf = m.get('followers') or 0
+                if ml > 0 and mf > 0:
+                    r = mf / ml
+                    if 0 < r <= MAX_REASONABLE_RATIO:
+                        match_ratios.append(r)
             conv_comparison = {}
             if match_conversions:
                 sorted_conv = sorted(match_conversions)
@@ -1547,6 +1567,13 @@ async def analyze(
                     'peer_count': len(sorted_conv),
                     'peer_pool_total': len(matches),
                 }
+                if match_ratios:
+                    sorted_r = sorted(match_ratios)
+                    rn = len(sorted_r)
+                    conv_comparison['peer_ratio_median']    = round(sorted_r[rn // 2], 3)
+                    conv_comparison['peer_ratio_top_25']    = round(sorted_r[int(rn * 0.75)], 3)
+                    conv_comparison['peer_ratio_bottom_25'] = round(sorted_r[rn // 4], 3)
+                    conv_comparison['peer_ratio_p99']       = round(sorted_r[min(rn - 1, int(rn * 0.99))], 3)
 
             # Fan gap: how many additional followers if you hit top 25%
             additional_fans = 0
@@ -1574,11 +1601,29 @@ async def analyze(
             else:
                 save_low, save_high = 12.0, 20.0
 
+            # Retention bucket from documented benchmarks (Chartlex):
+            #   > 1.0   = stale-or-superstar (more followers than monthly listeners)
+            #   0.1-1.0 = healthy retention band
+            #   0.067-0.1 = marginal
+            #   < 0.067 = shallow (width without depth)
+            retention_bucket = None
+            if u_fol_listener_ratio is not None:
+                if u_fol_listener_ratio > 1.0:
+                    retention_bucket = 'stale_or_superstar'
+                elif u_fol_listener_ratio >= 0.1:
+                    retention_bucket = 'healthy'
+                elif u_fol_listener_ratio >= 0.067:
+                    retention_bucket = 'marginal'
+                else:
+                    retention_bucket = 'shallow'
+
             user_profile = {
                 'name': lead.get('name', 'Artist'),
                 'listeners': u_listeners,
                 'followers': u_followers,
                 'conversion_rate': u_conversion,
+                'fol_listener_ratio': u_fol_listener_ratio,
+                'retention_bucket': retention_bucket,
                 'estimated_save_rate_low': save_low,
                 'estimated_save_rate_high': save_high,
                 'conversion_comparison': conv_comparison,
@@ -3057,14 +3102,30 @@ async def analyze_url(
     if u_conversion is not None and u_conversion > 15.0:
         u_conversion = 15.0
 
+    MAX_REASONABLE_CONVERSION = 15.0
+    MAX_REASONABLE_RATIO = MAX_REASONABLE_CONVERSION / 2.326  # ≈ 6.45
+    u_fol_listener_ratio = None
+    if u_listeners > 0 and u_followers > 0:
+        u_fol_listener_ratio = round(u_followers / u_listeners, 3)
+    if u_fol_listener_ratio is not None and u_fol_listener_ratio > MAX_REASONABLE_RATIO:
+        u_fol_listener_ratio = MAX_REASONABLE_RATIO
+
     if u_listeners > 0 and all_found:
         # Filter out anomalous conversion rates (retired artists, bad data)
-        MAX_REASONABLE_CONVERSION = 15.0
         match_conversions = [
             m['conversion_rate'] for m in all_found
             if m.get('conversion_rate') is not None
             and 0 < m['conversion_rate'] <= MAX_REASONABLE_CONVERSION
         ]
+        # Raw ratio peer pool — see memory/reference_conversion_metrics_research.md
+        match_ratios = []
+        for m in all_found:
+            ml = m.get('listeners') or 0
+            mf = m.get('followers') or 0
+            if ml > 0 and mf > 0:
+                r = mf / ml
+                if 0 < r <= MAX_REASONABLE_RATIO:
+                    match_ratios.append(r)
         conv_comparison = {}
         if match_conversions:
             sorted_conv = sorted(match_conversions)
@@ -3077,6 +3138,13 @@ async def analyze_url(
                 'peer_count': len(sorted_conv),
                 'peer_pool_total': len(all_found),
             }
+            if match_ratios:
+                sorted_r = sorted(match_ratios)
+                rn = len(sorted_r)
+                conv_comparison['peer_ratio_median']    = round(sorted_r[rn // 2], 3)
+                conv_comparison['peer_ratio_top_25']    = round(sorted_r[int(rn * 0.75)], 3)
+                conv_comparison['peer_ratio_bottom_25'] = round(sorted_r[rn // 4], 3)
+                conv_comparison['peer_ratio_p99']       = round(sorted_r[min(rn - 1, int(rn * 0.99))], 3)
 
         additional_fans = 0
         additional_revenue = 0
@@ -3107,18 +3175,36 @@ async def analyze_url(
         else:
             save_low, save_high = 12.0, 20.0
 
+        # Retention bucket from documented benchmarks (Chartlex):
+        #   > 1.0   = stale-or-superstar (more followers than monthly listeners)
+        #   0.1-1.0 = healthy retention band
+        #   0.067-0.1 = marginal
+        #   < 0.067 = shallow (width without depth)
+        retention_bucket = None
+        if u_fol_listener_ratio is not None:
+            if u_fol_listener_ratio > 1.0:
+                retention_bucket = 'stale_or_superstar'
+            elif u_fol_listener_ratio >= 0.1:
+                retention_bucket = 'healthy'
+            elif u_fol_listener_ratio >= 0.067:
+                retention_bucket = 'marginal'
+            else:
+                retention_bucket = 'shallow'
+
         user_profile = {
             'name': lead.get('name', 'Artist'),
             'listeners': u_listeners,
             'followers': u_followers,
             'conversion_rate': u_conversion,
+            'fol_listener_ratio': u_fol_listener_ratio,
+            'retention_bucket': retention_bucket,
             'estimated_save_rate_low': save_low,
             'estimated_save_rate_high': save_high,
             'conversion_comparison': conv_comparison,
             'additional_fans': additional_fans,
             'additional_revenue': additional_revenue,
         }
-        print(f"  User profile built: conversion={u_conversion}, est_save={save_low}-{save_high}%, fans_gap={additional_fans}, peers={conv_comparison.get('peer_count', 0)}")
+        print(f"  User profile built: conversion={u_conversion}, ratio={u_fol_listener_ratio}, bucket={retention_bucket}, est_save={save_low}-{save_high}%, fans_gap={additional_fans}, peers={conv_comparison.get('peer_count', 0)}")
 
     print(f"  URL analysis: {len(found_matches)} tier-filtered matches, "
           f"{len(all_found)} total genre-filtered for enrichment, "
