@@ -48,6 +48,7 @@ from chartmetric_lookup import (
     _fetch_curator_contact,
     _upsert_gems_features,
     _lookup_gems_features,
+    fetch_track_momentum,
 )
 from email_sender import send_results_email
 from job_manager import JobManager
@@ -3320,11 +3321,22 @@ async def analyze_url(
                 retention_bucket = 'shallow'
 
         # Track-level momentum: look up the scanned track's own popularity / cm_score /
-        # playlist counts from our universe and build empirical peer percentiles +
-        # revenue-gap projection. Skipped silently if the scanned track isn't in
-        # our universe (brand-new release) — the panel falls back to artist-level only.
+        # playlist counts. Cache-first; on miss, fetch live from Spotify + Chartmetric
+        # so the panel works for tracks not yet in our universe.
         track_momentum = None
         scanned_track_row = matcher._tracks.get(track_isrc) if track_isrc else None
+        if not scanned_track_row and track_isrc and track_id:
+            # On-demand fetch — 1 Spotify call + ~3 CM calls, ~3-5s added latency.
+            # Result is used for this scan only (not cached back to universe yet).
+            try:
+                cm_refresh = os.getenv('REFRESH_TOKEN')
+                cm_tok = get_cm_token(cm_refresh) if cm_refresh else None
+                fetched = fetch_track_momentum(cm_tok, track_id, track_isrc) if cm_tok else None
+                if fetched:
+                    scanned_track_row = fetched
+                    print(f"  Track momentum: live-fetched for {track_isrc} (not in universe cache)")
+            except Exception as e:
+                print(f"  Track momentum: live fetch failed for {track_isrc}: {e}")
         if scanned_track_row and all_found:
             track_momentum = _build_track_momentum(scanned_track_row, all_found, u_listeners)
 

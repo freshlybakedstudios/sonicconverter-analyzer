@@ -38,6 +38,95 @@ CM_TRACK_PLAYLISTS_URL = "https://api.chartmetric.com/api/track/{track_id}/spoti
 # Rate limiting — thread-safe, 1 req/s CM plan
 _last_call = 0.0
 _RATE_INTERVAL = 1.1  # ~0.9 req/s, safely under 1 req/s CM limit
+
+
+# ---------------------------------------------------------------------------
+# Spotify client-credentials helper — used as fallback when Chartmetric returns
+# no release_date for a track. Mirrors discovery_events_work.py:_get_spotify_cc_token.
+# ---------------------------------------------------------------------------
+_spotify_cc_token = None
+_spotify_cc_expiry = 0.0
+
+
+def _get_spotify_cc_token():
+    """Cached Spotify access token via client_credentials flow. Returns None on failure."""
+    global _spotify_cc_token, _spotify_cc_expiry
+    if _spotify_cc_token and time.time() < _spotify_cc_expiry - 60:
+        return _spotify_cc_token
+    client_id = os.getenv('SPOTIFY_CLIENT_ID')
+    client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
+    if not client_id or not client_secret:
+        return None
+    try:
+        resp = requests.post(
+            'https://accounts.spotify.com/api/token',
+            data={'grant_type': 'client_credentials'},
+            auth=(client_id, client_secret),
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            _spotify_cc_token = data['access_token']
+            _spotify_cc_expiry = time.time() + data.get('expires_in', 3600)
+            return _spotify_cc_token
+    except Exception:
+        pass
+    return None
+
+
+def _spotify_release_date(spotify_track_id):
+    """Look up a track's album release_date via Spotify /v1/tracks/{id}.
+    Returns YYYY-MM-DD or None. Pads year/month precision to full date."""
+    if not spotify_track_id:
+        return None
+    token = _get_spotify_cc_token()
+    if not token:
+        return None
+    try:
+        resp = requests.get(
+            f'https://api.spotify.com/v1/tracks/{spotify_track_id}',
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        album = (resp.json().get('album') or {})
+        rd = album.get('release_date')
+        precision = album.get('release_date_precision')
+        if not rd:
+            return None
+        if precision == 'year' and len(rd) == 4:
+            return f'{rd}-01-01'
+        if precision == 'month' and len(rd) == 7:
+            return f'{rd}-01'
+        return rd
+    except Exception:
+        return None
+
+
+def _spotify_track_popularity(spotify_track_id):
+    """Look up Spotify's track popularity (0-100) via /v1/tracks/{id}.
+    Track-level momentum signal — recency-weighted save-rate proxy.
+    Returns int or None."""
+    if not spotify_track_id:
+        return None
+    token = _get_spotify_cc_token()
+    if not token:
+        return None
+    try:
+        resp = requests.get(
+            f'https://api.spotify.com/v1/tracks/{spotify_track_id}',
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        pop = resp.json().get('popularity')
+        if pop is None:
+            return None
+        return int(pop)
+    except Exception:
+        return None
 _rate_lock = threading.Lock()
 
 # Retry settings — match discovery_events_work.py exactly
@@ -668,6 +757,21 @@ def _upsert_track(supa_url: str, api_key: str, project_ref: str,
     if not track_genres_value:
         track_genres_value = 'Others'
 
+    # Resolve release_date with Spotify fallback when Chartmetric had none
+    release_date_value = track_data.get('selected_release_date')
+    sp_ids = track_data.get('spotify_track_ids') or []
+    if not release_date_value and sp_ids:
+        release_date_value = _spotify_release_date(sp_ids[0])
+        if release_date_value:
+            logger.info(f"Spotify fallback: release_date={release_date_value} for {track_data.get('name')}")
+
+    # Track-level momentum signal — Spotify popularity is the save-rate proxy used
+    # for cohort filtering (replacing artist-level sp_listeners_to_followers_ratio).
+    sp_track_popularity_value = _spotify_track_popularity(sp_ids[0]) if sp_ids else None
+    # Chartmetric composite track score (recency-weighted) lives at stats['score'].
+    cm_track_score_value = stats.get('score')
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     payload = {
         'artist_id': str(artist_id),
         'top_track': track_data.get('name'),
@@ -682,8 +786,12 @@ def _upsert_track(supa_url: str, api_key: str, project_ref: str,
         'independent_playlists_info': track_data.get('independent_playlists_info', 'N/A'),
         'isrc': track_data.get('isrc'),
         'cm_track': track_data.get('id') or track_data.get('cm_track'),
-        'release_date': track_data.get('selected_release_date'),
-        'updated_at': datetime.now(timezone.utc).isoformat(),
+        'release_date': release_date_value,
+        'sp_track_popularity': sp_track_popularity_value,
+        'sp_track_popularity_fetched_at': now_iso if sp_track_popularity_value is not None else None,
+        'cm_track_score': cm_track_score_value,
+        'cm_track_score_fetched_at': now_iso if cm_track_score_value is not None else None,
+        'updated_at': now_iso,
     }
 
     resp = requests.post(f"{supa_url}/rest/v1/tracks", json=payload, headers=headers, timeout=30)
@@ -1140,6 +1248,75 @@ def _resolve_isrc_to_cm_track_id(token: str, isrc: str) -> int | None:
             logger.debug(f"ISRC cache write failed for {isrc}: {e}")
 
     return cm_track_id
+
+
+def fetch_track_momentum(token: str, spotify_track_id: str, isrc: str) -> dict | None:
+    """On-demand fetch of track-level momentum signals for a track that isn't in
+    the universe cache yet. Used by the analyzer when the scanned track is not
+    in our pre-backfilled `tracks` dict.
+
+    Returns dict with sp_track_popularity, cm_track_score, editorial_playlists,
+    user_playlists (counts), spotify_plays (lifetime stream count). Any field may
+    be None on lookup failure. Returns None only if both Spotify and CM lookups
+    fully fail.
+
+    Cost: 1 Spotify Web API call + ~3 Chartmetric API calls (rate-limited at 1 rps).
+    Adds 3-5s to scan time for cache-miss tracks.
+    """
+    out = {
+        'isrc': isrc,
+        'sp_track_popularity': None,
+        'cm_track_score': None,
+        'editorial_playlists': 0,
+        'user_playlists': 0,
+        'spotify_plays': 0,
+    }
+
+    # Spotify popularity — fast, no CM rate budget consumed
+    if spotify_track_id:
+        try:
+            out['sp_track_popularity'] = _spotify_track_popularity(spotify_track_id)
+        except Exception as e:
+            logger.debug(f"fetch_track_momentum: spotify popularity failed: {e}")
+
+    # Resolve ISRC → CM track id (uses Supabase cache first)
+    cm_track_id = None
+    if isrc and token:
+        try:
+            cm_track_id = _resolve_isrc_to_cm_track_id(token, isrc)
+        except Exception as e:
+            logger.debug(f"fetch_track_momentum: ISRC→CM resolve failed: {e}")
+
+    # Fetch CM track metadata (gives stats.score, num_sp_editorial_playlists,
+    # num_sp_playlists, sp_streams).
+    if cm_track_id and token:
+        try:
+            _rate_wait()
+            resp = requests.get(
+                CM_TRACK_META_URL.format(track_id=cm_track_id),
+                headers={'Authorization': f'Bearer {token}'},
+                timeout=20,
+            )
+            if resp.status_code == 200:
+                meta = resp.json().get('obj', {})
+                stats = meta.get('cm_statistics', {}) or meta.get('stats', {}) or {}
+                # Different CM endpoints nest these differently; try both shapes.
+                score = stats.get('score')
+                if score is None:
+                    score = meta.get('score') or meta.get('cm_score')
+                out['cm_track_score'] = score
+                out['editorial_playlists'] = int(stats.get('num_sp_editorial_playlists') or 0)
+                out['user_playlists'] = int(stats.get('num_sp_playlists') or 0)
+                out['spotify_plays'] = int(stats.get('sp_streams') or 0)
+        except Exception as e:
+            logger.debug(f"fetch_track_momentum: CM meta fetch failed: {e}")
+
+    # If everything failed, return None so callers can decide to skip
+    if (out['sp_track_popularity'] is None and out['cm_track_score'] is None
+            and out['editorial_playlists'] == 0 and out['user_playlists'] == 0):
+        return None
+
+    return out
 
 
 # ---------------------------------------------------------------------------
