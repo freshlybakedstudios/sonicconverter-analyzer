@@ -440,11 +440,27 @@
         <h3>Where You Stand</h3>
         <p class="conversion-note">This track's momentum vs your sonic peers' tracks, plus artist-level context. Every signal is real data from Spotify / Chartmetric — no invented constants.</p>
 
-        <!-- Track-level momentum panel (shown when scanned track is in our universe) -->
+        <!-- Track-level momentum panel (shown when scanned track is in our universe
+             OR live-fetched from Spotify/Chartmetric on cache miss). -->
         <div class="track-momentum hidden" id="track-momentum">
-          <div class="track-momentum-title">This Track's Momentum <span class="track-momentum-sub" id="tm-peer-count"></span></div>
+          <div class="track-momentum-title">Where Your Track Stands <span class="track-momentum-sub" id="tm-peer-count"></span></div>
+          <p class="track-momentum-tagline">How this song is performing right now, compared to tracks that sound like yours.</p>
+
+          <!-- Composite percentile bar — fixed 0–100 scale, ticks at the quartile lines -->
+          <div class="track-momentum-bar-wrap">
+            <div class="conv-bar" id="tm-bar">
+              <div class="conv-bar-fill" id="tm-bar-fill"></div>
+              <div class="conv-bar-tick" id="tm-tick-25" style="left:25%"></div>
+              <div class="conv-bar-tick" id="tm-tick-50" style="left:50%"></div>
+              <div class="conv-bar-tick" id="tm-tick-75" style="left:75%"></div>
+              <div class="conv-bar-tick" id="tm-tick-99" style="left:99%"></div>
+              <div class="conv-bar-dot" id="tm-bar-dot"></div>
+            </div>
+            <div class="conv-bar-labels" id="tm-bar-labels"></div>
+          </div>
+
+          <div class="track-momentum-summary" id="tm-summary"></div>
           <div class="track-momentum-rows" id="track-momentum-rows"></div>
-          <div class="track-momentum-composite" id="track-momentum-composite"></div>
           <div class="track-momentum-gap" id="track-momentum-gap"></div>
         </div>
 
