@@ -438,7 +438,15 @@
       <!-- 7. Where You Stand -->
       <div class="conversion-card hidden" id="conversion-card">
         <h3>Where You Stand</h3>
-        <p class="conversion-note">Follower retention vs your sonic peers — using the industry-standard followers-per-monthly-listener ratio with documented Chartlex / Chartmetric benchmarks</p>
+        <p class="conversion-note">This track's momentum vs your sonic peers' tracks, plus artist-level context. Every signal is real data from Spotify / Chartmetric — no invented constants.</p>
+
+        <!-- Track-level momentum panel (shown when scanned track is in our universe) -->
+        <div class="track-momentum hidden" id="track-momentum">
+          <div class="track-momentum-title">This Track's Momentum <span class="track-momentum-sub" id="tm-peer-count"></span></div>
+          <div class="track-momentum-rows" id="track-momentum-rows"></div>
+          <div class="track-momentum-composite" id="track-momentum-composite"></div>
+          <div class="track-momentum-gap" id="track-momentum-gap"></div>
+        </div>
 
         <div class="conv-bar-wrap">
           <div class="conv-bar" id="conv-bar">

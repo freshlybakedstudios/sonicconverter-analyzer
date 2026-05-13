@@ -798,6 +798,130 @@ def _listeners_to_tier(listeners: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Track-level momentum panel — empirical peer comparison for the scanned track.
+# Compares the scanned track's track-level signals (popularity / cm_score /
+# playlists) against the same metrics in the sonic peer pool. Also computes a
+# revenue gap projection by finding the median artist monthly_listeners among
+# peer tracks at composite-momentum p75 and applying the documented
+# $0.13/listener/year rate (Loud & Clear 2025). Empirical lookup, not a model.
+# ---------------------------------------------------------------------------
+REVENUE_PER_LISTENER_PER_YEAR = 0.13  # Loud & Clear 2025 mid-tier per-listener annualized
+
+def _safe_int(v):
+    try: return int(v) if v is not None else 0
+    except (TypeError, ValueError): return 0
+
+
+def _pct_rank(value, sorted_pool):
+    """Percentile rank in [0,1]. None value or empty pool returns None."""
+    if value is None or not sorted_pool:
+        return None
+    import bisect
+    return round(bisect.bisect_left(sorted_pool, value) / len(sorted_pool), 3)
+
+
+def _build_track_momentum(scanned_track: dict, peer_matches: list, user_listeners: float) -> dict | None:
+    """Build the track_momentum block for the user_profile response.
+
+    Returns None if there's not enough data to compute anything useful.
+    """
+    if not scanned_track or not peer_matches:
+        return None
+
+    # Pools for each momentum dimension
+    pop_pool = sorted([p['sp_track_popularity'] for p in peer_matches
+                       if p.get('sp_track_popularity') is not None])
+    cm_pool = sorted([p['cm_track_score'] for p in peer_matches
+                      if p.get('cm_track_score') is not None])
+    pl_pool = sorted([_safe_int(p.get('editorial_playlists')) + _safe_int(p.get('user_playlists'))
+                      for p in peer_matches])
+
+    def _stats(pool):
+        if not pool: return None
+        n = len(pool)
+        return {
+            'median': pool[n // 2],
+            'p75': pool[int(n * 0.75)],
+            'p99': pool[min(n - 1, int(n * 0.99))],
+            'count': n,
+        }
+
+    # Scanned track's values
+    scanned_pop = scanned_track.get('sp_track_popularity')
+    scanned_cm = scanned_track.get('cm_track_score')
+    scanned_pl = _safe_int(scanned_track.get('editorial_playlists')) + _safe_int(scanned_track.get('user_playlists'))
+
+    pop_pct = _pct_rank(scanned_pop, pop_pool)
+    cm_pct = _pct_rank(scanned_cm, cm_pool)
+    pl_pct = _pct_rank(scanned_pl, pl_pool)
+
+    # Composite percentile — same weighting as the cohort filter, renormalized
+    # without the artist-level conversion signal (this panel is track-level only).
+    # 0.50 popularity + 0.30 cm_score + 0.20 playlists. cm_score null: redistribute.
+    def _composite_for(pop_value, cm_value, pl_value):
+        p = _pct_rank(pop_value, pop_pool)
+        c = _pct_rank(cm_value, cm_pool) if cm_value is not None else None
+        pl = _pct_rank(pl_value, pl_pool)
+        if p is None: p = 0.5
+        if pl is None: pl = 0.5
+        if c is not None:
+            return 0.50 * p + 0.30 * c + 0.20 * pl
+        return 0.714 * p + 0.286 * pl  # 0.50 + 0.30 → 0.80, renormalized
+
+    composite_pct = round(_composite_for(scanned_pop, scanned_cm, scanned_pl), 3)
+
+    # --- Revenue gap projection ---
+    # Find peer tracks at composite p75+, get median artist listeners, apply rate.
+    peer_with_listeners = [
+        (
+            _composite_for(p.get('sp_track_popularity'), p.get('cm_track_score'),
+                           _safe_int(p.get('editorial_playlists')) + _safe_int(p.get('user_playlists'))),
+            float(p.get('listeners') or 0),
+        )
+        for p in peer_matches
+        if p.get('listeners') and float(p.get('listeners') or 0) > 0
+    ]
+    if peer_with_listeners:
+        peer_with_listeners.sort(key=lambda x: x[0], reverse=True)
+        top25_cut = max(int(len(peer_with_listeners) * 0.25), 10)
+        top25_listeners = sorted([l for _, l in peer_with_listeners[:top25_cut]])
+        target_listeners = top25_listeners[len(top25_listeners) // 2]
+    else:
+        target_listeners = None
+
+    current_revenue = round(user_listeners * REVENUE_PER_LISTENER_PER_YEAR) if user_listeners > 0 else 0
+    if target_listeners and target_listeners > user_listeners:
+        target_revenue = round(target_listeners * REVENUE_PER_LISTENER_PER_YEAR)
+        gap_revenue = target_revenue - current_revenue
+    else:
+        target_revenue = None
+        gap_revenue = 0
+
+    return {
+        # Scanned track absolute values
+        'scanned_popularity': scanned_pop,
+        'scanned_cm_score': scanned_cm,
+        'scanned_playlists': scanned_pl,
+        # Peer pool stats per dimension
+        'pop_stats': _stats(pop_pool),
+        'cm_stats': _stats(cm_pool),
+        'playlists_stats': _stats(pl_pool),
+        # Percentiles
+        'percentile_popularity': pop_pct,
+        'percentile_cm_score': cm_pct,
+        'percentile_playlists': pl_pct,
+        'composite_percentile': composite_pct,
+        'peer_count': len(peer_matches),
+        # Revenue gap
+        'gap_target_listeners': int(round(target_listeners)) if target_listeners else None,
+        'gap_current_revenue': current_revenue,
+        'gap_target_revenue': target_revenue,
+        'gap_additional_revenue': gap_revenue,
+        'revenue_per_listener': REVENUE_PER_LISTENER_PER_YEAR,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
 def _validate_session(token: str) -> dict:
@@ -1617,6 +1741,9 @@ async def analyze(
                 else:
                     retention_bucket = 'shallow'
 
+            # Track momentum: file-upload path doesn't have an ISRC for the scanned
+            # track, so we can't do a track-level lookup here. Stays None — frontend
+            # falls back to the artist-level Where You Stand display.
             user_profile = {
                 'name': lead.get('name', 'Artist'),
                 'listeners': u_listeners,
@@ -1629,6 +1756,7 @@ async def analyze(
                 'conversion_comparison': conv_comparison,
                 'additional_fans': additional_fans,
                 'additional_revenue': additional_revenue,
+                'track_momentum': None,
             }
 
         # Get raw GEMS data for matched artists (for consensus comparison)
@@ -3191,6 +3319,15 @@ async def analyze_url(
             else:
                 retention_bucket = 'shallow'
 
+        # Track-level momentum: look up the scanned track's own popularity / cm_score /
+        # playlist counts from our universe and build empirical peer percentiles +
+        # revenue-gap projection. Skipped silently if the scanned track isn't in
+        # our universe (brand-new release) — the panel falls back to artist-level only.
+        track_momentum = None
+        scanned_track_row = matcher._tracks.get(track_isrc) if track_isrc else None
+        if scanned_track_row and all_found:
+            track_momentum = _build_track_momentum(scanned_track_row, all_found, u_listeners)
+
         user_profile = {
             'name': lead.get('name', 'Artist'),
             'listeners': u_listeners,
@@ -3203,7 +3340,10 @@ async def analyze_url(
             'conversion_comparison': conv_comparison,
             'additional_fans': additional_fans,
             'additional_revenue': additional_revenue,
+            'track_momentum': track_momentum,
         }
+        if track_momentum:
+            print(f"  Track momentum: pop={track_momentum['scanned_popularity']} (p{int((track_momentum['percentile_popularity'] or 0)*100)}), cm={track_momentum['scanned_cm_score']}, pl={track_momentum['scanned_playlists']}, composite=p{int(track_momentum['composite_percentile']*100)}, gap=${track_momentum['gap_additional_revenue']}/yr")
         print(f"  User profile built: conversion={u_conversion}, ratio={u_fol_listener_ratio}, bucket={retention_bucket}, est_save={save_low}-{save_high}%, fans_gap={additional_fans}, peers={conv_comparison.get('peer_count', 0)}")
 
     print(f"  URL analysis: {len(found_matches)} tier-filtered matches, "
