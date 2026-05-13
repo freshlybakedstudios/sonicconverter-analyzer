@@ -1521,6 +1521,12 @@ async def analyze(
         else:
             print(f"  User profile: no Spotify match (url={'yes' if spotify_base else 'no'}, monthly_listeners={u_listeners})")
 
+        # Cap user conversion at 15% — same sanity bound applied to peer pool.
+        # Prevents stale-follower outliers (e.g. 1.1K followers / 61 listeners)
+        # from showing as "top 1%" when the underlying ratio is noise.
+        if u_conversion is not None and u_conversion > 15.0:
+            u_conversion = 15.0
+
         # Build conversion comparison vs matched artists (works with or without Spotify URL)
         MAX_REASONABLE_CONVERSION = 15.0
         if u_listeners > 0 and matches:
@@ -3044,6 +3050,12 @@ async def analyze_url(
         u_followers = float(track_artist_cm_data.get('followers', 0) or 0)
         u_conversion = track_artist_cm_data.get('conversion_rate')
         print(f"  User profile (CM fallback): {track_artist_cm_data['name']}, listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
+
+    # Cap user conversion at 15% — same sanity bound applied to peer pool.
+    # Prevents stale-follower outliers (e.g. 1.1K followers / 61 listeners)
+    # from showing as "top 1%" when the underlying ratio is noise.
+    if u_conversion is not None and u_conversion > 15.0:
+        u_conversion = 15.0
 
     if u_listeners > 0 and all_found:
         # Filter out anomalous conversion rates (retired artists, bad data)

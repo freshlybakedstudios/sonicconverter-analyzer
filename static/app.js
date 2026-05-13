@@ -827,13 +827,28 @@ function renderResults(data) {
         ? `${peerCount} of ${poolTotalRaw.toLocaleString()} sonic peers (those with conversion data)`
         : `${peerCount} sonic peers`;
 
+      // Sample-size guard: below ~500 monthly listeners, conversion ratio is
+      // statistically noisy (likely reflects friends/family/early supporters,
+      // not commercial conversion behavior). Prepend a warning if applicable.
+      const SMALL_SAMPLE_THRESHOLD = 500;
+      const isSmallSample = listeners > 0 && listeners < SMALL_SAMPLE_THRESHOLD;
+      const smallSampleNote = isSmallSample
+        ? `<span class="small-sample-note"><strong>Small sample:</strong> with only ${listeners.toLocaleString()} monthly listeners, this ratio reflects a tiny audience (often friends, family, or early supporters). Take the peer comparison with a grain of salt and re-check once your listener count grows.</span> `
+        : '';
+
       if (fans > 0 && atTop) {
-        oppEl.innerHTML = `You're already in the <span class="fan-number">top 25%</span> of ${peerScope}. Reaching the top 1% (${target.toFixed(1)}%) would convert an estimated <span class="fan-number">${fans.toLocaleString()} additional listeners into followers</span> — each one a direct line to your releases, merch drops, and tour dates via Spotify push notifications.`;
+        oppEl.innerHTML = smallSampleNote + `You're already in the <span class="fan-number">top 25%</span> of ${peerScope}. Reaching the top 1% (${target.toFixed(1)}%) would convert an estimated <span class="fan-number">${fans.toLocaleString()} additional listeners into followers</span> — each one a direct line to your releases, merch drops, and tour dates via Spotify push notifications.`;
       } else if (fans > 0) {
         const monthlyFans = Math.round(fans / 12);
-        oppEl.innerHTML = `Across ${peerScope}, the top 25% convert at <span class="fan-number">${target.toFixed(1)}%</span>. Closing that gap means an estimated <span class="fan-number">${fans.toLocaleString()} new followers/year</span> (~${monthlyFans.toLocaleString()}/month) — each one receiving push notifications for your releases, merch drops, and tour dates.`;
+        oppEl.innerHTML = smallSampleNote + `Across ${peerScope}, the top 25% convert at <span class="fan-number">${target.toFixed(1)}%</span>. Closing that gap means an estimated <span class="fan-number">${fans.toLocaleString()} new followers/year</span> (~${monthlyFans.toLocaleString()}/month) — each one receiving push notifications for your releases, merch drops, and tour dates.`;
       } else {
-        oppEl.innerHTML = `You're converting at <span class="fan-number">${cr.toFixed(1)}%</span> — above the top 1% of ${peerScope}. Your listener-to-follower conversion is exceptional.`;
+        // No-additional-fans branch — the "exceptional" message. With small
+        // samples this is almost always misleading, so the warning matters most here.
+        if (isSmallSample) {
+          oppEl.innerHTML = smallSampleNote + `You're converting at <span class="fan-number">${cr.toFixed(1)}%</span> — formally above the top 1% of ${peerScope}, but with this listener count the ratio isn't statistically comparable to peers at scale.`;
+        } else {
+          oppEl.innerHTML = `You're converting at <span class="fan-number">${cr.toFixed(1)}%</span> — above the top 1% of ${peerScope}. Your listener-to-follower conversion is exceptional.`;
+        }
       }
       show(oppEl);
 
