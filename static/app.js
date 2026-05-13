@@ -836,7 +836,25 @@ function renderResults(data) {
         ? `<span class="small-sample-note"><strong>Small sample:</strong> with only ${listeners.toLocaleString()} monthly listeners, this ratio reflects a tiny audience (often friends, family, or early supporters). Take the peer comparison with a grain of salt and re-check once your listener count grows.</span> `
         : '';
 
-      if (fans > 0 && atTop) {
+      // Prefer raw followers/listener ratio with documented bucketing when available.
+      // Source: Chartlex / Chartmetric — see memory/reference_conversion_metrics_research.md.
+      // Falls back to the legacy "X% conversion" copy for backward compat.
+      const fl_ratio = userProfile.fol_listener_ratio;
+      const bucket = userProfile.retention_bucket;
+      if (fl_ratio != null && bucket) {
+        let bucketMsg;
+        const ratioStr = `<span class="fan-number">${fl_ratio.toFixed(2)} followers per monthly listener</span>`;
+        if (bucket === 'healthy') {
+          bucketMsg = `Your ratio of ${ratioStr} sits in the healthy retention band (0.1–1.0 per Chartlex / Chartmetric benchmarks). Above 0.1 correlates with 2–3× more Spotify Release Radar placements — Spotify's algorithm treats your audience as engaged, not just casual.`;
+        } else if (bucket === 'marginal') {
+          bucketMsg = `Your ratio of ${ratioStr} is in the marginal band — close to the threshold where retention becomes a concern. Healthy is above 0.1; below 0.067 indicates audience width without depth. Tightening follower-conversion CTAs in your release notes and bio is the lever here.`;
+        } else if (bucket === 'shallow') {
+          bucketMsg = `Your ratio of ${ratioStr} is below the shallow-audience threshold (0.067 per Chartlex). Your monthly listener count is growing faster than fan retention — a "width without depth" pattern. The next milestone is converting more listeners into followers via release calls-to-action and Spotify Profile pinned releases.`;
+        } else { // stale_or_superstar
+          bucketMsg = `Your ratio of ${ratioStr} is unusually high — typically seen on superstar accounts with massive cumulative followers, or on accounts whose monthly listener count has dropped over time while the follower count carried over. At this ratio your audience math isn't directly comparable to peers at your current listener scale.`;
+        }
+        oppEl.innerHTML = smallSampleNote + bucketMsg;
+      } else if (fans > 0 && atTop) {
         oppEl.innerHTML = smallSampleNote + `You're already in the <span class="fan-number">top 25%</span> of ${peerScope}. Reaching the top 1% (${target.toFixed(1)}%) would convert an estimated <span class="fan-number">${fans.toLocaleString()} additional listeners into followers</span> — each one a direct line to your releases, merch drops, and tour dates via Spotify push notifications.`;
       } else if (fans > 0) {
         const monthlyFans = Math.round(fans / 12);
