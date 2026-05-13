@@ -727,6 +727,64 @@ function renderResults(data) {
   const comp = (userProfile && userProfile.conversion_comparison) || {};
   const hasUserRate = userProfile && userProfile.conversion_rate != null;
 
+  // Track-level momentum panel (renders if scanned track was in our universe)
+  const tm = userProfile && userProfile.track_momentum;
+  const tmPanel = $('#track-momentum');
+  if (tm && tmPanel) {
+    const tmRows = $('#track-momentum-rows');
+    tmRows.innerHTML = '';
+    function fmtNum(n) {
+      if (n == null) return 'N/A';
+      if (typeof n === 'number' && n > 0 && n < 1) return n.toFixed(2);
+      return Math.round(n).toLocaleString();
+    }
+    function row(label, scanned, stats, pct) {
+      const div = document.createElement('div');
+      div.className = 'track-momentum-row';
+      const valCls = (scanned == null) ? 'tm-value na' : 'tm-value';
+      const pctStr = pct != null
+        ? `p${Math.round(pct * 100)} of ${stats ? stats.count.toLocaleString() : '?'} peers`
+        : 'no comparable peer data';
+      const peerStr = stats
+        ? `median ${fmtNum(stats.median)} · p75 ${fmtNum(stats.p75)} · p99 ${fmtNum(stats.p99)}`
+        : '';
+      div.innerHTML = `
+        <span class="tm-label">${label}</span>
+        <span class="${valCls}">${scanned != null ? fmtNum(scanned) : 'N/A'}</span>
+        <span class="tm-peers">${pctStr}${peerStr ? ' &middot; ' + peerStr : ''}</span>`;
+      tmRows.appendChild(div);
+    }
+    row('Spotify Popularity', tm.scanned_popularity, tm.pop_stats, tm.percentile_popularity);
+    row('Chartmetric Score',  tm.scanned_cm_score,   tm.cm_stats,  tm.percentile_cm_score);
+    row('Playlists',          tm.scanned_playlists,  tm.playlists_stats, tm.percentile_playlists);
+
+    $('#tm-peer-count').textContent = `vs ${tm.peer_count.toLocaleString()} sonic peers`;
+
+    const compPct = Math.round((tm.composite_percentile || 0) * 100);
+    let compMsg;
+    if (compPct >= 75) compMsg = `Your track sits in the <strong>top 25%</strong> of its sonic cohort (composite percentile <strong>${compPct}</strong>).`;
+    else if (compPct >= 50) compMsg = `Your track is above the median of its sonic cohort (composite percentile <strong>${compPct}</strong>).`;
+    else if (compPct >= 25) compMsg = `Your track is below the median of its sonic cohort (composite percentile <strong>${compPct}</strong>).`;
+    else compMsg = `Your track is in the bottom 25% of its sonic cohort (composite percentile <strong>${compPct}</strong>) — biggest lift available from playlist pitching and popularity growth.`;
+    $('#track-momentum-composite').innerHTML = compMsg;
+
+    const gapEl = $('#track-momentum-gap');
+    if (tm.gap_additional_revenue && tm.gap_additional_revenue > 0 && tm.gap_target_listeners) {
+      const cur = (tm.gap_current_revenue || 0).toLocaleString();
+      const tgt = (tm.gap_target_revenue || 0).toLocaleString();
+      const tgtListeners = tm.gap_target_listeners.toLocaleString();
+      const additional = tm.gap_additional_revenue.toLocaleString();
+      gapEl.innerHTML = `<strong>Closing the gap to top 25% peers:</strong> tracks in the top 25% of this sonic cohort belong to artists with a median of <strong>${tgtListeners} monthly listeners</strong> — typically generating <strong>$${tgt}/year</strong> at $${tm.revenue_per_listener.toFixed(2)}/listener (Loud &amp; Clear 2025). Yours is $${cur}/year. <strong>+$${additional}/year potential</strong> if your track reached that peer tier.
+        <span class="gap-note">Empirical correlation from your actual peer pool — what artists with tracks at this level typically have. Not a personal forecast.</span>`;
+      gapEl.style.display = 'block';
+    } else {
+      gapEl.style.display = 'none';
+    }
+    tmPanel.classList.remove('hidden');
+  } else if (tmPanel) {
+    tmPanel.classList.add('hidden');
+  }
+
   if (userProfile && (hasUserRate || comp.peer_median != null)) {
     const cr = userProfile.conversion_rate;
     const p25 = comp.peer_bottom_25 || 0;
