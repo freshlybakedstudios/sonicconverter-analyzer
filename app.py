@@ -623,7 +623,7 @@ def _format_rec(feat: str, consensus: dict) -> str:
 def _generate_recommendations(features: dict, matches: list,
                                gems_by_artist: dict = None,
                                genre_alignment: dict = None,
-                               user_profile: dict = None) -> list:
+                               user_profile: dict = None) -> tuple:
     """
     Generate consensus-based production recommendations by comparing the user's
     track against the highest-converting matched artists.
@@ -773,7 +773,9 @@ def _generate_recommendations(features: dict, matches: list,
             f"Consider referencing top {g} producers for mix decisions and playlist targeting."
         )
 
-    return recs
+    # Return both recs and the cohort so the caller can run originality math
+    # against the same cohort that produced these recommendations.
+    return recs, locals().get('high_converter_gems', [])
 
 
 # ---------------------------------------------------------------------------
@@ -919,6 +921,220 @@ def _build_track_momentum(scanned_track: dict, peer_matches: list, user_listener
         'gap_target_revenue': target_revenue,
         'gap_additional_revenue': gap_revenue,
         'revenue_per_listener': REVENUE_PER_LISTENER_PER_YEAR,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Sonic originality — distance from cohort centroid in z-normalized audio
+# feature space. Uses the SAME high_converter_gems cohort that drives the
+# production recommendations (top 25% composite within sonic peers), so the
+# orig × perf quadrant story has a coherent reference: distance from "what's
+# currently winning in your sound space".
+#
+# Same math as the matcher's similarity scoring, inverted. Same feature
+# weights so the score emphasizes the dimensions the matcher cares about
+# (frequency_spectrum 38%, dynamics ~15%, rhythm/transients ~12%).
+# ---------------------------------------------------------------------------
+
+# Weights mirror track_matcher.py:425-470 (audio-only, normalized).
+# Frequency spectrum is 0.38 total spread across 7 sub-bands; rest are
+# direct from the matcher. Emotion (0.07) and genre (0.08) excluded —
+# originality is audio-distance only.
+ORIGINALITY_WEIGHTS = {
+    # Frequency spectrum (7 bands, 0.38 / 7 ≈ 0.054 each)
+    'sub_ratio': 0.054, 'bass_ratio': 0.054, 'low_mid_ratio': 0.054,
+    'mid_ratio': 0.054, 'high_mid_ratio': 0.054, 'presence_ratio': 0.054,
+    'air_ratio': 0.054,
+    # Brightness / spectral shape
+    'brightness': 0.025, 'spectral_rolloff': 0.025, 'brightness_variance': 0.015,
+    # Dynamics
+    'energy': 0.060, 'dynamic_range': 0.030, 'loudness_range': 0.020,
+    'lufs_integrated': 0.050, 'compression_amount': 0.010, 'crest_factor': 0.010,
+    'true_peak_dbfs': 0.015,
+    # Rhythm / transients
+    'beat_strength': 0.050, 'onset_rate': 0.030, 'attack_time': 0.020,
+    'danceability': 0.020,
+    # Tonal character
+    'spectral_complexity': 0.020, 'dissonance': 0.050, 'key_strength': 0.030,
+    'zcr': 0.020, 'spectral_flux': 0.015, 'harmonic_distortion': 0.015,
+    # Stereo imaging
+    'stereo_width': 0.020, 'mid_side_ratio': 0.015, 'stereo_correlation': 0.015,
+}
+# Sanity: weights sum to ~1.0 across all 30 PRODUCTION_FEATURES dimensions.
+
+
+# Plain-English directional labels per feature (signed deviation).
+# Higher (+z) and lower (-z) get different framings — e.g. "louder than
+# cohort" vs "quieter than cohort". Optional descriptions for the panel.
+ORIGINALITY_DIRECTION_LABELS = {
+    # Frequency spectrum
+    'sub_ratio':           {'high': 'heavier sub-bass than',         'low': 'lighter sub-bass than'},
+    'bass_ratio':          {'high': 'heavier bass than',              'low': 'lighter bass than'},
+    'low_mid_ratio':       {'high': 'thicker low-mids than',          'low': 'cleaner low-mids than'},
+    'mid_ratio':           {'high': 'more forward mids than',         'low': 'softer mids than'},
+    'high_mid_ratio':      {'high': 'more presence / edge than',      'low': 'softer upper-mids than'},
+    'presence_ratio':      {'high': 'brighter presence than',         'low': 'darker presence than'},
+    'air_ratio':           {'high': 'more high-end air than',         'low': 'less high-end air than'},
+    # Brightness / spectral shape
+    'brightness':          {'high': 'brighter spectral center than',  'low': 'darker spectral center than'},
+    'spectral_rolloff':    {'high': 'more high-frequency rolloff than','low': 'less high-frequency content than'},
+    'brightness_variance': {'high': 'more brightness movement than',  'low': 'flatter brightness curve than'},
+    # Dynamics
+    'energy':              {'high': 'higher energy than',             'low': 'more restrained than'},
+    'dynamic_range':       {'high': 'more dynamic contrast than',     'low': 'flatter dynamics than'},
+    'loudness_range':      {'high': 'wider loudness variation than',  'low': 'tighter loudness than'},
+    'lufs_integrated':     {'high': 'louder master than',             'low': 'quieter master than'},
+    'compression_amount':  {'high': 'more compressed than',           'low': 'more open / less compressed than'},
+    'crest_factor':        {'high': 'punchier peaks than',            'low': 'flatter peaks than'},
+    'true_peak_dbfs':      {'high': 'higher peak level than',         'low': 'lower peak level than'},
+    # Rhythm / transients
+    'beat_strength':       {'high': 'stronger beat than',             'low': 'softer beat than'},
+    'onset_rate':          {'high': 'denser percussion than',         'low': 'sparser percussion than'},
+    'attack_time':         {'high': 'slower attacks than',            'low': 'sharper attacks than'},
+    'danceability':        {'high': 'more rhythmic pull than',        'low': 'looser groove than'},
+    # Tonal character
+    'spectral_complexity': {'high': 'more spectral complexity than',  'low': 'simpler spectrum than'},
+    'dissonance':          {'high': 'more dissonant / edgy than',     'low': 'more consonant / clean than'},
+    'key_strength':        {'high': 'more tonally anchored than',     'low': 'more tonally ambiguous than'},
+    'zcr':                 {'high': 'brighter / noisier than',        'low': 'mellower / cleaner than'},
+    'spectral_flux':       {'high': 'more spectral movement than',    'low': 'more static spectrum than'},
+    'harmonic_distortion': {'high': 'more harmonic saturation than',  'low': 'cleaner harmonics than'},
+    # Stereo imaging
+    'stereo_width':        {'high': 'wider stereo image than',        'low': 'narrower stereo than'},
+    'mid_side_ratio':      {'high': 'more side energy than',          'low': 'more centered mix than'},
+    'stereo_correlation':  {'high': 'more decorrelated stereo than',  'low': 'more correlated stereo than'},
+}
+
+
+def _compute_originality(features: dict, high_converter_gems: list) -> dict | None:
+    """Sonic originality: weighted Euclidean distance from cohort centroid in
+    z-normalized audio-feature space. Cohort is the same top-25% composite
+    high-converter pool that drives production recommendations — so the
+    originality × performance quadrant story has a consistent reference.
+
+    Returns {composite_score (0-100), top_deviations, fits_consensus,
+    cohort_size} or None if cohort is too small or no usable features.
+    """
+    if not high_converter_gems or len(high_converter_gems) < 10:
+        return None
+
+    target_bpm = float(features.get('bpm', 120))
+    time_based = {'attack_time', 'onset_rate', 'beat_strength', 'danceability'}
+
+    per_feature = []
+    for feat in PRODUCTION_FEATURES:
+        if feat not in ORIGINALITY_WEIGHTS:
+            continue
+        user_val = features.get(feat)
+        if user_val is None:
+            continue
+        try:
+            user_val = float(user_val)
+        except (TypeError, ValueError):
+            continue
+
+        values = []
+        for gems_row in high_converter_gems:
+            v = gems_row.get(feat)
+            if v is None:
+                continue
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                continue
+            # BPM-normalize time-based features (mirrors _find_consensus)
+            if feat in time_based:
+                cb = float(gems_row.get('bpm', 120) or 120)
+                if cb > 0:
+                    v = v * (target_bpm / cb)
+            values.append(v)
+
+        if len(values) < 5:
+            continue
+
+        mean = sum(values) / len(values)
+        var = sum((v - mean) ** 2 for v in values) / len(values)
+        std = var ** 0.5
+        if std == 0:
+            continue
+
+        z = (user_val - mean) / std
+        per_feature.append({
+            'feature': feat,
+            'cohort_mean': round(mean, 4),
+            'cohort_std': round(std, 4),
+            'user_val': round(user_val, 4),
+            'z': round(z, 3),
+            'abs_z': round(abs(z), 3),
+            'direction': 'high' if z > 0 else 'low',
+        })
+
+    if not per_feature:
+        return None
+
+    # Composite originality: sqrt of weighted sum of z^2.
+    distance_sq = sum(
+        ORIGINALITY_WEIGHTS.get(f['feature'], 0.02) * (f['z'] ** 2)
+        for f in per_feature
+    )
+    distance = distance_sq ** 0.5
+
+    # Map distance → 0-100 score. Calibration: d=0 → 0, d≈1.5 → 60, d≈3 → 85,
+    # asymptotes to 100. Soft sigmoid (1 - exp(-d/1.5)) * 100.
+    import math
+    composite_score = max(0, min(100, round(100 * (1 - math.exp(-distance / 1.5)))))
+
+    # Sort by |z| descending — features where the track stands out most
+    sorted_desc = sorted(per_feature, key=lambda x: -x['abs_z'])
+    top_deviations = [f for f in sorted_desc if f['abs_z'] >= 1.0][:6]
+
+    # Features where the track sits near cohort consensus (|z| < 0.5)
+    sorted_asc = sorted(per_feature, key=lambda x: x['abs_z'])
+    fits_consensus = [f for f in sorted_asc if f['abs_z'] < 0.5][:5]
+
+    return {
+        'composite_score': composite_score,
+        'cohort_size': len(high_converter_gems),
+        'distance': round(distance, 3),
+        'top_deviations': top_deviations,
+        'fits_consensus': fits_consensus,
+    }
+
+
+def _classify_quadrant(originality_score, performance_percentile):
+    """Cross-reference originality and track-momentum performance percentiles
+    into one of four quadrants. Returns {quadrant, label, message}.
+
+    Thresholds: p75 cuts. High orig = composite_score >= 75. High perf =
+    composite_percentile >= 75. Strict by design — only genuinely distinctive
+    AND genuinely winning tracks land in "signature of success".
+    """
+    if originality_score is None or performance_percentile is None:
+        return None
+    orig_high = originality_score >= 75
+    perf_high = performance_percentile >= 0.75
+    if orig_high and perf_high:
+        return {
+            'quadrant': 'signature_of_success',
+            'label': 'Signature of Success',
+            'message': "You're distinct AND winning — your sound's deviation from cohort consensus IS your edge. The production recommendations below are informational, not prescriptive: adopting them risks closing the very gap that's working for you.",
+        }
+    if not orig_high and perf_high:
+        return {
+            'quadrant': 'genre_playbook_winner',
+            'label': 'Genre-Playbook Winner',
+            'message': "You sound like your cohort AND you're winning. You're executing the genre consensus well. Production recommendations are useful as fine-tuning, not redirection.",
+        }
+    if orig_high and not perf_high:
+        return {
+            'quadrant': 'ahead_of_the_curve',
+            'label': 'Ahead of the Curve, or Off the Curve',
+            'message': "You're distinct but not landing yet. Two possibilities: innovation ahead of audience, or a mix/production gap pushing you outside what's working. Cross-check your top deviations below — if they're on dissonance / dynamic_range / compression, investigate whether those are intentional choices or technical issues worth tightening.",
+        }
+    return {
+        'quadrant': 'stuck_in_pack',
+        'label': 'Stuck in the Pack',
+        'message': "You sound like your cohort but aren't getting their results. The production recommendations below are genuinely actionable here — closing the gap is the move, since distinctiveness isn't currently the differentiator either.",
     }
 
 
@@ -1770,11 +1986,26 @@ async def analyze(
                 gems_by_artist[aid] = matcher._gems_by_isrc[isrc]
         print(f"  GEMS lookup: {len(gems_by_artist)} of {len(matches)} matches have GEMS data")
 
-        # Generate recommendations
-        recs = _generate_recommendations(features, matches,
+        # Generate recommendations + capture the cohort that produced them.
+        # The same cohort feeds the sonic-originality computation below so the
+        # originality × performance quadrant story stays internally consistent.
+        recs, high_converter_gems = _generate_recommendations(features, matches,
                                           gems_by_artist=gems_by_artist,
                                           genre_alignment=genre_alignment,
                                           user_profile=user_profile)
+
+        # Sonic originality — distance from cohort centroid in z-space.
+        # Same cohort as production recs, flipped framing ("what makes you
+        # distinct" vs "what to change to fit"). user_profile gets a
+        # 'sonic_originality' and 'quadrant' block when available.
+        sonic_originality = _compute_originality(features, high_converter_gems)
+        if user_profile is not None and sonic_originality:
+            user_profile['sonic_originality'] = sonic_originality
+            tm = user_profile.get('track_momentum') or {}
+            user_profile['quadrant'] = _classify_quadrant(
+                sonic_originality.get('composite_score'),
+                tm.get('composite_percentile'),
+            )
 
         # Create background enrichment job
         job_id = job_mgr.create_job(token, features, matches, all_matches=matches)
@@ -3138,8 +3369,10 @@ async def analyze_url(
         aid = str(m.get('artist_id', ''))
         if isrc and isrc in matcher._gems_by_isrc and aid not in gems_by_artist:
             gems_by_artist[aid] = matcher._gems_by_isrc[isrc]
-    recs = _generate_recommendations(features, found_matches,
+    recs, high_converter_gems_url = _generate_recommendations(features, found_matches,
                                       gems_by_artist=gems_by_artist)
+    # Stash for the originality pass below (user_profile is built later in this path)
+    _url_sonic_originality = _compute_originality(features, high_converter_gems_url)
 
     # Flattery matches — higher-tier artists from unfiltered pool (before genre filter)
     flattery_matches = []
@@ -3340,6 +3573,15 @@ async def analyze_url(
         if scanned_track_row and all_found:
             track_momentum = _build_track_momentum(scanned_track_row, all_found, u_listeners)
 
+        # Sonic originality + quadrant — uses the cohort _generate_recommendations
+        # already computed above (high_converter_gems_url stashed earlier).
+        quadrant = None
+        if _url_sonic_originality and track_momentum:
+            quadrant = _classify_quadrant(
+                _url_sonic_originality.get('composite_score'),
+                track_momentum.get('composite_percentile'),
+            )
+
         user_profile = {
             'name': lead.get('name', 'Artist'),
             'listeners': u_listeners,
@@ -3353,9 +3595,13 @@ async def analyze_url(
             'additional_fans': additional_fans,
             'additional_revenue': additional_revenue,
             'track_momentum': track_momentum,
+            'sonic_originality': _url_sonic_originality,
+            'quadrant': quadrant,
         }
         if track_momentum:
             print(f"  Track momentum: pop={track_momentum['scanned_popularity']} (p{int((track_momentum['percentile_popularity'] or 0)*100)}), cm={track_momentum['scanned_cm_score']}, pl={track_momentum['scanned_playlists']}, composite=p{int(track_momentum['composite_percentile']*100)}, gap=${track_momentum['gap_additional_revenue']}/yr")
+        if _url_sonic_originality:
+            print(f"  Sonic originality: score={_url_sonic_originality['composite_score']}/100, distance={_url_sonic_originality['distance']}, top_deviations={[d['feature']+' '+('+' if d['z']>0 else '')+str(d['z']) for d in _url_sonic_originality['top_deviations'][:3]]}, quadrant={quadrant['quadrant'] if quadrant else 'unclassified'}")
         print(f"  User profile built: conversion={u_conversion}, ratio={u_fol_listener_ratio}, bucket={retention_bucket}, est_save={save_low}-{save_high}%, fans_gap={additional_fans}, peers={conv_comparison.get('peer_count', 0)}")
 
     print(f"  URL analysis: {len(found_matches)} tier-filtered matches, "

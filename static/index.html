@@ -490,6 +490,38 @@
         <div class="conv-save-rate hidden" id="conv-save-rate"></div>
       </div>
 
+      <!-- 7b. Sonic Originality — same data as production recs, flipped framing.
+           Distance from cohort centroid in z-normalized audio space. Pairs with
+           track-momentum performance to produce a 4-quadrant interpretation. -->
+      <div class="result-card hidden" id="sonic-originality-card">
+        <h3>Sonic Originality</h3>
+        <p class="card-sub">How distinctive your sound is vs the top performers in your sonic cohort.</p>
+
+        <!-- Quadrant headline -->
+        <div class="orig-quadrant" id="orig-quadrant"></div>
+
+        <!-- Composite originality bar (0–100 scale, mirrors track-momentum) -->
+        <div class="track-momentum-bar-wrap">
+          <div class="conv-bar" id="orig-bar">
+            <div class="conv-bar-fill" id="orig-bar-fill"></div>
+            <div class="conv-bar-tick" style="left:25%"></div>
+            <div class="conv-bar-tick" style="left:50%"></div>
+            <div class="conv-bar-tick" style="left:75%"></div>
+            <div class="conv-bar-tick" style="left:99%"></div>
+            <div class="conv-bar-dot" id="orig-bar-dot"></div>
+          </div>
+          <div class="conv-bar-labels" id="orig-bar-labels"></div>
+        </div>
+
+        <div class="track-momentum-summary" id="orig-summary"></div>
+
+        <div class="orig-section-title">Where your sound stands out</div>
+        <div class="orig-rows" id="orig-deviations"></div>
+
+        <div class="orig-section-title">Where you match the consensus</div>
+        <div class="orig-rows" id="orig-fits"></div>
+      </div>
+
       <!-- 8. Similar Artists -->
       <div class="result-card">
         <h3>Similar Artists</h3>

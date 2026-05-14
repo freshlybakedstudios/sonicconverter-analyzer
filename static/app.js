@@ -831,6 +831,184 @@ function renderResults(data) {
     tmPanel.classList.add('hidden');
   }
 
+  // === Sonic Originality panel ===
+  // Same data architecture as the track-momentum panel: composite bar (0-100),
+  // headline summary, two row-based breakdowns. Different math — distance from
+  // cohort centroid in z-space rather than peer percentile on momentum signals.
+  const orig = userProfile && userProfile.sonic_originality;
+  const quadrant = userProfile && userProfile.quadrant;
+  const origCard = $('#sonic-originality-card');
+  if (orig && origCard) {
+    // Plain-English direction labels (mirrors the backend ORIGINALITY_DIRECTION_LABELS
+    // for the deviation list — describes what direction the user sits relative to cohort).
+    const FEATURE_DIRECTION_LABELS = {
+      // Frequency spectrum
+      sub_ratio:           {high: 'heavier sub-bass than',         low: 'lighter sub-bass than'},
+      bass_ratio:          {high: 'heavier bass than',              low: 'lighter bass than'},
+      low_mid_ratio:       {high: 'thicker low-mids than',          low: 'cleaner low-mids than'},
+      mid_ratio:           {high: 'more forward mids than',         low: 'softer mids than'},
+      high_mid_ratio:      {high: 'more presence / edge than',      low: 'softer upper-mids than'},
+      presence_ratio:      {high: 'brighter presence than',         low: 'darker presence than'},
+      air_ratio:           {high: 'more high-end air than',         low: 'less high-end air than'},
+      // Brightness / spectral shape
+      brightness:          {high: 'brighter spectral center than',  low: 'darker spectral center than'},
+      spectral_rolloff:    {high: 'more high-frequency rolloff than', low: 'less high-frequency content than'},
+      brightness_variance: {high: 'more brightness movement than',  low: 'flatter brightness curve than'},
+      // Dynamics
+      energy:              {high: 'higher energy than',             low: 'more restrained than'},
+      dynamic_range:       {high: 'more dynamic contrast than',     low: 'flatter dynamics than'},
+      loudness_range:      {high: 'wider loudness variation than',  low: 'tighter loudness than'},
+      lufs_integrated:     {high: 'louder master than',             low: 'quieter master than'},
+      compression_amount:  {high: 'more compressed than',           low: 'more open / less compressed than'},
+      crest_factor:        {high: 'punchier peaks than',            low: 'flatter peaks than'},
+      true_peak_dbfs:      {high: 'higher peak level than',         low: 'lower peak level than'},
+      // Rhythm / transients
+      beat_strength:       {high: 'stronger beat than',             low: 'softer beat than'},
+      onset_rate:          {high: 'denser percussion than',         low: 'sparser percussion than'},
+      attack_time:         {high: 'slower attacks than',            low: 'sharper attacks than'},
+      danceability:        {high: 'more rhythmic pull than',        low: 'looser groove than'},
+      // Tonal character
+      spectral_complexity: {high: 'more spectral complexity than',  low: 'simpler spectrum than'},
+      dissonance:          {high: 'more dissonant / edgy than',     low: 'more consonant / clean than'},
+      key_strength:        {high: 'more tonally anchored than',     low: 'more tonally ambiguous than'},
+      zcr:                 {high: 'brighter / noisier than',        low: 'mellower / cleaner than'},
+      spectral_flux:       {high: 'more spectral movement than',    low: 'more static spectrum than'},
+      harmonic_distortion: {high: 'more harmonic saturation than',  low: 'cleaner harmonics than'},
+      // Stereo imaging
+      stereo_width:        {high: 'wider stereo image than',        low: 'narrower stereo than'},
+      mid_side_ratio:      {high: 'more side energy than',          low: 'more centered mix than'},
+      stereo_correlation:  {high: 'more decorrelated stereo than',  low: 'more correlated stereo than'},
+    };
+    const FEATURE_PRETTY = {
+      sub_ratio: 'Sub-bass',
+      bass_ratio: 'Bass',
+      low_mid_ratio: 'Low-mids',
+      mid_ratio: 'Mids',
+      high_mid_ratio: 'High-mids',
+      presence_ratio: 'Presence',
+      air_ratio: 'Air',
+      brightness: 'Brightness (spectral centroid)',
+      spectral_rolloff: 'Spectral rolloff',
+      brightness_variance: 'Brightness movement',
+      energy: 'Energy',
+      dynamic_range: 'Dynamic range',
+      loudness_range: 'Loudness range',
+      lufs_integrated: 'Master loudness',
+      compression_amount: 'Compression',
+      crest_factor: 'Crest factor',
+      true_peak_dbfs: 'True peak',
+      beat_strength: 'Beat strength',
+      onset_rate: 'Onset density',
+      attack_time: 'Attack time',
+      danceability: 'Danceability',
+      spectral_complexity: 'Spectral complexity',
+      dissonance: 'Dissonance',
+      key_strength: 'Tonal anchoring',
+      zcr: 'Brightness (ZCR)',
+      spectral_flux: 'Spectral flux',
+      harmonic_distortion: 'Harmonic distortion',
+      stereo_width: 'Stereo width',
+      mid_side_ratio: 'Mid/side ratio',
+      stereo_correlation: 'Stereo correlation',
+    };
+
+    // Quadrant headline
+    const qEl = $('#orig-quadrant');
+    if (quadrant) {
+      const qClass = quadrant.quadrant === 'signature_of_success' ? 'q-signature'
+                   : quadrant.quadrant === 'stuck_in_pack'         ? 'q-stuck'
+                   : '';
+      qEl.className = 'orig-quadrant ' + qClass;
+      qEl.innerHTML = `<div class="orig-quadrant-label">${quadrant.label}</div>
+                       <div class="orig-quadrant-message">${quadrant.message}</div>`;
+      qEl.style.display = 'block';
+    } else {
+      qEl.style.display = 'none';
+    }
+
+    // Composite originality bar (0–100)
+    const origScore = orig.composite_score || 0;
+    $('#orig-bar-fill').style.width = origScore + '%';
+    $('#orig-bar-dot').style.left = origScore + '%';
+
+    const origLabels = $('#orig-bar-labels');
+    origLabels.innerHTML = '';
+    const olabels = [
+      { pos: 25, name: 'Low orig',  priority: 1 },
+      { pos: 50, name: 'Typical',   priority: 2 },
+      { pos: 75, name: 'Distinct',  priority: 3 },
+      { pos: 99, name: 'Singular',  priority: 2 },
+      { pos: origScore, name: 'You', cls: 'conv-bar-label-you', priority: 5 },
+    ];
+    const oMIN_GAP = 9;
+    const oSorted = [...olabels].sort((a, b) => b.priority - a.priority);
+    const oKept = [];
+    for (const l of oSorted) {
+      if (oKept.every(k => Math.abs(k.pos - l.pos) >= oMIN_GAP)) oKept.push(l);
+    }
+    for (const l of oKept) {
+      const div = document.createElement('div');
+      div.className = 'conv-bar-label ' + (l.cls || '');
+      div.style.left = l.pos + '%';
+      div.innerHTML = `<span>${l.name}</span><span>${l.pos}</span>`;
+      origLabels.appendChild(div);
+    }
+
+    // Summary line
+    let origSummary;
+    if (origScore >= 75)      origSummary = `Your sound is in the <strong>top 25% of sonically distinct tracks</strong> within your cohort. The deviations below are your signature.`;
+    else if (origScore >= 50) origSummary = `Your sound is <strong>moderately distinct</strong> from your sonic cohort — some signature features, mostly within consensus.`;
+    else if (origScore >= 25) origSummary = `Your sound <strong>mostly follows cohort consensus</strong>. You're executing the genre playbook more than reinventing it.`;
+    else                       origSummary = `Your sound <strong>closely matches cohort consensus</strong> on most dimensions. Strong commercial fit; low sonic differentiation.`;
+    $('#orig-summary').innerHTML = origSummary;
+
+    // Deviation rows ("Where your sound stands out")
+    const devEl = $('#orig-deviations');
+    devEl.innerHTML = '';
+    const deviations = (orig.top_deviations || []);
+    if (deviations.length === 0) {
+      devEl.innerHTML = '<div class="orig-context" style="padding:10px 0">No strongly distinctive features — every dimension is within 1σ of your cohort consensus.</div>';
+    } else {
+      for (const d of deviations) {
+        const labels = FEATURE_DIRECTION_LABELS[d.feature] || {high: 'higher than', low: 'lower than'};
+        const pretty = FEATURE_PRETTY[d.feature] || d.feature;
+        const dirLabel = d.direction === 'high' ? labels.high : labels.low;
+        const zStr = (d.z > 0 ? '+' : '') + d.z.toFixed(2) + 'σ';
+        const div = document.createElement('div');
+        div.className = 'orig-row';
+        div.innerHTML = `
+          <span class="orig-label">${pretty}</span>
+          <span class="orig-z">${zStr}</span>
+          <span class="orig-context"><span class="orig-direction">${dirLabel}</span> cohort consensus &middot; you ${d.user_val} vs median ${d.cohort_mean}</span>`;
+        devEl.appendChild(div);
+      }
+    }
+
+    // Fits-consensus rows ("Where you match the consensus")
+    const fitsEl = $('#orig-fits');
+    fitsEl.innerHTML = '';
+    const fits = (orig.fits_consensus || []);
+    if (fits.length === 0) {
+      fitsEl.innerHTML = '<div class="orig-context" style="padding:10px 0">No close-consensus dimensions — your sound deviates from cohort on every measured feature.</div>';
+    } else {
+      for (const f of fits) {
+        const pretty = FEATURE_PRETTY[f.feature] || f.feature;
+        const zStr = (f.z > 0 ? '+' : '') + f.z.toFixed(2) + 'σ';
+        const div = document.createElement('div');
+        div.className = 'orig-row';
+        div.innerHTML = `
+          <span class="orig-label">${pretty}</span>
+          <span class="orig-z fits">${zStr}</span>
+          <span class="orig-context">matches cohort &middot; you ${f.user_val} vs median ${f.cohort_mean}</span>`;
+        fitsEl.appendChild(div);
+      }
+    }
+
+    origCard.classList.remove('hidden');
+  } else if (origCard) {
+    origCard.classList.add('hidden');
+  }
+
   if (userProfile && (hasUserRate || comp.peer_median != null)) {
     const cr = userProfile.conversion_rate;
     const p25 = comp.peer_bottom_25 || 0;
@@ -883,14 +1061,15 @@ function renderResults(data) {
       hide(fanLabel);
     }
 
-    // Labels below bar — collision-aware (higher priority labels kept)
+    // Labels below bar — collision-aware (higher priority labels kept).
+    // Plain-English bucket names to match the new track-momentum panel.
     const labelsEl = $('#conv-bar-labels');
     labelsEl.innerHTML = '';
     const MIN_GAP = 8;
     const allLabels = [
-      { pos: toPos(p25), name: 'p25', val: p25.toFixed(2) + '%', cls: '', priority: 1 },
+      { pos: toPos(p25), name: 'Bottom 25%', val: p25.toFixed(2) + '%', cls: '', priority: 1 },
       { pos: toPos(median), name: 'Median', val: median.toFixed(2) + '%', cls: '', priority: 2 },
-      { pos: toPos(p75), name: 'p75', val: p75.toFixed(2) + '%', cls: '', priority: 1 },
+      { pos: toPos(p75), name: 'Top 25%', val: p75.toFixed(2) + '%', cls: '', priority: 1 },
     ];
     if (hasUserRate) {
       allLabels.push({ pos: toPos(cr), name: 'You', val: cr.toFixed(2) + '%', cls: 'conv-bar-label-you', priority: 5 });
@@ -900,7 +1079,7 @@ function renderResults(data) {
       allLabels.push({ pos: toPos(target), name: targetName, val: target.toFixed(2) + '%', cls: 'conv-bar-label-target', priority: 4 });
     }
     if (!atTop || target !== p99) {
-      allLabels.push({ pos: toPos(p99), name: 'p99', val: p99.toFixed(2) + '%', cls: '', priority: 1 });
+      allLabels.push({ pos: toPos(p99), name: 'Top 1%', val: p99.toFixed(2) + '%', cls: '', priority: 1 });
     }
     // Sort by priority (highest kept), filter overlaps
     const sorted = [...allLabels].sort((a, b) => b.priority - a.priority);
