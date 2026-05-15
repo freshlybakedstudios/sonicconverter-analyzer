@@ -1358,20 +1358,39 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
         })
     if not scored: return []
 
-    # Soft p60 floors on both axes, then rank by combined score.
-    perf_sorted = sorted(c['perf_pct'] for c in scored)
-    orig_sorted = sorted(c['orig_score'] for c in scored)
-    p_floor = perf_sorted[int(len(perf_sorted) * 0.60)] if perf_sorted else 0
-    o_floor = orig_sorted[int(len(orig_sorted) * 0.60)] if orig_sorted else 0
-    qualified = [c for c in scored if c['perf_pct'] >= p_floor and c['orig_score'] >= o_floor]
-    if len(qualified) < n:
-        qualified = scored  # fallback: pool too thin for both floors
+    # Tiered candidate selection — pitch comparables are defined as
+    # "artists who sound like you AND are winning by being distinctive",
+    # which is literally the Signature of Success quadrant. Prefer SoS
+    # peers; fall back progressively if the cohort doesn't have enough.
+    #
+    # Tier 1: Signature of Success — perf ≥ p75 AND orig ≥ 75
+    # Tier 2: "Winning OR distinctive" — perf ≥ p75 OR orig ≥ 75
+    # Tier 3: Soft p60 floors on both axes (original fallback)
+    # Tier 4: Full scored pool (last resort)
+    sos_peers = [c for c in scored if c['perf_pct'] >= 0.75 and c['orig_score'] >= 75]
+    if len(sos_peers) >= n:
+        qualified = sos_peers
+    else:
+        winning_or_distinctive = [c for c in scored if c['perf_pct'] >= 0.75 or c['orig_score'] >= 75]
+        if len(winning_or_distinctive) >= n:
+            qualified = winning_or_distinctive
+        else:
+            perf_sorted = sorted(c['perf_pct'] for c in scored)
+            orig_sorted = sorted(c['orig_score'] for c in scored)
+            p_floor = perf_sorted[int(len(perf_sorted) * 0.60)] if perf_sorted else 0
+            o_floor = orig_sorted[int(len(orig_sorted) * 0.60)] if orig_sorted else 0
+            soft_qualified = [c for c in scored if c['perf_pct'] >= p_floor and c['orig_score'] >= o_floor]
+            qualified = soft_qualified if len(soft_qualified) >= n else scored
 
+    # Reweight combined score to favor perf + orig over raw similarity.
+    # Pitch comparables are A&R proof points — "moving the needle" matters
+    # at least as much as sonic similarity. Bump perf + orig from 0.30 each
+    # to 0.35 each; drop similarity from 0.40 to 0.30.
     for c in qualified:
         c['combined_score'] = round(
-            0.40 * c['similarity']
-            + 0.30 * c['perf_pct']
-            + 0.30 * (c['orig_score'] / 100),
+            0.30 * c['similarity']
+            + 0.35 * c['perf_pct']
+            + 0.35 * (c['orig_score'] / 100),
             3,
         )
     qualified.sort(key=lambda c: -c['combined_score'])
