@@ -831,6 +831,19 @@ def _build_track_momentum(scanned_track: dict, peer_matches: list, user_listener
     if not scanned_track or not peer_matches:
         return None
 
+    # Guard: brand-new releases / unindexed tracks have all-empty momentum
+    # signals (Spotify popularity 0 or null, no CM track score, zero playlist
+    # placements). Rendering the panel with zeros across the board gives the
+    # artist a misleading "bottom 25% / Stuck in the Pack" diagnosis when the
+    # actual cause is "the data isn't in our universe yet". Hide cleanly so
+    # the artist-level Where You Stand, Sonic Originality, and Pitch
+    # Comparables panels still render unaffected.
+    _scan_pop = scanned_track.get('sp_track_popularity')
+    _scan_cm = scanned_track.get('cm_track_score')
+    _scan_pl = _safe_int(scanned_track.get('editorial_playlists')) + _safe_int(scanned_track.get('user_playlists'))
+    if (_scan_pop is None or _scan_pop == 0) and _scan_cm is None and _scan_pl == 0:
+        return None
+
     # Pools for each momentum dimension
     pop_pool = sorted([p['sp_track_popularity'] for p in peer_matches
                        if p.get('sp_track_popularity') is not None])
