@@ -1160,6 +1160,11 @@ def _classify_quadrant(originality_score, performance_percentile):
 # rank by combined score. Output is the artist-level proof-of-concept list
 # an artist can put in front of an A&R rep.
 # ---------------------------------------------------------------------------
+PITCH_COMPARABLES_MIN_SIMILARITY = 0.70  # Tighter than matcher's 0.55 floor —
+# pitch comparables should be HIGH sonic similarity, not borderline matches
+# that survive only because of one shared genre family tag. Filter applies to
+# both the pitch comparables list AND the cohort scatter cloud.
+
 def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
                                 gems_by_isrc: dict, n: int = 5) -> list:
     """Returns up to N candidates with name, listeners, similarity, performance
@@ -1169,6 +1174,9 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     import bisect, math
     if not found_matches or not high_converter_gems or not gems_by_isrc:
         return []
+    # Tighten similarity floor — pitch comparables should be high-similarity peers
+    found_matches = [m for m in found_matches
+                     if (m.get('similarity') or 0) >= PITCH_COMPARABLES_MIN_SIMILARITY]
     if len(found_matches) < 5 or len(high_converter_gems) < 10:
         return []
 
@@ -1272,6 +1280,12 @@ def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
     """
     import bisect, math
     if not found_matches or not high_converter_gems or not gems_by_isrc:
+        return []
+    # Same similarity floor as pitch comparables — keep scatter consistent
+    # with what shows up in the labeled picks list
+    found_matches = [m for m in found_matches
+                     if (m.get('similarity') or 0) >= PITCH_COMPARABLES_MIN_SIMILARITY]
+    if not found_matches:
         return []
 
     # Build cohort centroid (same as _compute_pitch_comparables, kept
