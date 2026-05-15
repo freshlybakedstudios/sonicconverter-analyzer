@@ -1260,6 +1260,81 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     return qualified[:n]
 
 
+def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
+                             gems_by_isrc: dict) -> list:
+    """Lightweight per-peer scatter data for the Sonic Quadrant visualization.
+    Returns list of {name, perf_pct, orig_score} for every same-tier peer
+    where we can compute both axes. Frontend plots these as a dim cohort
+    cloud behind the user's dot and the pitch-comparable labels.
+
+    Reuses the same centroid + performance pools the pitch-comparables
+    function builds, but returns the FULL scored set (not just the top 5).
+    """
+    import bisect, math
+    if not found_matches or not high_converter_gems or not gems_by_isrc:
+        return []
+
+    # Build cohort centroid (same as _compute_pitch_comparables, kept
+    # local to avoid coupling)
+    centroid, stds = {}, {}
+    for feat in PRODUCTION_FEATURES:
+        if feat not in ORIGINALITY_WEIGHTS:
+            continue
+        vals = []
+        for f in high_converter_gems:
+            v = f.get(feat)
+            if v is None: continue
+            try: vals.append(float(v))
+            except (TypeError, ValueError): continue
+        if len(vals) < 10: continue
+        mean = sum(vals) / len(vals)
+        std = (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5
+        if std > 0:
+            centroid[feat] = mean
+            stds[feat] = std
+
+    pop_pool = sorted([x['sp_track_popularity'] for x in found_matches if x.get('sp_track_popularity') is not None])
+    cm_pool  = sorted([x['cm_track_score']      for x in found_matches if x.get('cm_track_score')      is not None])
+    pl_pool  = sorted([_safe_int(x.get('editorial_playlists')) + _safe_int(x.get('user_playlists')) for x in found_matches])
+
+    def _perf(x):
+        pop = _pct_rank(x.get('sp_track_popularity'), pop_pool)
+        cm  = _pct_rank(x.get('cm_track_score'), cm_pool) if x.get('cm_track_score') is not None else None
+        pl  = _pct_rank(_safe_int(x.get('editorial_playlists')) + _safe_int(x.get('user_playlists')), pl_pool)
+        if pop is None: pop = 0.5
+        if pl is None: pl = 0.5
+        if cm is not None: return 0.50 * pop + 0.30 * cm + 0.20 * pl
+        return 0.714 * pop + 0.286 * pl
+
+    def _orig(isrc):
+        if not isrc: return None
+        f = gems_by_isrc.get(isrc)
+        if not f: return None
+        dist_sq, cnt = 0.0, 0
+        for feat, w in ORIGINALITY_WEIGHTS.items():
+            if feat not in centroid: continue
+            v = f.get(feat)
+            if v is None: continue
+            try: z = (float(v) - centroid[feat]) / stds[feat]
+            except (TypeError, ValueError, ZeroDivisionError): continue
+            dist_sq += w * z * z
+            cnt += 1
+        if cnt < 5: return None
+        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5)))
+
+    scatter = []
+    for x in found_matches:
+        p = _perf(x)
+        o = _orig(x.get('isrc'))
+        if o is None: continue
+        scatter.append({
+            'name': x.get('name'),
+            'perf_pct': round(p, 3),
+            'orig_score': o,
+        })
+    return scatter
+
+
 def _find_signature_consensus(features: dict, high_converter_gems: list) -> list:
     """Production-rec consensus against the signature-of-success subset within
     the cohort (peers who are themselves high-orig + high-perf).
@@ -2233,6 +2308,11 @@ async def analyze(
         # Pool is `matches` (already tier-filtered + genre-family OK).
         if user_profile is not None:
             user_profile['pitch_comparables'] = _compute_pitch_comparables(
+                matches, high_converter_gems, matcher._gems_by_isrc
+            )
+            # Cohort scatter — every same-tier peer with both axes computed,
+            # for the Sonic Quadrant background cloud.
+            user_profile['cohort_scatter'] = _compute_cohort_scatter(
                 matches, high_converter_gems, matcher._gems_by_isrc
             )
 
@@ -3824,6 +3904,10 @@ async def analyze_url(
         pitch_comparables = _compute_pitch_comparables(
             found_matches, high_converter_gems_url, matcher._gems_by_isrc
         )
+        # Cohort scatter for the Sonic Quadrant background cloud
+        cohort_scatter = _compute_cohort_scatter(
+            found_matches, high_converter_gems_url, matcher._gems_by_isrc
+        )
 
         user_profile = {
             'name': lead.get('name', 'Artist'),
@@ -3841,6 +3925,7 @@ async def analyze_url(
             'sonic_originality': _url_sonic_originality,
             'quadrant': quadrant,
             'pitch_comparables': pitch_comparables,
+            'cohort_scatter': cohort_scatter,
         }
         if track_momentum:
             print(f"  Track momentum: pop={track_momentum['scanned_popularity']} (p{int((track_momentum['percentile_popularity'] or 0)*100)}), cm={track_momentum['scanned_cm_score']}, pl={track_momentum['scanned_playlists']}, composite=p{int(track_momentum['composite_percentile']*100)}, gap=${track_momentum['gap_additional_revenue']}/yr")

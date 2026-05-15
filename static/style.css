@@ -1116,7 +1116,8 @@ body {
 }
 .sq-quad-label.success { fill: rgba(212, 190, 142, 0.7); }
 .sq-quad-label.stuck { fill: rgba(168, 149, 104, 0.6); }
-.sq-peer-dot { fill: rgba(78, 205, 196, 0.5); stroke: rgba(78, 205, 196, 0.7); stroke-width: 1; }
+.sq-cloud-dot { fill: rgba(78, 205, 196, 0.18); stroke: none; }
+.sq-peer-dot { fill: rgba(78, 205, 196, 0.55); stroke: rgba(78, 205, 196, 0.85); stroke-width: 1; }
 .sq-peer-label {
   fill: #ccc;
   font-size: 10px;

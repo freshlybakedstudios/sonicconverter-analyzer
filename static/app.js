@@ -1060,7 +1060,20 @@ function renderResults(data) {
     svg += `<text class="sq-axis-title" x="${M_L+innerW/2}" y="${H-10}" text-anchor="middle">Performance percentile →</text>`;
     svg += `<text class="sq-axis-title" x="${15}" y="${M_T+innerH/2}" text-anchor="middle" transform="rotate(-90 15 ${M_T+innerH/2})">Originality score →</text>`;
 
-    // Pitch comparables as labeled dots
+    // Cohort cloud — every same-tier peer plotted as a dim small dot.
+    // Exclude the pitch-comparables (we'll draw those labeled on top).
+    const pitchNames = new Set((sqPitch || []).slice(0, 5).map(p => p.name));
+    const sqCloud = userProfile && userProfile.cohort_scatter;
+    if (sqCloud && sqCloud.length > 0) {
+      sqCloud.forEach(p => {
+        if (pitchNames.has(p.name)) return;  // skip — drawn labeled below
+        const px = xToPx(Math.round((p.perf_pct || 0) * 100));
+        const py = yToPx(p.orig_score || 0);
+        svg += `<circle class="sq-cloud-dot" cx="${px}" cy="${py}" r="2.5"/>`;
+      });
+    }
+
+    // Pitch comparables as labeled dots (drawn over the cloud)
     if (sqPitch && sqPitch.length > 0) {
       sqPitch.slice(0, 5).forEach((p, i) => {
         const px = xToPx(Math.round((p.perf_pct || 0) * 100));
