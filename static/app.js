@@ -1009,6 +1009,57 @@ function renderResults(data) {
     origCard.classList.add('hidden');
   }
 
+  // === A&R Pitch Comparables panel ===
+  // Top 5 same-tier sonic peers in Signature of Success (high perf + high originality).
+  const pitchList = userProfile && userProfile.pitch_comparables;
+  const pitchCard = $('#pitch-comparables-card');
+  if (pitchList && pitchList.length > 0 && pitchCard) {
+    const pitchRows = $('#pitch-rows');
+    pitchRows.innerHTML = '';
+    function fmtListeners(n) {
+      if (!n) return '—';
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M monthly listeners';
+      if (n >= 1000) return (n / 1000).toFixed(0) + 'K monthly listeners';
+      return n.toLocaleString() + ' monthly listeners';
+    }
+    pitchList.forEach((p, i) => {
+      const div = document.createElement('div');
+      div.className = 'pitch-row';
+      const nameLink = p.spotify_url
+        ? `<a href="${p.spotify_url}" target="_blank" rel="noopener">${p.name}</a>`
+        : p.name;
+      const simPct = Math.round((p.similarity || 0) * 100);
+      const perfPct = Math.round((p.perf_pct || 0) * 100);
+      const cmStr = (p.cm_track_score != null) ? Math.round(p.cm_track_score) : 'N/A';
+      // Generate a plain-English pitch angle
+      let angle;
+      if (p.orig_score >= 80 && perfPct >= 80) {
+        angle = `Distinctive sonic profile AND scaled performance — clean proof your sound rewards distinctiveness in this lane.`;
+      } else if (p.orig_score >= 80) {
+        angle = `Strong sonic distinctiveness for the tier — proof your kind of sonic edge has commercial traction.`;
+      } else if (perfPct >= 80) {
+        angle = `Top performer in your sonic neighborhood — a comparable on numbers, not just sound.`;
+      } else {
+        angle = `Sits in your sonic lane with both distinctiveness and traction above the cohort floor.`;
+      }
+      div.innerHTML = `
+        <div class="pitch-name">${i + 1}. ${nameLink}</div>
+        <div class="pitch-listeners">${fmtListeners(p.listeners)}</div>
+        <div class="pitch-stats">
+          <span class="pitch-stat-pill">${simPct}% sonic match</span>
+          <span class="pitch-stat-pill">Popularity ${p.sp_track_popularity ?? '—'}</span>
+          <span class="pitch-stat-pill">CM ${cmStr}</span>
+          <span class="pitch-stat-pill">${p.playlists_total.toLocaleString()} playlists</span>
+          <span class="pitch-stat-pill">Originality ${p.orig_score}</span>
+        </div>
+        <div class="pitch-angle">${angle}</div>`;
+      pitchRows.appendChild(div);
+    });
+    pitchCard.classList.remove('hidden');
+  } else if (pitchCard) {
+    pitchCard.classList.add('hidden');
+  }
+
   if (userProfile && (hasUserRate || comp.peer_median != null)) {
     const cr = userProfile.conversion_rate;
     const p25 = comp.peer_bottom_25 || 0;

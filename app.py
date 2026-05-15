@@ -1139,6 +1139,115 @@ def _classify_quadrant(originality_score, performance_percentile):
 
 
 # ---------------------------------------------------------------------------
+# Pitch Comparables — top N tier-matched, sonic-peer artists who themselves
+# land in the Signature of Success quadrant (high performance + high
+# originality). Pool is `found_matches` (already same-tier and genre-family
+# compatible per the matcher). For each candidate we compute the same
+# performance composite + originality distance the user is scored on, then
+# rank by combined score. Output is the artist-level proof-of-concept list
+# an artist can put in front of an A&R rep.
+# ---------------------------------------------------------------------------
+def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
+                                gems_by_isrc: dict, n: int = 5) -> list:
+    """Returns up to N candidates with name, listeners, similarity, performance
+    percentile, originality score, plus a pitch_angle string. Empty if pool
+    is too thin or no candidates qualify.
+    """
+    import bisect, math
+    if not found_matches or not high_converter_gems or not gems_by_isrc:
+        return []
+    if len(found_matches) < 5 or len(high_converter_gems) < 10:
+        return []
+
+    # Cohort centroid in z-space (same construction _compute_originality uses)
+    centroid, stds = {}, {}
+    for feat in PRODUCTION_FEATURES:
+        if feat not in ORIGINALITY_WEIGHTS:
+            continue
+        vals = []
+        for f in high_converter_gems:
+            v = f.get(feat)
+            if v is None: continue
+            try: vals.append(float(v))
+            except (TypeError, ValueError): continue
+        if len(vals) < 10: continue
+        mean = sum(vals) / len(vals)
+        std = (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5
+        if std > 0:
+            centroid[feat] = mean
+            stds[feat] = std
+
+    # Performance composite — percentile within found_matches
+    pop_pool = sorted([x['sp_track_popularity'] for x in found_matches if x.get('sp_track_popularity') is not None])
+    cm_pool  = sorted([x['cm_track_score']      for x in found_matches if x.get('cm_track_score')      is not None])
+    pl_pool  = sorted([_safe_int(x.get('editorial_playlists')) + _safe_int(x.get('user_playlists')) for x in found_matches])
+
+    def _perf(x):
+        pop = _pct_rank(x.get('sp_track_popularity'), pop_pool)
+        cm  = _pct_rank(x.get('cm_track_score'), cm_pool) if x.get('cm_track_score') is not None else None
+        pl  = _pct_rank(_safe_int(x.get('editorial_playlists')) + _safe_int(x.get('user_playlists')), pl_pool)
+        if pop is None: pop = 0.5
+        if pl is None: pl = 0.5
+        if cm is not None: return 0.50 * pop + 0.30 * cm + 0.20 * pl
+        return 0.714 * pop + 0.286 * pl
+
+    def _orig(isrc):
+        if not isrc: return None
+        f = gems_by_isrc.get(isrc)
+        if not f: return None
+        dist_sq, cnt = 0.0, 0
+        for feat, w in ORIGINALITY_WEIGHTS.items():
+            if feat not in centroid: continue
+            v = f.get(feat)
+            if v is None: continue
+            try: z = (float(v) - centroid[feat]) / stds[feat]
+            except (TypeError, ValueError, ZeroDivisionError): continue
+            dist_sq += w * z * z
+            cnt += 1
+        if cnt < 5: return None
+        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5)))
+
+    scored = []
+    for x in found_matches:
+        p = _perf(x)
+        o = _orig(x.get('isrc'))
+        if o is None: continue
+        scored.append({
+            'name': x.get('name'),
+            'spotify_url': x.get('spotify_url'),
+            'tier': x.get('tier'),
+            'listeners': int(float(x.get('listeners') or 0)),
+            'followers': int(float(x.get('followers') or 0)),
+            'similarity': round(x.get('similarity') or 0, 3),
+            'sp_track_popularity': x.get('sp_track_popularity'),
+            'cm_track_score': x.get('cm_track_score'),
+            'playlists_total': _safe_int(x.get('editorial_playlists')) + _safe_int(x.get('user_playlists')),
+            'perf_pct': round(p, 3),
+            'orig_score': o,
+        })
+    if not scored: return []
+
+    # Soft p60 floors on both axes, then rank by combined score.
+    perf_sorted = sorted(c['perf_pct'] for c in scored)
+    orig_sorted = sorted(c['orig_score'] for c in scored)
+    p_floor = perf_sorted[int(len(perf_sorted) * 0.60)] if perf_sorted else 0
+    o_floor = orig_sorted[int(len(orig_sorted) * 0.60)] if orig_sorted else 0
+    qualified = [c for c in scored if c['perf_pct'] >= p_floor and c['orig_score'] >= o_floor]
+    if len(qualified) < n:
+        qualified = scored  # fallback: pool too thin for both floors
+
+    for c in qualified:
+        c['combined_score'] = round(
+            0.40 * c['similarity']
+            + 0.30 * c['perf_pct']
+            + 0.30 * (c['orig_score'] / 100),
+            3,
+        )
+    qualified.sort(key=lambda c: -c['combined_score'])
+    return qualified[:n]
+
+
+# ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
 def _validate_session(token: str) -> dict:
@@ -2005,6 +2114,14 @@ async def analyze(
             user_profile['quadrant'] = _classify_quadrant(
                 sonic_originality.get('composite_score'),
                 tm.get('composite_percentile'),
+            )
+
+        # Pitch comparables — A&R-ready list of same-tier, sonically similar
+        # artists who are themselves in the Signature of Success quadrant.
+        # Pool is `matches` (already tier-filtered + genre-family OK).
+        if user_profile is not None:
+            user_profile['pitch_comparables'] = _compute_pitch_comparables(
+                matches, high_converter_gems, matcher._gems_by_isrc
             )
 
         # Create background enrichment job
@@ -3582,6 +3699,12 @@ async def analyze_url(
                 track_momentum.get('composite_percentile'),
             )
 
+        # Pitch comparables — A&R-ready list. Pool is found_matches (same tier,
+        # already genre-family-filtered by the matcher).
+        pitch_comparables = _compute_pitch_comparables(
+            found_matches, high_converter_gems_url, matcher._gems_by_isrc
+        )
+
         user_profile = {
             'name': lead.get('name', 'Artist'),
             'listeners': u_listeners,
@@ -3597,6 +3720,7 @@ async def analyze_url(
             'track_momentum': track_momentum,
             'sonic_originality': _url_sonic_originality,
             'quadrant': quadrant,
+            'pitch_comparables': pitch_comparables,
         }
         if track_momentum:
             print(f"  Track momentum: pop={track_momentum['scanned_popularity']} (p{int((track_momentum['percentile_popularity'] or 0)*100)}), cm={track_momentum['scanned_cm_score']}, pl={track_momentum['scanned_playlists']}, composite=p{int(track_momentum['composite_percentile']*100)}, gap=${track_momentum['gap_additional_revenue']}/yr")
