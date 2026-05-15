@@ -1388,21 +1388,20 @@ def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
 
     Reuses the same centroid + performance pools the pitch-comparables
     function builds, but returns the FULL scored set (not just the top 5).
+
+    Filter scope deliberately LOOSER than the pitch-comparables list:
+    the cloud's purpose is to show the user where their broad same-tier
+    cohort lands on the orig × perf grid — the labeled picks are the
+    strict A&R-quality subset rendered on top. Applying the strict
+    sim/alignment/primary-share filters here would erase the texture
+    that gives the chart context.
     """
     import bisect, math
     if not found_matches or not high_converter_gems or not gems_by_isrc:
         return []
-    # Same similarity + alignment + primary-share filters as pitch comparables
-    found_matches = [m for m in found_matches
-                     if (m.get('similarity') or 0) >= PITCH_COMPARABLES_MIN_SIMILARITY]
-    if user_families:
-        found_matches = [m for m in found_matches
-                         if _genre_alignment_fraction(user_families, m) >= PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT]
-    if user_primary_family:
-        found_matches = [m for m in found_matches
-                         if _candidate_primary_family_share(m, user_primary_family) >= PITCH_COMPARABLES_MIN_PRIMARY_SHARE]
-    if not found_matches:
-        return []
+    # No extra filtering — use the full same-tier pool the matcher returned.
+    # user_families / user_primary_family params kept for API compatibility
+    # but intentionally unused here.
 
     # Build cohort centroid (same as _compute_pitch_comparables, kept
     # local to avoid coupling)
