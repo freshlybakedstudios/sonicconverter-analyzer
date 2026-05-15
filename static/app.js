@@ -1115,9 +1115,13 @@ function renderResults(data) {
     pitchList.forEach((p, i) => {
       const div = document.createElement('div');
       div.className = 'pitch-row';
-      const nameLink = p.spotify_url
-        ? `<a href="${p.spotify_url}" target="_blank" rel="noopener">${p.name}</a>`
-        : p.name;
+      // Link to the specific TRACK that scored — not the artist profile.
+      // A&R wants to hear the cut that proves the comparable, not just the artist.
+      const linkTarget = p.track_url || p.spotify_url;
+      const linkLabel = p.track_name ? `${p.name} — ${p.track_name}` : p.name;
+      const nameLink = linkTarget
+        ? `<a href="${linkTarget}" target="_blank" rel="noopener">${linkLabel}</a>`
+        : linkLabel;
       const simPct = Math.round((p.similarity || 0) * 100);
       const perfPct = Math.round((p.perf_pct || 0) * 100);
       const cmStr = (p.cm_track_score != null) ? Math.round(p.cm_track_score) : 'N/A';

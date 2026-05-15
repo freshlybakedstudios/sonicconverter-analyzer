@@ -1343,7 +1343,9 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
         if o is None: continue
         scored.append({
             'name': x.get('name'),
-            'spotify_url': x.get('spotify_url'),
+            'spotify_url': x.get('spotify_url'),       # artist profile URL (kept for backwards compat)
+            'track_url': x.get('track_url'),           # specific track URL — what the A&R link points to
+            'track_name': x.get('track_name'),
             'tier': x.get('tier'),
             'listeners': int(float(x.get('listeners') or 0)),
             'followers': int(float(x.get('followers') or 0)),
