@@ -1009,6 +1009,83 @@ function renderResults(data) {
     origCard.classList.add('hidden');
   }
 
+  // === Sonic Quadrant scatter plot ===
+  // 2D plot: X = performance percentile, Y = originality score. Quadrant cuts
+  // at 75/75. User's dot prominent; top pitch comparables labeled.
+  const sqCard = $('#sonic-quadrant-card');
+  const sqWrap = $('#sonic-quadrant-svg-wrap');
+  const sqTm = userProfile && userProfile.track_momentum;
+  const sqOrig = userProfile && userProfile.sonic_originality;
+  const sqPitch = userProfile && userProfile.pitch_comparables;
+  if (sqCard && sqWrap && sqTm && sqOrig) {
+    // Coordinates: 0-100 on both axes
+    const userPerf = Math.round((sqTm.composite_percentile || 0) * 100);
+    const userOrig = sqOrig.composite_score || 0;
+
+    // SVG geometry (responsive viewBox)
+    const W = 640, H = 460;
+    const M_L = 60, M_R = 30, M_T = 30, M_B = 50;
+    const innerW = W - M_L - M_R;
+    const innerH = H - M_T - M_B;
+    const xToPx = v => M_L + (v / 100) * innerW;
+    const yToPx = v => M_T + ((100 - v) / 100) * innerH;  // invert: high orig = top
+
+    let svg = `<svg class="sq-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">`;
+
+    // Background grid every 25
+    for (let g = 25; g < 100; g += 25) {
+      svg += `<line class="sq-bg-grid" x1="${xToPx(g)}" y1="${M_T}" x2="${xToPx(g)}" y2="${M_T+innerH}"/>`;
+      svg += `<line class="sq-bg-grid" x1="${M_L}" y1="${yToPx(g)}" x2="${M_L+innerW}" y2="${yToPx(g)}"/>`;
+    }
+
+    // Quadrant cut lines at 75/75
+    svg += `<line class="sq-quad-line" x1="${xToPx(75)}" y1="${M_T}" x2="${xToPx(75)}" y2="${M_T+innerH}"/>`;
+    svg += `<line class="sq-quad-line" x1="${M_L}" y1="${yToPx(75)}" x2="${M_L+innerW}" y2="${yToPx(75)}"/>`;
+
+    // Quadrant corner labels
+    svg += `<text class="sq-quad-label" x="${xToPx(50)}" y="${yToPx(95)}" text-anchor="middle">Ahead of the Curve</text>`;
+    svg += `<text class="sq-quad-label success" x="${xToPx(88)}" y="${yToPx(95)}" text-anchor="middle">Signature of Success</text>`;
+    svg += `<text class="sq-quad-label stuck" x="${xToPx(50)}" y="${yToPx(8)}" text-anchor="middle">Stuck in the Pack</text>`;
+    svg += `<text class="sq-quad-label" x="${xToPx(88)}" y="${yToPx(8)}" text-anchor="middle">Genre-Playbook Winner</text>`;
+
+    // Axes
+    svg += `<line class="sq-axis" x1="${M_L}" y1="${M_T+innerH}" x2="${M_L+innerW}" y2="${M_T+innerH}"/>`;
+    svg += `<line class="sq-axis" x1="${M_L}" y1="${M_T}" x2="${M_L}" y2="${M_T+innerH}"/>`;
+    // Tick labels
+    for (let t = 0; t <= 100; t += 25) {
+      svg += `<text class="sq-axis-label" x="${xToPx(t)}" y="${M_T+innerH+18}" text-anchor="middle">${t}</text>`;
+      svg += `<text class="sq-axis-label" x="${M_L-10}" y="${yToPx(t)+4}" text-anchor="end">${t}</text>`;
+    }
+    // Axis titles
+    svg += `<text class="sq-axis-title" x="${M_L+innerW/2}" y="${H-10}" text-anchor="middle">Performance percentile →</text>`;
+    svg += `<text class="sq-axis-title" x="${15}" y="${M_T+innerH/2}" text-anchor="middle" transform="rotate(-90 15 ${M_T+innerH/2})">Originality score →</text>`;
+
+    // Pitch comparables as labeled dots
+    if (sqPitch && sqPitch.length > 0) {
+      sqPitch.slice(0, 5).forEach((p, i) => {
+        const px = xToPx(Math.round((p.perf_pct || 0) * 100));
+        const py = yToPx(p.orig_score || 0);
+        svg += `<circle class="sq-peer-dot" cx="${px}" cy="${py}" r="5"/>`;
+        // Offset label to avoid dot overlap
+        const labelOffsetX = (i % 2 === 0) ? 8 : -8;
+        const anchor = (i % 2 === 0) ? 'start' : 'end';
+        svg += `<text class="sq-peer-label" x="${px+labelOffsetX}" y="${py+3}" text-anchor="${anchor}">${(p.name || '').replace(/[<>&]/g,'')}</text>`;
+      });
+    }
+
+    // User dot (drawn last so it's on top)
+    const ux = xToPx(userPerf);
+    const uy = yToPx(userOrig);
+    svg += `<circle class="sq-user-dot" cx="${ux}" cy="${uy}" r="10"/>`;
+    svg += `<text class="sq-user-label" x="${ux+14}" y="${uy+4}" text-anchor="start">You (${userPerf}, ${userOrig})</text>`;
+
+    svg += `</svg>`;
+    sqWrap.innerHTML = svg;
+    sqCard.classList.remove('hidden');
+  } else if (sqCard) {
+    sqCard.classList.add('hidden');
+  }
+
   // === A&R Pitch Comparables panel ===
   // Top 5 same-tier sonic peers in Signature of Success (high perf + high originality).
   const pitchList = userProfile && userProfile.pitch_comparables;
@@ -1405,6 +1482,31 @@ function renderResults(data) {
     }
     recList.appendChild(li);
   });
+
+  // Signature Production Recommendations — parallel list against the
+  // signature-of-success peer subset. Hides cleanly if the subset was too
+  // thin to produce consensus, or if all recs were filtered out.
+  const sigRecs = data.signature_recommendations || [];
+  const sigCard = $('#signature-rec-card');
+  const sigList = $('#signature-rec-list');
+  if (sigCard && sigList) {
+    sigList.innerHTML = '';
+    if (sigRecs.length > 0) {
+      sigRecs.forEach(r => {
+        const li = document.createElement('li');
+        const parts = r.split('\n');
+        if (parts.length === 2) {
+          li.innerHTML = `<div class="rec-action">${parts[0]}</div><div class="rec-consensus">${parts[1]}</div>`;
+        } else {
+          li.textContent = r;
+        }
+        sigList.appendChild(li);
+      });
+      sigCard.classList.remove('hidden');
+    } else {
+      sigCard.classList.add('hidden');
+    }
+  }
 }
 
 // -------------------------------------------------------
