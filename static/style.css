@@ -1096,6 +1096,58 @@ body {
   color: var(--accent-light);
   font-weight: 600;
 }
+/* A&R Pitch Comparables */
+.pitch-rows { margin-top: 8px; }
+.pitch-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.pitch-row:last-child { border-bottom: none; }
+.pitch-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent-light);
+}
+.pitch-name a { color: var(--accent-light); text-decoration: none; }
+.pitch-name a:hover { text-decoration: underline; }
+.pitch-listeners {
+  font-size: 13px;
+  color: #aaa;
+  text-align: right;
+  white-space: nowrap;
+}
+.pitch-stats {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+.pitch-stats .pitch-stat-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(78, 205, 196, 0.08);
+  border: 1px solid rgba(78, 205, 196, 0.2);
+  border-radius: 999px;
+  margin-right: 6px;
+  color: #d4be8e;
+  font-weight: 500;
+}
+.pitch-angle {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  color: #d8d8d8;
+  line-height: 1.5;
+  margin-top: 6px;
+  padding-left: 0;
+}
+.pitch-angle::before {
+  content: "→ ";
+  color: #4ecdc4;
+  font-weight: 700;
+}
 .track-momentum-gap strong {
   color: #4ecdc4;
 }
