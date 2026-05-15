@@ -1165,8 +1165,47 @@ PITCH_COMPARABLES_MIN_SIMILARITY = 0.70  # Tighter than matcher's 0.55 floor —
 # that survive only because of one shared genre family tag. Filter applies to
 # both the pitch comparables list AND the cohort scatter cloud.
 
+PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT = 0.67  # Fraction of the candidate's
+# individual genre tags whose families overlap with the user's. Catches
+# cross-genre hybrids that pass the OR-based has_foreign filter only because
+# of one shared family tag (e.g. a "uk alternative + uk hip-hop/rap" artist
+# showing up as a rock comparable). 0.67 = candidate must be >2/3 in the
+# user's genre lane.
+
+
+def _genre_alignment_fraction(user_families: set, candidate: dict) -> float:
+    """Fraction of the candidate's individual genre tags whose families
+    overlap with user_families. 1.0 = all tags in user's lane; 0.0 = none."""
+    if not user_families:
+        return 1.0
+    cand_tags = []
+    for field in ('primary_genre', 'secondary_genre'):
+        g = (candidate.get(field) or '').strip()
+        if g:
+            cand_tags.append(g)
+    for g in (candidate.get('artist_genres') or []):
+        if g and isinstance(g, str) and g.strip():
+            cand_tags.append(g.strip())
+    for g in (candidate.get('track_genres') or []):
+        if g and isinstance(g, str) and g.strip():
+            cand_tags.append(g.strip())
+    if not cand_tags:
+        return 1.0
+    aligned, total = 0, 0
+    for tag in cand_tags:
+        tag_fams = _genre_families(tag)
+        if not tag_fams:
+            continue
+        total += 1
+        if tag_fams & user_families:
+            aligned += 1
+    if total == 0:
+        return 1.0
+    return aligned / total
+
 def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
-                                gems_by_isrc: dict, n: int = 5) -> list:
+                                gems_by_isrc: dict, user_families: set = None,
+                                n: int = 5) -> list:
     """Returns up to N candidates with name, listeners, similarity, performance
     percentile, originality score, plus a pitch_angle string. Empty if pool
     is too thin or no candidates qualify.
@@ -1177,6 +1216,12 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     # Tighten similarity floor — pitch comparables should be high-similarity peers
     found_matches = [m for m in found_matches
                      if (m.get('similarity') or 0) >= PITCH_COMPARABLES_MIN_SIMILARITY]
+    # Stricter genre alignment — candidate must be majority in the user's lane,
+    # not just share one family tag among many. Catches the hybrid-genre
+    # passes (e.g. "uk alternative + uk hip-hop/rap" showing up as rock).
+    if user_families:
+        found_matches = [m for m in found_matches
+                         if _genre_alignment_fraction(user_families, m) >= PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT]
     if len(found_matches) < 5 or len(high_converter_gems) < 10:
         return []
 
@@ -1269,7 +1314,7 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
 
 
 def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
-                             gems_by_isrc: dict) -> list:
+                             gems_by_isrc: dict, user_families: set = None) -> list:
     """Lightweight per-peer scatter data for the Sonic Quadrant visualization.
     Returns list of {name, perf_pct, orig_score} for every same-tier peer
     where we can compute both axes. Frontend plots these as a dim cohort
@@ -1281,10 +1326,13 @@ def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
     import bisect, math
     if not found_matches or not high_converter_gems or not gems_by_isrc:
         return []
-    # Same similarity floor as pitch comparables — keep scatter consistent
-    # with what shows up in the labeled picks list
+    # Same similarity + alignment filters as pitch comparables — keep scatter
+    # consistent with what shows up in the labeled picks list
     found_matches = [m for m in found_matches
                      if (m.get('similarity') or 0) >= PITCH_COMPARABLES_MIN_SIMILARITY]
+    if user_families:
+        found_matches = [m for m in found_matches
+                         if _genre_alignment_fraction(user_families, m) >= PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT]
     if not found_matches:
         return []
 
@@ -2321,13 +2369,18 @@ async def analyze(
         # artists who are themselves in the Signature of Success quadrant.
         # Pool is `matches` (already tier-filtered + genre-family OK).
         if user_profile is not None:
+            # Reuse the genre families computed for the matcher's family
+            # filter — same source of truth (user's detected/declared genres).
+            _file_upload_user_fams = _genre_families(genre or '')
             user_profile['pitch_comparables'] = _compute_pitch_comparables(
-                matches, high_converter_gems, matcher._gems_by_isrc
+                matches, high_converter_gems, matcher._gems_by_isrc,
+                user_families=_file_upload_user_fams,
             )
             # Cohort scatter — every same-tier peer with both axes computed,
             # for the Sonic Quadrant background cloud.
             user_profile['cohort_scatter'] = _compute_cohort_scatter(
-                matches, high_converter_gems, matcher._gems_by_isrc
+                matches, high_converter_gems, matcher._gems_by_isrc,
+                user_families=_file_upload_user_fams,
             )
 
         # Signature production recommendations — same math as production recs
@@ -3914,13 +3967,18 @@ async def analyze_url(
             )
 
         # Pitch comparables — A&R-ready list. Pool is found_matches (same tier,
-        # already genre-family-filtered by the matcher).
+        # already genre-family-filtered by the matcher). Pass user_families so
+        # the stricter alignment-fraction filter (catches hybrid-genre passes)
+        # has the user's lane as reference.
+        _url_user_fams = _genre_families(genre or '')
         pitch_comparables = _compute_pitch_comparables(
-            found_matches, high_converter_gems_url, matcher._gems_by_isrc
+            found_matches, high_converter_gems_url, matcher._gems_by_isrc,
+            user_families=_url_user_fams,
         )
         # Cohort scatter for the Sonic Quadrant background cloud
         cohort_scatter = _compute_cohort_scatter(
-            found_matches, high_converter_gems_url, matcher._gems_by_isrc
+            found_matches, high_converter_gems_url, matcher._gems_by_isrc,
+            user_families=_url_user_fams,
         )
 
         user_profile = {
