@@ -1260,6 +1260,105 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     return qualified[:n]
 
 
+def _find_signature_consensus(features: dict, high_converter_gems: list) -> list:
+    """Production-rec consensus against the signature-of-success subset within
+    the cohort (peers who are themselves high-orig + high-perf).
+
+    The default _find_consensus averages over the whole top-25%-composite
+    cohort. That biases toward genre-consensus advice ("compress more, fit
+    the middle"). This variant first filters the cohort to peers whose own
+    audio features deviate strongly from the cohort centroid (top 50% by
+    weighted z-distance), then runs consensus against that subset.
+
+    Result: recs that reflect "what cohort winners who ALSO deviate from
+    the genre norm actually do" — recs that don't punish originality.
+    """
+    if not high_converter_gems or len(high_converter_gems) < 6:
+        return []
+
+    # Build centroid + std per feature from the full cohort
+    centroid, stds = {}, {}
+    for feat in PRODUCTION_FEATURES:
+        if feat not in ORIGINALITY_WEIGHTS:
+            continue
+        vals = []
+        for f in high_converter_gems:
+            v = f.get(feat)
+            if v is None:
+                continue
+            try:
+                vals.append(float(v))
+            except (TypeError, ValueError):
+                continue
+        if len(vals) < 5:
+            continue
+        mean = sum(vals) / len(vals)
+        std = (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5
+        if std > 0:
+            centroid[feat] = mean
+            stds[feat] = std
+
+    if not centroid:
+        return []
+
+    # Per-peer weighted z-distance from cohort centroid
+    peer_distances = []
+    for peer in high_converter_gems:
+        dist_sq, cnt = 0.0, 0
+        for feat, w in ORIGINALITY_WEIGHTS.items():
+            if feat not in centroid:
+                continue
+            v = peer.get(feat)
+            if v is None:
+                continue
+            try:
+                z = (float(v) - centroid[feat]) / stds[feat]
+            except (TypeError, ValueError, ZeroDivisionError):
+                continue
+            dist_sq += w * z * z
+            cnt += 1
+        if cnt >= 5:
+            peer_distances.append((dist_sq ** 0.5, peer))
+
+    if len(peer_distances) < 4:
+        return []
+
+    # Top 50% by originality = the signature-of-success peer subset
+    peer_distances.sort(key=lambda x: -x[0])
+    cutoff = max(int(len(peer_distances) * 0.50), 4)
+    signature_peers = [peer for _, peer in peer_distances[:cutoff]]
+
+    # Run the existing consensus math against this tighter reference set
+    return _find_consensus(features, signature_peers)
+
+
+def _generate_signature_recommendations(features: dict, high_converter_gems: list) -> list:
+    """Mirror of _generate_recommendations' consensus-formatting step, run
+    against signature-of-success peers instead of the full cohort. Returns
+    formatted rec strings ready for the frontend."""
+    consensus = _find_signature_consensus(features, high_converter_gems)
+    if not consensus:
+        return []
+
+    recs = []
+    domain_count = {}
+    for c in consensus:
+        if len(recs) >= 8:
+            break
+        feat = c['feature']
+        desc = FEATURE_DESCRIPTIONS.get(feat)
+        if not desc:
+            continue
+        domain = desc.get('domain', '')
+        if domain_count.get(domain, 0) >= 2:
+            continue
+        text = _format_rec(feat, c)
+        if text:
+            recs.append(text)
+            domain_count[domain] = domain_count.get(domain, 0) + 1
+    return recs
+
+
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
@@ -2137,6 +2236,13 @@ async def analyze(
                 matches, high_converter_gems, matcher._gems_by_isrc
             )
 
+        # Signature production recommendations — same math as production recs
+        # but against the signature-of-success peer subset (top 50% by
+        # originality within the high-converter cohort). Surfaced as a
+        # parallel list so the user can compare "fit-the-cohort" vs
+        # "match the winners-who-also-deviate" framings.
+        signature_recs = _generate_signature_recommendations(features, high_converter_gems)
+
         # Create background enrichment job
         job_id = job_mgr.create_job(token, features, matches, all_matches=matches)
 
@@ -2185,6 +2291,7 @@ async def analyze(
             'total_all_matches': len(all_matches),
             'user_tier': user_tier or '',
             'recommendations': recs,
+            'signature_recommendations': signature_recs,
             'genre_alignment': genre_alignment,
             'timing': {
                 'feature_extraction_s': round(t_features, 2),
@@ -3781,6 +3888,7 @@ async def analyze_url(
         'total_all_matches': len(all_found),
         'user_tier': user_tier or '',
         'recommendations': recs,
+        'signature_recommendations': _generate_signature_recommendations(features, high_converter_gems_url),
         'source': {
             'type': 'spotify_url',
             'track_name': track_name,

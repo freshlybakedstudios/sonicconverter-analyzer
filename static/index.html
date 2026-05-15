@@ -432,7 +432,16 @@
       <!-- 7. Production Recommendations -->
       <div class="result-card">
         <h3>Production Recommendations</h3>
+        <p class="card-sub">Direction the full cohort sits relative to your track — closes the gap to genre consensus.</p>
         <ul class="rec-list" id="rec-list"></ul>
+      </div>
+
+      <!-- 7b. Signature Production Recommendations — same math, against
+           signature-of-success peer subset (winners-who-also-deviate). -->
+      <div class="result-card hidden" id="signature-rec-card">
+        <h3>Signature Production Recommendations</h3>
+        <p class="card-sub">Direction the <strong>signature-of-success subset</strong> sits relative to you — winners in your cohort who deviate from the genre norm. Compare against the list above: features where these two lists disagree are where preserving your distinctiveness aligns with what the elite actually does.</p>
+        <ul class="rec-list" id="signature-rec-list"></ul>
       </div>
 
       <!-- 7. Where You Stand -->
@@ -520,6 +529,14 @@
 
         <div class="orig-section-title">Where you match the consensus</div>
         <div class="orig-rows" id="orig-fits"></div>
+      </div>
+
+      <!-- 7d. Sonic Quadrant — visual originality × performance plot.
+           User as the big dot; pitch comparables labeled. Screenshot artifact. -->
+      <div class="result-card hidden" id="sonic-quadrant-card">
+        <h3>Sonic Quadrant</h3>
+        <p class="card-sub">Your track and your pitch comparables on the same 2D grid: performance × originality. Quadrant lines at the 75/75 cuts. Screenshot for your pitch deck.</p>
+        <div id="sonic-quadrant-svg-wrap"></div>
       </div>
 
       <!-- 7c. A&R Pitch Comparables — same tier, sonic peers in Signature of Success.

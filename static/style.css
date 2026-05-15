@@ -1096,6 +1096,46 @@ body {
   color: var(--accent-light);
   font-weight: 600;
 }
+/* Sonic Quadrant scatter plot */
+#sonic-quadrant-svg-wrap {
+  max-width: 640px;
+  margin: 14px auto 0;
+}
+.sq-svg { width: 100%; height: auto; display: block; }
+.sq-bg-grid { stroke: rgba(255,255,255,0.04); stroke-width: 1; }
+.sq-quad-line { stroke: rgba(78, 205, 196, 0.4); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.sq-axis { stroke: rgba(255,255,255,0.15); stroke-width: 1; }
+.sq-axis-label { fill: #888; font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+.sq-quad-label {
+  fill: rgba(78, 205, 196, 0.55);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.sq-quad-label.success { fill: rgba(212, 190, 142, 0.7); }
+.sq-quad-label.stuck { fill: rgba(168, 149, 104, 0.6); }
+.sq-peer-dot { fill: rgba(78, 205, 196, 0.5); stroke: rgba(78, 205, 196, 0.7); stroke-width: 1; }
+.sq-peer-label {
+  fill: #ccc;
+  font-size: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.sq-user-dot { fill: #d4be8e; stroke: #fff; stroke-width: 2; }
+.sq-user-label {
+  fill: #d4be8e;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.sq-axis-title {
+  fill: #aaa;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
 /* A&R Pitch Comparables */
 .pitch-rows { margin-top: 8px; }
 .pitch-row {
