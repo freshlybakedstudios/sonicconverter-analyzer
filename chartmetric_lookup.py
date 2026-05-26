@@ -135,7 +135,13 @@ BACKOFF_FACTOR = 3
 
 # Track pagination — match discovery_events_work.py
 TRACK_FETCH_LIMIT = 100
-MAX_TRACK_PAGES = None  # fetch all pages
+MAX_TRACK_PAGES = None  # fetch all pages (background pipeline parity)
+# Real-time web lookups (lookup_artist_by_spotify) run on the request critical
+# path BEFORE the Mac-worker job is created. Mega-catalog artists (e.g. The
+# Weeknd) have thousands of tracks; paginating them all at ~1 req/s blows past
+# Railway's ~300s edge timeout -> request hangs with no job ever created.
+# Cap the web path so worst-case lookup stays bounded (~5 pages = 500 tracks).
+WEB_TOP_TRACK_MAX_PAGES = 5
 
 # Track name exclusion patterns — match discovery_events_work.py
 TRACK_NAME_EXCLUDE_PATTERNS = [
@@ -397,7 +403,12 @@ def _track_name_filtered(name: Optional[str]) -> bool:
 # Selects newest solo track (not score-based), with name/collab filtering,
 # paginated track fetching, and post-metadata re-validation.
 # ---------------------------------------------------------------------------
-def _fetch_top_track(token: str, cm_id: int, artist_name: str = None) -> dict | None:
+def _fetch_top_track(token: str, cm_id: int, artist_name: str = None,
+                     max_pages: int = None) -> dict | None:
+    # Effective page cap: explicit max_pages (web path) overrides the module
+    # default MAX_TRACK_PAGES (None = unbounded, used by the background pipeline).
+    page_cap = max_pages if max_pages is not None else MAX_TRACK_PAGES
+
     def _call():
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -409,7 +420,7 @@ def _fetch_top_track(token: str, cm_id: int, artist_name: str = None) -> dict | 
         page = 0
 
         while True:
-            if MAX_TRACK_PAGES is not None and page >= MAX_TRACK_PAGES:
+            if page_cap is not None and page >= page_cap:
                 break
             _rate_wait()
             params = {'limit': TRACK_FETCH_LIMIT, 'offset': offset}
@@ -956,8 +967,11 @@ def lookup_artist_by_spotify(spotify_url: str) -> dict | None:
         # 3) Fetch URLs
         artist_urls = _fetch_urls(token, cm_id)
 
-        # 4) Fetch top track (with playlists) — passes artist_name for solo detection
-        track_data = _fetch_top_track(token, cm_id, artist_name=artist_name)
+        # 4) Fetch top track (with playlists) — passes artist_name for solo detection.
+        # Bounded pages: this is the real-time request path, must not hang on
+        # mega-catalog artists before the Mac-worker job is created.
+        track_data = _fetch_top_track(token, cm_id, artist_name=artist_name,
+                                      max_pages=WEB_TOP_TRACK_MAX_PAGES)
 
         # Extract fields for the analyzer
         stats = meta.get('cm_statistics', {})

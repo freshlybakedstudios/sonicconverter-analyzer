@@ -1486,44 +1486,98 @@ function renderResults(data) {
 
   renderMatchView();
 
-  // Recommendations
+  // Production Recommendations — amalgamated target ranges (cohort edge ↔
+  // signature edge). Falls back to the legacy string list if the backend
+  // didn't send structured ranges.
+  const recRanges = data.recommendation_ranges || [];
+  const recRangesWrap = $('#rec-ranges');
   const recList = $('#rec-list');
-  recList.innerHTML = '';
-  recs.forEach(r => {
-    const li = document.createElement('li');
-    const parts = r.split('\n');
-    if (parts.length === 2) {
-      li.innerHTML = `<div class="rec-action">${parts[0]}</div><div class="rec-consensus">${parts[1]}</div>`;
-    } else {
-      li.textContent = r;
-    }
-    recList.appendChild(li);
-  });
-
-  // Signature Production Recommendations — parallel list against the
-  // signature-of-success peer subset. Hides cleanly if the subset was too
-  // thin to produce consensus, or if all recs were filtered out.
-  const sigRecs = data.signature_recommendations || [];
-  const sigCard = $('#signature-rec-card');
-  const sigList = $('#signature-rec-list');
-  if (sigCard && sigList) {
-    sigList.innerHTML = '';
-    if (sigRecs.length > 0) {
-      sigRecs.forEach(r => {
-        const li = document.createElement('li');
-        const parts = r.split('\n');
-        if (parts.length === 2) {
-          li.innerHTML = `<div class="rec-action">${parts[0]}</div><div class="rec-consensus">${parts[1]}</div>`;
-        } else {
-          li.textContent = r;
-        }
-        sigList.appendChild(li);
-      });
-      sigCard.classList.remove('hidden');
-    } else {
-      sigCard.classList.add('hidden');
-    }
+  if (recRangesWrap && recRanges.length > 0) {
+    renderRecRanges(recRanges);
+    show(recRangesWrap);
+    if (recList) hide(recList);
+  } else if (recList) {
+    if (recRangesWrap) hide(recRangesWrap);
+    recList.innerHTML = '';
+    recs.forEach(r => {
+      const li = document.createElement('li');
+      const parts = r.split('\n');
+      if (parts.length === 2) {
+        li.innerHTML = `<div class="rec-action">${parts[0]}</div><div class="rec-consensus">${parts[1]}</div>`;
+      } else {
+        li.textContent = r;
+      }
+      recList.appendChild(li);
+    });
+    show(recList);
   }
+
+  // Legacy signature card removed — its data is now the upper edge of each
+  // range above. Guard in case a cached page still has the element.
+  const sigCard = $('#signature-rec-card');
+  if (sigCard) sigCard.classList.add('hidden');
+}
+
+// Format a production-feature value for display, by unit kind from the backend.
+function fmtFeatVal(kind, v) {
+  if (v == null || isNaN(v)) return '–';
+  switch (kind) {
+    case 'pct':  return (v * 100).toFixed(1) + '%';
+    case 'db':   return v.toFixed(1) + ' dB';
+    case 'lufs': return v.toFixed(1) + ' LUFS';
+    case 'hz':   return Math.round(v) + ' Hz';
+    case 'rate': return v.toFixed(1) + ' /s';
+    case 'ms':   return v.toFixed(1) + ' ms';
+    case 'lu':   return v.toFixed(1) + ' LU';
+    default:     return v.toFixed(3);
+  }
+}
+
+// Render each recommendation as a target-range meter: a striped band between
+// the cohort target and the signature target, with the artist's "You" dot.
+function renderRecRanges(ranges) {
+  const wrap = $('#rec-ranges');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  ranges.forEach(r => {
+    const you = r.you;
+    const cohort = r.target_cohort;
+    const hasSig = r.target_signature != null;
+    const sig = hasSig ? r.target_signature : cohort;
+
+    // Auto-scale across the three points with padding so the band reads clearly.
+    const lo = Math.min(you, cohort, sig);
+    const hi = Math.max(you, cohort, sig);
+    const span = hi - lo;
+    const pad = span > 0 ? span * 0.35 : (Math.abs(hi) * 0.15 + 1e-6);
+    const sMin = lo - pad, sMax = hi + pad;
+    const pos = v => Math.max(0, Math.min(100, ((v - sMin) / (sMax - sMin)) * 100));
+
+    const bandLo = Math.min(cohort, sig), bandHi = Math.max(cohort, sig);
+    const bandLeft = pos(bandLo);
+    const bandW = Math.max(pos(bandHi) - bandLeft, 1.5);
+    const youInBand = you >= bandLo && you <= bandHi;
+    const kind = r.unit_kind;
+
+    const row = document.createElement('div');
+    row.className = 'rec-range';
+    row.innerHTML =
+      `<div class="rec-range-head"><span class="rec-domain">${r.domain}</span>${r.action}</div>` +
+      `<div class="rec-range-bar">` +
+        `<div class="rec-range-band" style="left:${bandLeft}%;width:${bandW}%"></div>` +
+        `<div class="rec-range-edge cohort" style="left:${pos(cohort)}%"></div>` +
+        (hasSig ? `<div class="rec-range-edge sig" style="left:${pos(sig)}%"></div>` : ``) +
+        `<div class="rec-range-dot" style="left:${pos(you)}%"></div>` +
+      `</div>` +
+      `<div class="rec-range-legend">` +
+        `<span class="rrl you">You <b>${fmtFeatVal(kind, you)}</b></span>` +
+        `<span class="rrl cohort">Cohort <b>${fmtFeatVal(kind, cohort)}</b></span>` +
+        (hasSig ? `<span class="rrl sig">Signature <b>${fmtFeatVal(kind, sig)}</b></span>` : ``) +
+        `<span class="rrl agree">${r.agree[0]}/${r.agree[1]} agree</span>` +
+        (youInBand ? `<span class="rrl inrange">✓ in range</span>` : ``) +
+      `</div>`;
+    wrap.appendChild(row);
+  });
 }
 
 // -------------------------------------------------------

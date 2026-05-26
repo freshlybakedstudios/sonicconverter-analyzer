@@ -42,7 +42,7 @@
   <title>Sonic Analyzer | Freshly Baked Studios</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-  <link rel="stylesheet" href="/static/style.css?v=20250515-3">
+  <link rel="stylesheet" href="/static/style.css?v=20260526-1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -429,19 +429,16 @@
         <div id="audience-match-list"></div>
       </div>
 
-      <!-- 7. Production Recommendations -->
+      <!-- 7. Production Recommendations — amalgamated target ranges.
+           Each feature shows a band between two consensus targets: the full
+           high-converter cohort (safe/genre edge) and the signature-of-success
+           subset (distinctive-winners edge). Aim anywhere in the band. -->
       <div class="result-card">
         <h3>Production Recommendations</h3>
-        <p class="card-sub">Direction the full cohort sits relative to your track — closes the gap to genre consensus.</p>
-        <ul class="rec-list" id="rec-list"></ul>
-      </div>
-
-      <!-- 7b. Signature Production Recommendations — same math, against
-           signature-of-success peer subset (winners-who-also-deviate). -->
-      <div class="result-card hidden" id="signature-rec-card">
-        <h3>Signature Production Recommendations</h3>
-        <p class="card-sub">Direction the <strong>signature-of-success subset</strong> sits relative to you — winners in your cohort who deviate from the genre norm. Compare against the list above: features where these two lists disagree are where preserving your distinctiveness aligns with what the elite actually does.</p>
-        <ul class="rec-list" id="signature-rec-list"></ul>
+        <p class="card-sub">Each target is a <strong>range</strong>. The lower edge is where the full cohort of high-converting peers sits — the genre-consensus, safe bet. The upper edge is where the <strong>signature-of-success</strong> subset sits — the winners who break the norm, your edge. Aim anywhere inside the band; that's your mastering &amp; production headroom.</p>
+        <div class="rec-ranges" id="rec-ranges"></div>
+        <!-- Fallback: legacy formatted-string list if no structured ranges -->
+        <ul class="rec-list hidden" id="rec-list"></ul>
       </div>
 
       <!-- 7. Where You Stand -->
@@ -680,6 +677,6 @@
     </div>
   </footer>
 
-  <script src="/static/app.js?v=20250515-3"></script>
+  <script src="/static/app.js?v=20260526-1"></script>
 </body>
 </html>
