@@ -1496,6 +1496,49 @@ def _find_signature_consensus(features: dict, high_converter_gems: list) -> list
     Result: recs that reflect "what cohort winners who ALSO deviate from
     the genre norm actually do" — recs that don't punish originality.
     """
+    signature_peers = _signature_subset(high_converter_gems)
+    if not signature_peers:
+        return []
+    # Run the existing consensus math against this tighter reference set
+    return _find_consensus(features, signature_peers)
+
+
+def _generate_signature_recommendations(features: dict, high_converter_gems: list) -> list:
+    """Mirror of _generate_recommendations' consensus-formatting step, run
+    against signature-of-success peers instead of the full cohort. Returns
+    formatted rec strings ready for the frontend."""
+    consensus = _find_signature_consensus(features, high_converter_gems)
+    if not consensus:
+        return []
+
+    recs = []
+    domain_count = {}
+    for c in consensus:
+        if len(recs) >= 8:
+            break
+        feat = c['feature']
+        desc = FEATURE_DESCRIPTIONS.get(feat)
+        if not desc:
+            continue
+        domain = desc.get('domain', '')
+        if domain_count.get(domain, 0) >= 2:
+            continue
+        text = _format_rec(feat, c)
+        if text:
+            recs.append(text)
+            domain_count[domain] = domain_count.get(domain, 0) + 1
+    return recs
+
+
+def _signature_subset(high_converter_gems: list) -> list:
+    """The 'signature-of-success' subset of the high-converter cohort: peers
+    whose own audio features deviate most from the cohort centroid (top 50% by
+    ORIGINALITY_WEIGHTS-weighted z-distance) — winners who ALSO break the genre
+    norm. Returns [] if the cohort is too thin.
+
+    Shared by _find_signature_consensus and _generate_recommendation_ranges so
+    the 'signature' edge is computed identically everywhere.
+    """
     if not high_converter_gems or len(high_converter_gems) < 6:
         return []
 
@@ -1549,24 +1592,79 @@ def _find_signature_consensus(features: dict, high_converter_gems: list) -> list
     # Top 50% by originality = the signature-of-success peer subset
     peer_distances.sort(key=lambda x: -x[0])
     cutoff = max(int(len(peer_distances) * 0.50), 4)
-    signature_peers = [peer for _, peer in peer_distances[:cutoff]]
-
-    # Run the existing consensus math against this tighter reference set
-    return _find_consensus(features, signature_peers)
+    return [peer for _, peer in peer_distances[:cutoff]]
 
 
-def _generate_signature_recommendations(features: dict, high_converter_gems: list) -> list:
-    """Mirror of _generate_recommendations' consensus-formatting step, run
-    against signature-of-success peers instead of the full cohort. Returns
-    formatted rec strings ready for the frontend."""
-    consensus = _find_signature_consensus(features, high_converter_gems)
-    if not consensus:
+def _feature_avg(features: dict, gems_list: list, feat: str):
+    """BPM-normalized average of one production feature across a gems list.
+    Mirrors the normalization in _find_consensus so targets are comparable."""
+    if not gems_list:
+        return None
+    target_bpm = float(features.get('bpm', 120) or 120)
+    time_based = {'attack_time', 'onset_rate', 'beat_strength', 'danceability'}
+    vals = []
+    for g in gems_list:
+        v = g.get(feat)
+        if v is None:
+            continue
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            continue
+        if feat in time_based:
+            cb = float(g.get('bpm', 120) or 120)
+            if cb > 0:
+                v = v * (target_bpm / cb)
+        vals.append(v)
+    return sum(vals) / len(vals) if vals else None
+
+
+def _rec_unit_kind(feat: str, unit: str) -> str:
+    """Frontend formatting hint for a production-feature value."""
+    if feat in RATIO_FEATURES:
+        return 'pct'
+    if feat in DB_FEATURES:
+        return 'db'
+    if unit == 'LUFS':
+        return 'lufs'
+    if unit == 'Hz':
+        return 'hz'
+    if unit == '/s':
+        return 'rate'
+    if unit == 'ms':
+        return 'ms'
+    if unit == 'LU':
+        return 'lu'
+    if unit == 'dBFS':
+        return 'db'
+    return 'raw'
+
+
+def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -> list:
+    """Amalgamate the two production-rec cohorts into per-feature TARGET RANGES.
+
+    For each feature the full high-converter cohort agrees on (>=50% directional
+    consensus, via _find_consensus), compute two targets:
+      - target_cohort    = full cohort average     (genre consensus / 'safe' edge)
+      - target_signature = signature-subset average (distinctive winners / 'edge')
+    The band between them is the artist's mastering/production wiggle room.
+    Returns structured objects the frontend renders as range meters. The two
+    legacy string lists (recommendations / signature_recommendations) are the
+    two edges of these same bands.
+    """
+    if not high_converter_gems:
         return []
 
-    recs = []
+    cohort_consensus = _find_consensus(features, high_converter_gems)
+    if not cohort_consensus:
+        return []
+
+    signature_peers = _signature_subset(high_converter_gems)
+
+    ranges = []
     domain_count = {}
-    for c in consensus:
-        if len(recs) >= 8:
+    for c in cohort_consensus:
+        if len(ranges) >= 8:
             break
         feat = c['feature']
         desc = FEATURE_DESCRIPTIONS.get(feat)
@@ -1575,11 +1673,35 @@ def _generate_signature_recommendations(features: dict, high_converter_gems: lis
         domain = desc.get('domain', '')
         if domain_count.get(domain, 0) >= 2:
             continue
-        text = _format_rec(feat, c)
-        if text:
-            recs.append(text)
-            domain_count[domain] = domain_count.get(domain, 0) + 1
-    return recs
+
+        direction = c['direction']
+        action = desc.get(direction, '')
+        if not action:
+            continue
+
+        cohort_target = c['converter_avg']
+        # Same realism guards as _format_rec — GEMS 4s samples bias these low.
+        if feat == 'crest_factor' and cohort_target < 6.0:
+            continue
+        if feat == 'dynamic_range' and direction == 'lower' and cohort_target < 15.0:
+            continue
+
+        sig_target = _feature_avg(features, signature_peers, feat) if signature_peers else None
+
+        ranges.append({
+            'feature': feat,
+            'domain': domain,
+            'action': action,
+            'unit_kind': _rec_unit_kind(feat, desc.get('unit', '')),
+            'you': round(c['user_val'], 6),
+            'target_cohort': round(cohort_target, 6),
+            'target_signature': round(sig_target, 6) if sig_target is not None else None,
+            'agree': [c['count'], c['total']],
+            'direction': direction,
+        })
+        domain_count[domain] = domain_count.get(domain, 0) + 1
+
+    return ranges
 
 
 # ---------------------------------------------------------------------------
@@ -2528,6 +2650,7 @@ async def analyze(
             'user_tier': user_tier or '',
             'recommendations': recs,
             'signature_recommendations': signature_recs,
+            'recommendation_ranges': _generate_recommendation_ranges(features, high_converter_gems),
             'genre_alignment': genre_alignment,
             'timing': {
                 'feature_extraction_s': round(t_features, 2),
@@ -4138,6 +4261,7 @@ async def analyze_url(
         'user_tier': user_tier or '',
         'recommendations': recs,
         'signature_recommendations': _generate_signature_recommendations(features, high_converter_gems_url),
+        'recommendation_ranges': _generate_recommendation_ranges(features, high_converter_gems_url),
         'source': {
             'type': 'spotify_url',
             'track_name': track_name,

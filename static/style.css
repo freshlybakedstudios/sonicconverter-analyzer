@@ -1273,6 +1273,78 @@ body {
 .conv-bar-label-target {
   color: var(--accent);
 }
+
+/* Production recommendation ranges — amalgamated cohort↔signature meter */
+.rec-ranges {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 8px;
+}
+.rec-range-head {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+  margin-bottom: 9px;
+}
+.rec-domain {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-light);
+  background: var(--accent-glow);
+  padding: 1px 7px;
+  border-radius: 4px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.rec-range-bar {
+  position: relative;
+  height: 14px;
+  background: var(--border);
+  border-radius: 7px;
+  margin-bottom: 7px;
+}
+.rec-range-band {
+  position: absolute;
+  top: 0;
+  height: 14px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(135deg, var(--accent) 0px, var(--accent) 3px, transparent 3px, transparent 7px);
+  opacity: 0.5;
+}
+.rec-range-edge {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 14px;
+}
+.rec-range-edge.cohort { background: var(--text-dim); }
+.rec-range-edge.sig { background: var(--accent); }
+.rec-range-dot {
+  position: absolute;
+  top: -3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-light);
+  border: 2px solid var(--card);
+  transform: translateX(-50%);
+  z-index: 2;
+}
+.rec-range-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 14px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.rec-range-legend b { color: var(--text); font-weight: 600; }
+.rrl.you b { color: var(--accent-light); }
+.rrl.sig b { color: var(--accent); }
+.rrl.inrange { color: var(--success); font-weight: 700; }
 /* Stat boxes */
 .conversion-grid {
   display: flex;
