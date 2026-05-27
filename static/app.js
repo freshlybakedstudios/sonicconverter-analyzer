@@ -1533,48 +1533,86 @@ function fmtFeatVal(kind, v) {
   }
 }
 
-// Render each recommendation as a target-range meter: a striped band between
-// the cohort target and the signature target, with the artist's "You" dot.
+// The real-world move from `you` to `target`, in the feature's natural unit.
+// EQ band ratios read as dB (10·log10 ratio), matching how engineers think.
+function fmtMove(kind, you, target) {
+  if (you == null || target == null || isNaN(you) || isNaN(target)) return '';
+  const s = (v, dp, unit) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(dp) + unit;
+  switch (kind) {
+    case 'pct':
+      if (you > 0 && target > 0) return s(10 * Math.log10(target / you), 1, ' dB');
+      return s((target - you) * 100, 1, ' pts');
+    case 'db':
+    case 'lufs': return s(target - you, 1, ' dB');
+    case 'lu':   return s(target - you, 1, ' LU');
+    case 'hz':   return (target >= you ? '+' : '−') + Math.round(Math.abs(target - you)) + ' Hz';
+    case 'rate': return s(target - you, 1, ' /s');
+    case 'ms':   return s(target - you, 1, ' ms');
+    default:     return you !== 0 ? s(((target - you) / Math.abs(you)) * 100, 0, '%') : '';
+  }
+}
+
+// Compact range label, unit shown once: "17.1–19.0%", "18.5–21.0 dB".
+function fmtRange(kind, a, b) {
+  const A = fmtFeatVal(kind, a), B = fmtFeatVal(kind, b);
+  const m = A.match(/^([\d.\-−]+)(.*)$/);
+  if (m && B.endsWith(m[2])) return m[1] + '–' + B; // strip unit off the low end
+  return A + '–' + B;
+}
+
+// Render each recommendation as a range meter anchored to where peers actually
+// sit (p5–p95), so distance on the bar = real adjustment effort. The striped
+// band is the p25–p75 "aim here" zone; the headline states the move in real
+// units (e.g. "≈ −1 dB"). Falls back to a thin band if percentiles are absent.
 function renderRecRanges(ranges) {
   const wrap = $('#rec-ranges');
   if (!wrap) return;
   wrap.innerHTML = '';
   ranges.forEach(r => {
     const you = r.you;
-    const cohort = r.target_cohort;
-    const hasSig = r.target_signature != null;
-    const sig = hasSig ? r.target_signature : cohort;
+    const kind = r.unit_kind;
+    const pc = r.percentiles;
 
-    // Auto-scale across the three points with padding so the band reads clearly.
-    const lo = Math.min(you, cohort, sig);
-    const hi = Math.max(you, cohort, sig);
-    const span = hi - lo;
-    const pad = span > 0 ? span * 0.35 : (Math.abs(hi) * 0.15 + 1e-6);
+    let p5, p25, p50, p75, p95;
+    if (pc) {
+      ({ p5, p25, p50, p75, p95 } = pc);
+    } else {
+      // Fallback: thin synthetic band around the cohort target.
+      const t = r.target_cohort;
+      const sp = Math.abs(t - you) || (Math.abs(t) * 0.1 + 1e-6);
+      p25 = t - sp * 0.15; p75 = t + sp * 0.15; p50 = t;
+      p5 = Math.min(you, t) - sp * 0.3; p95 = Math.max(you, t) + sp * 0.3;
+    }
+
+    // Scale spans the peer distribution, extended to include You if outside it.
+    const lo = Math.min(p5, you), hi = Math.max(p95, you);
+    const span = (hi - lo) || (Math.abs(hi) * 0.1 + 1e-6);
+    const pad = span * 0.06;
     const sMin = lo - pad, sMax = hi + pad;
     const pos = v => Math.max(0, Math.min(100, ((v - sMin) / (sMax - sMin)) * 100));
 
-    const bandLo = Math.min(cohort, sig), bandHi = Math.max(cohort, sig);
-    const bandLeft = pos(bandLo);
-    const bandW = Math.max(pos(bandHi) - bandLeft, 1.5);
-    const youInBand = you >= bandLo && you <= bandHi;
-    const kind = r.unit_kind;
+    const zoneL = pos(p25), zoneW = Math.max(pos(p75) - zoneL, 1.5);
+    const inZone = you >= p25 && you <= p75;
+    const edge = you < p25 ? p25 : p75;
+    const moveStr = inZone ? '✓ in the zone' : fmtMove(kind, you, edge) + ' to land in';
 
     const row = document.createElement('div');
     row.className = 'rec-range';
     row.innerHTML =
-      `<div class="rec-range-head"><span class="rec-domain">${r.domain}</span>${r.action}</div>` +
+      `<div class="rec-range-head">` +
+        `<span class="rec-domain">${r.domain}</span>` +
+        `<span class="rec-act">${r.action}</span>` +
+        `<span class="rec-move${inZone ? ' inrange' : ''}">${moveStr}</span>` +
+      `</div>` +
       `<div class="rec-range-bar">` +
-        `<div class="rec-range-band" style="left:${bandLeft}%;width:${bandW}%"></div>` +
-        `<div class="rec-range-edge cohort" style="left:${pos(cohort)}%"></div>` +
-        (hasSig ? `<div class="rec-range-edge sig" style="left:${pos(sig)}%"></div>` : ``) +
+        `<div class="rec-range-band" style="left:${zoneL}%;width:${zoneW}%"></div>` +
+        `<div class="rec-range-edge median" style="left:${pos(p50)}%"></div>` +
         `<div class="rec-range-dot" style="left:${pos(you)}%"></div>` +
       `</div>` +
       `<div class="rec-range-legend">` +
         `<span class="rrl you">You <b>${fmtFeatVal(kind, you)}</b></span>` +
-        `<span class="rrl cohort">Cohort <b>${fmtFeatVal(kind, cohort)}</b></span>` +
-        (hasSig ? `<span class="rrl sig">Signature <b>${fmtFeatVal(kind, sig)}</b></span>` : ``) +
+        `<span class="rrl zone">Target zone <b>${fmtRange(kind, p25, p75)}</b></span>` +
         `<span class="rrl agree">${r.agree[0]}/${r.agree[1]} agree</span>` +
-        (youInBand ? `<span class="rrl inrange">✓ in range</span>` : ``) +
       `</div>`;
     wrap.appendChild(row);
   });

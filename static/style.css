@@ -1282,11 +1282,24 @@ body {
   margin-top: 8px;
 }
 .rec-range-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 13px;
   color: var(--text);
   line-height: 1.45;
   margin-bottom: 9px;
 }
+.rec-act { flex: 1 1 auto; min-width: 120px; }
+.rec-move {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.rec-move.inrange { color: var(--success); }
 .rec-domain {
   display: inline-block;
   font-size: 10px;
@@ -1321,8 +1334,7 @@ body {
   width: 2px;
   height: 14px;
 }
-.rec-range-edge.cohort { background: var(--text-dim); }
-.rec-range-edge.sig { background: var(--accent); }
+.rec-range-edge.median { background: var(--accent-light); }
 .rec-range-dot {
   position: absolute;
   top: -3px;
@@ -1343,8 +1355,7 @@ body {
 }
 .rec-range-legend b { color: var(--text); font-weight: 600; }
 .rrl.you b { color: var(--accent-light); }
-.rrl.sig b { color: var(--accent); }
-.rrl.inrange { color: var(--success); font-weight: 700; }
+.rrl.zone b { color: var(--accent); }
 /* Stat boxes */
 .conversion-grid {
   display: flex;
