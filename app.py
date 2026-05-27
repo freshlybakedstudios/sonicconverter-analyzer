@@ -1619,6 +1619,45 @@ def _feature_avg(features: dict, gems_list: list, feat: str):
     return sum(vals) / len(vals) if vals else None
 
 
+def _feature_percentiles(features: dict, gems_list: list, feat: str,
+                         ps=(5, 25, 50, 75, 95)):
+    """BPM-normalized percentile distribution of one feature across a gems list.
+    Lets the frontend anchor the range bar to where peers ACTUALLY sit, so the
+    visual distance reflects real adjustment effort (a 1 dB move looks like a
+    1 dB move). Returns {'p5':..,'p25':..,'p50':..,'p75':..,'p95':..} or None."""
+    if not gems_list:
+        return None
+    target_bpm = float(features.get('bpm', 120) or 120)
+    time_based = {'attack_time', 'onset_rate', 'beat_strength', 'danceability'}
+    vals = []
+    for g in gems_list:
+        v = g.get(feat)
+        if v is None:
+            continue
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            continue
+        if feat in time_based:
+            cb = float(g.get('bpm', 120) or 120)
+            if cb > 0:
+                v = v * (target_bpm / cb)
+        vals.append(v)
+    if len(vals) < 4:
+        return None
+    vals.sort()
+    n = len(vals)
+
+    def _pct(p):
+        idx = (p / 100.0) * (n - 1)
+        lo = int(idx)
+        hi = min(lo + 1, n - 1)
+        frac = idx - lo
+        return vals[lo] * (1 - frac) + vals[hi] * frac
+
+    return {f'p{p}': round(_pct(p), 6) for p in ps}
+
+
 def _rec_unit_kind(feat: str, unit: str) -> str:
     """Frontend formatting hint for a production-feature value."""
     if feat in RATIO_FEATURES:
@@ -1696,6 +1735,9 @@ def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -
             'you': round(c['user_val'], 6),
             'target_cohort': round(cohort_target, 6),
             'target_signature': round(sig_target, 6) if sig_target is not None else None,
+            # Where peers actually sit — anchors the bar to a realistic scale and
+            # gives the striped p25–p75 "aim here" zone.
+            'percentiles': _feature_percentiles(features, high_converter_gems, feat),
             'agree': [c['count'], c['total']],
             'direction': direction,
         })
@@ -5063,7 +5105,10 @@ if static_dir.exists():
 async def serve_index():
     index = static_dir / 'index.html'
     if index.exists():
-        return FileResponse(str(index))
+        # no-cache => browser must revalidate index.html on every load, so a new
+        # deploy (with bumped ?v= on JS/CSS) is picked up immediately instead of
+        # serving a stale cached page. The versioned static assets stay cacheable.
+        return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
     return {"message": "Sonic Analyzer API is running. Put index.html in static/"}
 
 
