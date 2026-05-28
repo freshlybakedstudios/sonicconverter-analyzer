@@ -1333,6 +1333,82 @@ def fetch_track_momentum(token: str, spotify_track_id: str, isrc: str) -> dict |
     return out
 
 
+def _genres_from_meta(meta: dict) -> str | None:
+    """Comma-joined genre string from CM track/artist metadata.
+
+    CM is inconsistent about shape across endpoints, so handle them all:
+    the {primary:{name}, secondary:[{name}]} dict (artist + track meta),
+    a plain list of strings or {name} dicts, a singular 'genre' string,
+    and a 'tags' fallback. Primary first, dedup case-insensitively.
+    """
+    if not isinstance(meta, dict):
+        return None
+    names = []
+    g = meta.get('genres')
+    if isinstance(g, dict):
+        primary = g.get('primary') or {}
+        if isinstance(primary, dict) and primary.get('name'):
+            names.append(primary['name'])
+        elif isinstance(primary, str) and primary.strip():
+            names.append(primary.strip())
+        for s in (g.get('secondary') or []):
+            if isinstance(s, dict) and s.get('name'):
+                names.append(s['name'])
+            elif isinstance(s, str) and s.strip():
+                names.append(s.strip())
+    elif isinstance(g, list):
+        for s in g:
+            if isinstance(s, str) and s.strip():
+                names.append(s.strip())
+            elif isinstance(s, dict) and s.get('name'):
+                names.append(s['name'])
+    elif isinstance(g, str) and g.strip():
+        names.append(g.strip())
+    if not names and isinstance(meta.get('genre'), str) and meta['genre'].strip():
+        names.append(meta['genre'].strip())
+    if not names:
+        for t in (meta.get('tags') or []):
+            if isinstance(t, str) and t.strip():
+                names.append(t.strip())
+    seen, out = set(), []
+    for n in names:
+        k = n.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(n)
+    return ', '.join(out) if out else None
+
+
+def lookup_track_genre(token: str, isrc: str) -> str | None:
+    """Fetch the analyzed track's OWN genre string from CM track metadata,
+    keyed by ISRC. Uses the Supabase-cached ISRC→cm_track_id map, so the
+    only live cost on a cache hit is one track-metadata call (~1s).
+    Returns None on any miss — callers fall back to the artist genre.
+    """
+    if not (token and isrc):
+        return None
+    try:
+        cm_track_id = _resolve_isrc_to_cm_track_id(token, isrc)
+    except Exception as e:
+        logger.debug(f"lookup_track_genre: ISRC→CM resolve failed for {isrc}: {e}")
+        return None
+    if not cm_track_id:
+        return None
+    try:
+        _rate_wait()
+        resp = requests.get(
+            CM_TRACK_META_URL.format(track_id=cm_track_id),
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=20,
+        )
+        if resp.status_code == 200:
+            meta = resp.json().get('obj', {}) or {}
+            return _genres_from_meta(meta)
+    except Exception as e:
+        logger.debug(f"lookup_track_genre: meta fetch failed for {isrc}: {e}")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Structured playlist fetching (returns list of dicts instead of strings)
 # ---------------------------------------------------------------------------
