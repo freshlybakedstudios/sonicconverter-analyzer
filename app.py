@@ -49,7 +49,6 @@ from chartmetric_lookup import (
     _upsert_gems_features,
     _lookup_gems_features,
     fetch_track_momentum,
-    lookup_track_genre,
 )
 from email_sender import send_results_email
 from job_manager import JobManager
@@ -3796,8 +3795,6 @@ async def analyze_url(
     # Pause enrichment so user-facing CM calls get priority
     _pause_enrichment()
     track_artist_cm_data = None
-    dropdown_genre = (genre or '').strip()  # explicit user selection — strongest intent
-    artist_genre = ''                       # artist-level CM genres (back-catalog union)
     if artist_spotify_url:
         print(f"  URL analysis: looking up track artist {artist_name} via CM...")
         track_artist_cm_data = lookup_artist_by_spotify(artist_spotify_url)
@@ -3805,26 +3802,27 @@ async def analyze_url(
             user_cm_id = track_artist_cm_data.get('cm_id')
             cm_genres = track_artist_cm_data.get('genres', '')
             if cm_genres:
-                artist_genre = cm_genres
-                # Sanity check: if user selected a genre from dropdown, only trust CM
-                # genres if they share at least one family with the user's selection.
+                # Sanity check: if user selected a genre from dropdown, only use CM genres
+                # if they share at least one genre family with the user's selection.
                 # CM sometimes returns garbage genres (e.g. hip-hop for death metal artists).
-                if dropdown_genre:
-                    user_fams = _genre_families(dropdown_genre)
+                if genre:
+                    user_fams = _genre_families(genre)
                     cm_fams = _genre_families(cm_genres)
                     if user_fams and cm_fams and not (user_fams & cm_fams):
-                        # CM genres incompatible with the user's pick — distrust them.
+                        # CM genres are completely incompatible — keep user's dropdown + add CM primary only
                         cm_primary = cm_genres.split(',')[0].strip()
-                        if _genre_families(cm_primary) & user_fams:
-                            artist_genre = cm_primary
-                            print(f"  URL analysis: CM genres suspect, artist genre = primary only: {artist_genre}")
+                        cm_primary_fams = _genre_families(cm_primary)
+                        if cm_primary_fams & user_fams:
+                            genre = cm_primary  # use just the primary
+                            print(f"  URL analysis: CM genres suspect, using primary only: {genre}")
                         else:
-                            artist_genre = dropdown_genre
-                            print(f"  URL analysis: CM genres suspect ({cm_genres}), artist genre = dropdown: {artist_genre}")
+                            print(f"  URL analysis: CM genres suspect ({cm_genres}), keeping dropdown: {genre}")
                     else:
-                        print(f"  URL analysis: artist genres = {cm_genres}")
+                        print(f"  URL analysis: CM genres = {cm_genres} (overriding dropdown '{genre}')")
+                        genre = cm_genres
                 else:
-                    print(f"  URL analysis: artist genres = {cm_genres} (no dropdown set)")
+                    print(f"  URL analysis: CM genres = {cm_genres} (no dropdown set)")
+                    genre = cm_genres
             # Only set listeners if the user doesn't already have them from registration
             if not lead.get('monthly_listeners') and track_artist_cm_data.get('listeners'):
                 lead['monthly_listeners'] = track_artist_cm_data['listeners']
@@ -3832,34 +3830,6 @@ async def analyze_url(
                   f"{track_artist_cm_data.get('listeners', 0):.0f} listeners")
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
-
-    # Track-level genre — the analyzed track's OWN genre (the track-to-track
-    # match signal), distinct from the artist's back-catalog union. Free when the
-    # track is already in our universe; otherwise one CM track-metadata call
-    # (the ISRC→cm_track_id resolve is Supabase-cached).
-    track_genre = ''
-    if track_isrc:
-        universe_row = matcher._tracks.get(track_isrc) or {}
-        if (universe_row.get('track_genres') or '').strip():
-            track_genre = universe_row['track_genres'].strip()
-            print(f"  URL analysis: track genres (universe) = {track_genre}")
-        else:
-            try:
-                _tg_refresh = os.getenv('REFRESH_TOKEN')
-                _tg_tok = get_cm_token(_tg_refresh) if _tg_refresh else None
-                track_genre = (lookup_track_genre(_tg_tok, track_isrc) or '') if _tg_tok else ''
-                if track_genre:
-                    print(f"  URL analysis: track genres (CM) = {track_genre}")
-                else:
-                    print(f"  URL analysis: no track-level genre for {track_isrc}; using artist genre")
-            except Exception as e:
-                print(f"  URL analysis: track genre fetch failed for {track_isrc}: {e}")
-
-    # Matching genre signal priority: explicit dropdown > track genre > artist genre.
-    # `genre` drives the matcher genre_hint + the hard family filter (the tightening);
-    # `artist_genre` is kept for the light artist-channel verification + UI display.
-    genre = dropdown_genre or track_genre or artist_genre
-    print(f"  URL analysis: match genre='{genre}' | track='{track_genre}' | artist='{artist_genre}' | dropdown='{dropdown_genre}'")
 
     # Always scan fresh via Mac worker — Spotify desktop playback through Loopback
     # No cached GEMS features, no preview URLs — full quality capture only
@@ -3979,44 +3949,23 @@ async def analyze_url(
     user_tier = _listeners_to_tier(user_monthly) if user_monthly else 'micro'
     fetch_n = 20000
 
-    all_found = matcher.find_matches(
-        features, genre_hint=genre or '', artist_genre_hint=artist_genre or '',
-        top_n=fetch_n, threshold=0.55,
-    )
+    all_found = matcher.find_matches(features, genre_hint=genre or '', top_n=fetch_n, threshold=0.55)
 
-    # Track-to-track genre family filter. The user side is the TRACK's OWN genre
-    # (the tightening) — never the artist's back-catalog union, which is what used
-    # to let an alternative track inherit a country/reggae lane. The candidate side
-    # still checks each candidate's track AND artist genres, so an off-lane act
-    # can't slip through on sparse track tags.
-    track_user_families = _genre_families(genre or '')
-    artist_user_families = _genre_families(artist_genre or '')
-    # Kept broad (track ∪ artist) for the looser flattery pass downstream.
-    user_families = track_user_families | artist_user_families
+    # Apply genre family filtering
+    user_families = _genre_families(genre or '')
 
-    def _cand_families(m):
-        cand = []
+    def has_foreign(m):
+        cand_genres = []
         for field in ('primary_genre', 'secondary_genre'):
             g = (m.get(field) or '').strip()
             if g:
-                cand.append(g)
-        cand.extend(m.get('artist_genres') or [])
-        cand.extend(m.get('track_genres') or [])
-        return _genre_families(*cand)
-
-    def in_lane(m, allowed):
-        # Keep a candidate if its genre families OVERLAP the allowed lane. We use
-        # overlap (not a strict "no foreign families" subset rule) because the
-        # track lane is narrow — a subset rule would drop legit adjacent peers
-        # (e.g. an indie act when the track resolves to just {rock}). It still
-        # drops off-lane acts (pure country/reggae share no family with rock).
-        # Candidates with no resolvable genre data pass rather than vanish.
-        if not allowed:
-            return True
-        cf = _cand_families(m)
-        if not cf:
-            return True
-        return bool(cf & allowed)
+                cand_genres.append(g)
+        for g in m.get('artist_genres', []):
+            if g:
+                cand_genres.append(g)
+        cand_families = _genre_families(*cand_genres)
+        foreign = cand_families - user_families
+        return bool(foreign) and bool(user_families)
 
     # Exclude self-matches (the artist being analyzed)
     exclude_artist_id = None
@@ -4028,20 +3977,7 @@ async def analyze_url(
     # Save unfiltered matches for flattery (uses looser filtering)
     all_matches_unfiltered = list(all_found)
 
-    # Primary gate: keep candidates whose genre overlaps the user's TRACK lane.
-    track_filtered = [m for m in all_found if in_lane(m, track_user_families)]
-    # Safety relax — if the track lane starves the pool, widen to the artist
-    # family union so the user never gets a near-empty result.
-    MIN_AFTER_TRACK_FILTER = 25
-    if (track_user_families and artist_user_families
-            and len(track_filtered) < MIN_AFTER_TRACK_FILTER):
-        relaxed = track_user_families | artist_user_families
-        all_found = [m for m in all_found if in_lane(m, relaxed)]
-        print(f"  Family filter (track-to-track): track lane kept {len(track_filtered)} "
-              f"(<{MIN_AFTER_TRACK_FILTER}); relaxed to track∪artist → {len(all_found)}")
-    else:
-        all_found = track_filtered
-        print(f"  Family filter (track-to-track overlap): {len(all_matches_unfiltered)} → {len(all_found)} matches")
+    all_found = [m for m in all_found if not has_foreign(m)]
 
     # Tier filtering for display table
     MIN_PEER_MATCHES = 10
@@ -4375,11 +4311,7 @@ async def analyze_url(
             'type': 'spotify_url',
             'track_name': track_name,
             'artist_name': artist_name,
-            # Both genre lanes, exposed separately so the UI can color-code them
-            # (track = green, artist = white) and the user can verify the split.
-            'track_genres': track_genre or '',
-            'artist_genres': artist_genre or '',
-            'match_genre': genre or '',   # what actually drove the match (dropdown > track > artist)
+            'artist_genres': genre or '',
             'artist_tier': track_artist_cm_data.get('tier', '') if track_artist_cm_data else '',
             'artist_listeners': track_artist_cm_data.get('listeners', 0) if track_artist_cm_data else 0,
             'preview_used': features is not None and preview_url is not None,
