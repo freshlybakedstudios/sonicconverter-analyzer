@@ -409,8 +409,7 @@ class TrackMatcher:
 
     @staticmethod
     def _similarity(profile_a: Dict, profile_b: Dict,
-                    track_genres_a: Set[str], track_genres_b: Set[str],
-                    artist_genres_a: Set[str] = None, artist_genres_b: Set[str] = None):
+                    track_genres_a: Set[str], track_genres_b: Set[str]):
         """33-feature weighted similarity. Returns (score, breakdown)."""
         breakdown = {}
 
@@ -453,28 +452,18 @@ class TrackMatcher:
             emo_sim = 0
         breakdown['emotion'] = {'score': emo_sim, 'weight': 0.05}
 
-        # Genre similarity — two separate channels so we never compare the
-        # user's artist genres against a candidate's track genres (a category
-        # mismatch). Track channel is the primary lane signal; artist channel is
-        # a light "same kind of act" verification. Weights sum to the old 0.08
-        # so the sonic-vs-genre balance is unchanged.
-        #
-        # Track channel (Jaccard): user track genre vs candidate track genre.
+        # Genre similarity (Jaccard)
         ga = (_genre_words(profile_a.get('primary_genre'))
               | _genre_words(profile_a.get('secondary_genre'))
-              | (track_genres_a or set()))
+              | track_genres_a)
         gb = (_genre_words(profile_b.get('primary_genre'))
               | _genre_words(profile_b.get('secondary_genre'))
-              | (track_genres_b or set()))
-        track_genre_score = len(ga & gb) / len(ga | gb) if (ga and gb) else 0
-        breakdown['genre'] = {'score': track_genre_score, 'weight': 0.06}
-
-        # Artist channel (Jaccard): user artist genre vs candidate artist genre.
-        # Light secondary verification — never the main driver.
-        aa = artist_genres_a or set()
-        ab = artist_genres_b or set()
-        artist_genre_score = len(aa & ab) / len(aa | ab) if (aa and ab) else 0
-        breakdown['artist_genre'] = {'score': artist_genre_score, 'weight': 0.02}
+              | track_genres_b)
+        if ga and gb:
+            genre_score = len(ga & gb) / len(ga | gb)
+        else:
+            genre_score = 0
+        breakdown['genre'] = {'score': genre_score, 'weight': 0.08}  # Genre nudge — keeps results in the right lane
 
         # LUFS
         lufs_score = 1 - abs((profile_a.get('lufs_integrated') or 0) - (profile_b.get('lufs_integrated') or 0))
@@ -488,8 +477,7 @@ class TrackMatcher:
         return total, breakdown
 
     def find_matches(self, features: Dict, genre_hint: str = '',
-                     top_n: int = 20, threshold: float = 0.60,
-                     artist_genre_hint: str = '') -> List[Dict]:
+                     top_n: int = 20, threshold: float = 0.60) -> List[Dict]:
         """
         Find the top-N most sonically similar artists from the cache.
 
@@ -498,15 +486,11 @@ class TrackMatcher:
         features : dict
             Raw features from audio_analyzer.extract_features().
         genre_hint : str
-            The analyzed track's OWN genre — the primary track-to-track lane
-            signal (and the hard family gate upstream).
+            Optional genre to use as the uploaded track's genre tag.
         top_n : int
             Number of matches to return.
         threshold : float
             Minimum similarity to include.
-        artist_genre_hint : str
-            The analyzed artist's genres — used only for the light artist-channel
-            verification in _similarity, never as the primary lane signal.
         """
         if not self._gems_list:
             raise RuntimeError("Cache not loaded — call load_cache() first")
@@ -524,7 +508,6 @@ class TrackMatcher:
         } - {None, ''}
 
         target_genre_words = _genre_words(genre_hint)
-        target_artist_genre_words = _parse_track_genres(artist_genre_hint)
         _EXTREME = {'black', 'death', 'brutal', 'doom', 'thrash',
                     'deathcore', 'goregrind', 'grind', 'sludge'}
         is_extreme = bool(target_genre_words & _EXTREME)
@@ -575,13 +558,9 @@ class TrackMatcher:
             artist_id = track_data.get('artist_id')
             if not artist_id:
                 continue
-            cand_artist_genres = _parse_track_genres(
-                self._artists.get(str(artist_id), {}).get('genres', '')
-            )
 
             similarity, breakdown = self._similarity(
-                target_profile, profile, target_genre_words, track_genres,
-                target_artist_genre_words, cand_artist_genres,
+                target_profile, profile, target_genre_words, track_genres
             )
 
             # Sonic penalties
