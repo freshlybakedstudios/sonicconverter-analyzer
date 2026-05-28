@@ -566,6 +566,25 @@ body {
   font-weight: 400 !important;
   line-height: 1.4;
 }
+/* Genre tags — color-coded by source so the track/artist split is verifiable.
+   Track genres = green (the track-to-track match lane); artist genres = white. */
+.genre-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 0 4px 4px 0;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.genre-tag-track {
+  color: #3ddc84;   /* track genres — green */
+}
+.genre-tag-artist {
+  color: var(--text);   /* artist genres — white */
+  opacity: 0.8;
+}
 
 /* ---- RESULTS ---- */
 .stats-grid {
