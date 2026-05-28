@@ -1333,6 +1333,62 @@ def fetch_track_momentum(token: str, spotify_track_id: str, isrc: str) -> dict |
     return out
 
 
+_CM_GENRE_ID_MAP = None  # lazy {genre_id:int -> name:str}, modern + legacy taxonomies
+
+
+def _load_cm_genre_id_map(token: str) -> dict:
+    """Fetch + cache CM's full genre taxonomy (id -> name), both genre_v2 and
+    legacy. Loaded once per process (the taxonomy is static). Returns {} on
+    failure so callers degrade gracefully."""
+    global _CM_GENRE_ID_MAP
+    if _CM_GENRE_ID_MAP is not None:
+        return _CM_GENRE_ID_MAP
+    out = {}
+    if token:
+        for legacy in ('false', 'true'):
+            try:
+                _rate_wait()
+                resp = requests.get(
+                    "https://api.chartmetric.com/api/genres",
+                    params={'isLegacy': legacy},
+                    headers={'Authorization': f'Bearer {token}'},
+                    timeout=20,
+                )
+                if resp.status_code == 200:
+                    for g in (resp.json().get('obj') or []):
+                        gid, name = g.get('id'), g.get('name')
+                        if gid is not None and name:
+                            out[int(gid)] = name
+            except Exception as e:
+                logger.debug(f"_load_cm_genre_id_map: fetch failed (legacy={legacy}): {e}")
+    _CM_GENRE_ID_MAP = out
+    logger.info(f"CM genre taxonomy cached: {len(out)} id->name entries")
+    return out
+
+
+def _resolve_genre_ids(genre_str: str, token: str = None) -> str:
+    """Replace bare 'Genre ID: NNN' tokens with the genre name from CM's
+    taxonomy; leave already-named genres untouched. Unresolved IDs are dropped.
+    Many universe track_genres are stored as raw IDs (e.g. 'Genre ID: 501121'
+    == 'hip-hop/rap'), useless until resolved."""
+    if not genre_str or 'genre id:' not in genre_str.lower():
+        return genre_str or ''
+    gmap = _load_cm_genre_id_map(token) if token else (_CM_GENRE_ID_MAP or {})
+    parts = []
+    for raw in genre_str.split(','):
+        tok = raw.strip()
+        if not tok:
+            continue
+        m = re.match(r'(?i)^genre\s*id:\s*(\d+)$', tok)
+        if m:
+            name = gmap.get(int(m.group(1)))
+            if name:
+                parts.append(name)
+        else:
+            parts.append(tok)
+    return ', '.join(parts)
+
+
 def _genres_from_meta(meta: dict) -> str | None:
     """Comma-joined genre string from CM track/artist metadata.
 
@@ -1403,7 +1459,7 @@ def lookup_track_genre(token: str, isrc: str) -> str | None:
         )
         if resp.status_code == 200:
             meta = resp.json().get('obj', {}) or {}
-            return _genres_from_meta(meta)
+            return _resolve_genre_ids(_genres_from_meta(meta) or '', token) or None
     except Exception as e:
         logger.debug(f"lookup_track_genre: meta fetch failed for {isrc}: {e}")
     return None

@@ -50,6 +50,7 @@ from chartmetric_lookup import (
     _lookup_gems_features,
     fetch_track_momentum,
     lookup_track_genre,
+    _resolve_genre_ids,
 )
 from email_sender import send_results_email
 from job_manager import JobManager
@@ -3836,29 +3837,42 @@ async def analyze_url(
     # Track-level genre — the analyzed track's OWN genre (the track-to-track
     # match signal), distinct from the artist's back-catalog union. Free when the
     # track is already in our universe; otherwise one CM track-metadata call
-    # (the ISRC→cm_track_id resolve is Supabase-cached).
+    # (the ISRC→cm_track_id resolve is Supabase-cached). Raw "Genre ID: N" tags
+    # (common in the universe) are resolved to names via CM's genre taxonomy.
     track_genre = ''
     if track_isrc:
+        _tg_refresh = os.getenv('REFRESH_TOKEN')
+        _tg_tok = get_cm_token(_tg_refresh) if _tg_refresh else None
         universe_row = matcher._tracks.get(track_isrc) or {}
         if (universe_row.get('track_genres') or '').strip():
-            track_genre = universe_row['track_genres'].strip()
-            print(f"  URL analysis: track genres (universe) = {track_genre}")
-        else:
+            track_genre = _resolve_genre_ids(universe_row['track_genres'].strip(), _tg_tok)
+            print(f"  URL analysis: track genres (universe) = {track_genre or '(unresolved)'}")
+        elif _tg_tok:
             try:
-                _tg_refresh = os.getenv('REFRESH_TOKEN')
-                _tg_tok = get_cm_token(_tg_refresh) if _tg_refresh else None
-                track_genre = (lookup_track_genre(_tg_tok, track_isrc) or '') if _tg_tok else ''
-                if track_genre:
-                    print(f"  URL analysis: track genres (CM) = {track_genre}")
-                else:
-                    print(f"  URL analysis: no track-level genre for {track_isrc}; using artist genre")
+                track_genre = lookup_track_genre(_tg_tok, track_isrc) or ''
+                print(f"  URL analysis: track genres (CM) = {track_genre or '(none)'}")
             except Exception as e:
                 print(f"  URL analysis: track genre fetch failed for {track_isrc}: {e}")
 
-    # Matching genre signal priority: explicit dropdown > track genre > artist genre.
-    # `genre` drives the matcher genre_hint + the hard family filter (the tightening);
-    # `artist_genre` is kept for the light artist-channel verification + UI display.
-    genre = dropdown_genre or track_genre or artist_genre
+    # Matching genre signal (the if-statement): explicit dropdown wins; else the
+    # track's own genre IF it resolves to a real family; else fall back to the
+    # artist's FIRST 1-2 genres (their dominant lane) — never the whole
+    # back-catalog union, and never an empty lane (an empty lane would disable
+    # the family filter entirely, which floods results across all genres).
+    if dropdown_genre:
+        genre = dropdown_genre
+    elif _genre_families(track_genre):
+        genre = track_genre
+    else:
+        # Prefer the artist's single dominant (first) genre; widen to the first
+        # two only if the first doesn't resolve to a family. Using the dominant
+        # genre keeps the lane tight (a back-catalog 2nd tag like "country"
+        # doesn't get to define the lane).
+        _artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
+        if _artist_parts and _genre_families(_artist_parts[0]):
+            genre = _artist_parts[0]
+        else:
+            genre = ', '.join(_artist_parts[:2])
     print(f"  URL analysis: match genre='{genre}' | track='{track_genre}' | artist='{artist_genre}' | dropdown='{dropdown_genre}'")
 
     # Always scan fresh via Mac worker — Spotify desktop playback through Loopback
