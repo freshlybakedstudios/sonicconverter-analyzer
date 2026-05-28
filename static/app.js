@@ -627,7 +627,9 @@ function renderResults(data) {
     const listeners = up.listeners || src.artist_listeners || 0;
     const followers = up.followers || 0;
     const conversion = up.conversion_rate;
-    const genres = src.artist_genres || '';
+    const splitGenres = (s) => (s || '').split(',').map(x => x.trim()).filter(Boolean);
+    const trackTags = splitGenres(src.track_genres);
+    const artistTags = splitGenres(src.artist_genres);
     const tier = src.artist_tier || data.user_tier || '';
 
     const trackName = src.track_name || '';
@@ -642,7 +644,17 @@ function renderResults(data) {
     $('#artist-card-listeners').textContent = listeners > 0 ? fmtNum(listeners) : '-';
     $('#artist-card-followers').textContent = followers > 0 ? fmtNum(followers) : '-';
     $('#artist-card-conversion').textContent = conversion != null ? conversion.toFixed(2) + '%' : '-';
-    $('#artist-card-genres').textContent = genres || '-';
+    const escGenre = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const genreEl = $('#artist-card-genres');
+    if (!trackTags.length && !artistTags.length) {
+      genreEl.textContent = '-';
+    } else {
+      // Track genres (green) first, then artist genres (white). All shown so the
+      // user can verify which lane each tag came from.
+      genreEl.innerHTML =
+        trackTags.map(g => `<span class="genre-tag genre-tag-track" title="Track genre">${escGenre(g)}</span>`).join('') +
+        artistTags.map(g => `<span class="genre-tag genre-tag-artist" title="Artist genre">${escGenre(g)}</span>`).join('');
+    }
     show(artistCard);
   } else {
     hide(artistCard);
