@@ -1356,6 +1356,24 @@ body {
 .rec-range-legend b { color: var(--text); font-weight: 600; }
 .rrl.you b { color: var(--accent-light); }
 .rrl.zone b { color: var(--accent); }
+.rec-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.rec-group-label.strengths { color: var(--success); margin-top: 6px; }
+/* Off-scale dot: arrow points toward the zone — "head this way", not stranded */
+.rec-range-dot.off-low::after,
+.rec-range-dot.off-high::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  border: 5px solid transparent;
+}
+.rec-range-dot.off-low::after  { left: 15px;  border-left-color: var(--accent-light); }
+.rec-range-dot.off-high::after { right: 15px; border-right-color: var(--accent-light); }
 /* Stat boxes */
 .conversion-grid {
   display: flex;

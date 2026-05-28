@@ -1703,7 +1703,10 @@ def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -
     ranges = []
     domain_count = {}
     for c in cohort_consensus:
-        if len(ranges) >= 8:
+        # Emit up to 12 (max 2/domain). The frontend splits these into
+        # "Adjustments" (you outside the zone) vs "doing right" (you inside it),
+        # so we surface a few more than the old 8 to keep both groups populated.
+        if len(ranges) >= 12:
             break
         feat = c['feature']
         desc = FEATURE_DESCRIPTIONS.get(feat)
