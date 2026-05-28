@@ -3864,15 +3864,14 @@ async def analyze_url(
     elif _genre_families(track_genre):
         genre = track_genre
     else:
-        # Prefer the artist's single dominant (first) genre; widen to the first
-        # two only if the first doesn't resolve to a family. Using the dominant
-        # genre keeps the lane tight (a back-catalog 2nd tag like "country"
-        # doesn't get to define the lane).
+        # Fallback when the track has no usable genre: the artist's PRIMARY
+        # (first) genre ONLY — never a blend of two. A 2nd tag just drags in a
+        # second lane and muddies a fallback that should be clean. Use the first
+        # tag that resolves to a family (still a single genre) so the lane is
+        # never empty (an empty lane disables the filter -> all-genre flood).
         _artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
-        if _artist_parts and _genre_families(_artist_parts[0]):
-            genre = _artist_parts[0]
-        else:
-            genre = ', '.join(_artist_parts[:2])
+        genre = next((g for g in _artist_parts if _genre_families(g)),
+                     _artist_parts[0] if _artist_parts else '')
     print(f"  URL analysis: match genre='{genre}' | track='{track_genre}' | artist='{artist_genre}' | dropdown='{dropdown_genre}'")
 
     # Always scan fresh via Mac worker — Spotify desktop playback through Loopback
@@ -4018,19 +4017,32 @@ async def analyze_url(
         cand.extend(m.get('track_genres') or [])
         return _genre_families(*cand)
 
+    # Strong, identity-defining families that must not cross-contaminate the
+    # lane even when a candidate also touches it via a shared 'rock' tag.
+    # Rejecting these removes the off-lane stragglers (new-country, r&b, latin
+    # rock) AND the genre-soup artists (which carry one of these among many
+    # tags). 'reggae' included so reggae acts stop bleeding into an alt track.
+    EXCLUSIVE_FAMILIES = {'electronic', 'metal', 'hip-hop', 'country',
+                          'classical', 'jazz', 'latin', 'reggae'}
+
     def in_lane(m, allowed):
-        # Keep a candidate if its genre families OVERLAP the allowed lane. We use
-        # overlap (not a strict "no foreign families" subset rule) because the
-        # track lane is narrow — a subset rule would drop legit adjacent peers
-        # (e.g. an indie act when the track resolves to just {rock}). It still
-        # drops off-lane acts (pure country/reggae share no family with rock).
+        # Keep a candidate if its genre families OVERLAP the allowed lane —
+        # overlap (not a strict subset rule) so legit adjacent peers survive
+        # (e.g. an indie act when the track resolves to just {rock}). But also
+        # reject anything carrying a strong FOREIGN family outside the lane, so
+        # a candidate that merely brushes 'rock' while being mostly country/
+        # reggae/electronic (incl. the 16-tag soup artists) is dropped.
         # Candidates with no resolvable genre data pass rather than vanish.
         if not allowed:
             return True
         cf = _cand_families(m)
         if not cf:
             return True
-        return bool(cf & allowed)
+        if not (cf & allowed):
+            return False
+        if (cf & EXCLUSIVE_FAMILIES) - allowed:
+            return False
+        return True
 
     # Exclude self-matches (the artist being analyzed)
     exclude_artist_id = None
@@ -4118,13 +4130,15 @@ async def analyze_url(
             if primary:
                 cand_genres.append(primary)
             cand_families = _genre_families(*cand_genres)
-            if user_families and cand_families:
-                shared = cand_families & user_families
+            # Scope trajectory targets to the TRACK lane (same as Similar Artists),
+            # not the broad artist union — the union carried the artist's
+            # back-catalog reggae/country, which is exactly what was bleeding a
+            # reggae act into the top trajectory slot for an alternative track.
+            if track_user_families and cand_families:
+                shared = cand_families & track_user_families
                 if not shared:
-                    continue  # No genre overlap, skip
-                # Exclusive families: strong genre identities that shouldn't cross-contaminate
-                EXCLUSIVE_FAMILIES = {'electronic', 'metal', 'hip-hop', 'country', 'classical', 'jazz', 'latin'}
-                foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - user_families
+                    continue  # No genre overlap with the track lane, skip
+                foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - track_user_families
                 if foreign_exclusive:
                     continue
                 total_boost += 0.05 * len(shared)
