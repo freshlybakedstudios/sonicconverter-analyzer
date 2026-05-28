@@ -1560,45 +1560,44 @@ function fmtRange(kind, a, b) {
   return A + '–' + B;
 }
 
-// Render each recommendation as a range meter anchored to where peers actually
-// sit (p5–p95), so distance on the bar = real adjustment effort. The striped
-// band is the p25–p75 "aim here" zone; the headline states the move in real
-// units (e.g. "≈ −1 dB"). Falls back to a thin band if percentiles are absent.
-function renderRecRanges(ranges) {
-  const wrap = $('#rec-ranges');
-  if (!wrap) return;
-  wrap.innerHTML = '';
-  ranges.forEach(r => {
-    const you = r.you;
-    const kind = r.unit_kind;
-    const pc = r.percentiles;
+// Resolve the percentile band for a rec (with a synthetic fallback) and whether
+// the artist already sits inside the p25–p75 "winners" zone.
+function recBand(r) {
+  const you = r.you;
+  let p5, p25, p50, p75, p95;
+  if (r.percentiles) {
+    ({ p5, p25, p50, p75, p95 } = r.percentiles);
+  } else {
+    const t = r.target_cohort;
+    const sp = Math.abs(t - you) || (Math.abs(t) * 0.1 + 1e-6);
+    p25 = t - sp * 0.15; p75 = t + sp * 0.15; p50 = t;
+    p5 = t - sp * 0.6; p95 = t + sp * 0.6;
+  }
+  return { p5, p25, p50, p75, p95, inZone: you >= p25 && you <= p75 };
+}
 
-    let p5, p25, p50, p75, p95;
-    if (pc) {
-      ({ p5, p25, p50, p75, p95 } = pc);
-    } else {
-      // Fallback: thin synthetic band around the cohort target.
-      const t = r.target_cohort;
-      const sp = Math.abs(t - you) || (Math.abs(t) * 0.1 + 1e-6);
-      p25 = t - sp * 0.15; p75 = t + sp * 0.15; p50 = t;
-      p5 = Math.min(you, t) - sp * 0.3; p95 = Math.max(you, t) + sp * 0.3;
-    }
+// One meter row. The bar is anchored to the peer band (p5–p95); if You falls
+// outside it, the dot clamps to the edge with an arrow pointing into the zone —
+// so a big move reads as "head this way," not "stranded off the chart." The
+// headline carries the real magnitude (e.g. "+31% to land in").
+function recRangeRow(r, band) {
+  const you = r.you, kind = r.unit_kind;
+  const { p5, p25, p50, p75, p95, inZone } = band;
 
-    // Scale spans the peer distribution, extended to include You if outside it.
-    const lo = Math.min(p5, you), hi = Math.max(p95, you);
-    const span = (hi - lo) || (Math.abs(hi) * 0.1 + 1e-6);
-    const pad = span * 0.06;
-    const sMin = lo - pad, sMax = hi + pad;
-    const pos = v => Math.max(0, Math.min(100, ((v - sMin) / (sMax - sMin)) * 100));
+  const pad = ((p95 - p5) || (Math.abs(p95) * 0.1 + 1e-6)) * 0.06;
+  const sMin = p5 - pad, sMax = p95 + pad;
+  const rawPos = v => ((v - sMin) / (sMax - sMin)) * 100;
+  const pos = v => Math.max(0, Math.min(100, rawPos(v)));
 
-    const zoneL = pos(p25), zoneW = Math.max(pos(p75) - zoneL, 1.5);
-    const inZone = you >= p25 && you <= p75;
-    const edge = you < p25 ? p25 : p75;
-    const moveStr = inZone ? '✓ in the zone' : fmtMove(kind, you, edge) + ' to land in';
+  const zoneL = pos(p25), zoneW = Math.max(pos(p75) - zoneL, 1.5);
+  const offLow = you < p5, offHigh = you > p95;
+  const dotPos = Math.max(2, Math.min(98, pos(you)));
+  const dotCls = offLow ? ' off-low' : offHigh ? ' off-high' : '';
+  const edge = you < p25 ? p25 : p75;
+  const moveStr = inZone ? '✓ in the zone' : fmtMove(kind, you, edge) + ' to land in';
 
-    const row = document.createElement('div');
-    row.className = 'rec-range';
-    row.innerHTML =
+  return (
+    `<div class="rec-range">` +
       `<div class="rec-range-head">` +
         `<span class="rec-domain">${r.domain}</span>` +
         `<span class="rec-act">${r.action}</span>` +
@@ -1607,15 +1606,38 @@ function renderRecRanges(ranges) {
       `<div class="rec-range-bar">` +
         `<div class="rec-range-band" style="left:${zoneL}%;width:${zoneW}%"></div>` +
         `<div class="rec-range-edge median" style="left:${pos(p50)}%"></div>` +
-        `<div class="rec-range-dot" style="left:${pos(you)}%"></div>` +
+        `<div class="rec-range-dot${dotCls}" style="left:${dotPos}%"></div>` +
       `</div>` +
       `<div class="rec-range-legend">` +
         `<span class="rrl you">You <b>${fmtFeatVal(kind, you)}</b></span>` +
         `<span class="rrl zone">Target zone <b>${fmtRange(kind, p25, p75)}</b></span>` +
         `<span class="rrl agree">${r.agree[0]}/${r.agree[1]} agree</span>` +
-      `</div>`;
-    wrap.appendChild(row);
+      `</div>` +
+    `</div>`
+  );
+}
+
+// Split recs into "Adjustments" (you sit outside the winners' zone) and
+// "What you're already nailing" (you're inside it) — an in-zone feature isn't a
+// fix, it's a strength, so we celebrate it rather than list it as a to-do.
+function renderRecRanges(ranges) {
+  const wrap = $('#rec-ranges');
+  if (!wrap) return;
+
+  const adjust = [], strengths = [];
+  ranges.forEach(r => {
+    const band = recBand(r);
+    (band.inZone ? strengths : adjust).push(recRangeRow(r, band));
   });
+
+  let html = '';
+  if (adjust.length) {
+    html += `<div class="rec-group-label">Adjustments to make</div>` + adjust.join('');
+  }
+  if (strengths.length) {
+    html += `<div class="rec-group-label strengths">✓ What you're already nailing</div>` + strengths.join('');
+  }
+  wrap.innerHTML = html || `<div class="rec-group-label">No strong consensus from your peer cohort.</div>`;
 }
 
 // -------------------------------------------------------
