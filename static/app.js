@@ -1574,6 +1574,24 @@ function fmtRange(kind, a, b) {
 
 // Resolve the percentile band for a rec (with a synthetic fallback) and whether
 // the artist already sits inside the p25–p75 "winners" zone.
+// True when the move to the nearest zone edge rounds to ~0 in display units —
+// i.e. you're effectively at the edge already. Mirrors fmtMove's units so a row
+// that would read "−0.0 /s" or "−1%" counts as nailed, not an Adjustment.
+function recMoveNegligible(kind, you, edge) {
+  if (you == null || edge == null || isNaN(you) || isNaN(edge)) return false;
+  switch (kind) {
+    case 'pct':
+      return (you > 0 && edge > 0) ? Math.abs(10 * Math.log10(edge / you)) < 0.05
+                                   : Math.abs((edge - you) * 100) < 0.05;
+    case 'db': case 'lufs': case 'lu': case 'rate': case 'ms':
+      return Math.abs(edge - you) < 0.05;
+    case 'hz':
+      return Math.abs(edge - you) < 0.5;
+    default: // raw 0-1 metric shown as % — treat <1.5% off as cooked
+      return you !== 0 && Math.abs((edge - you) / Math.abs(you)) * 100 < 1.5;
+  }
+}
+
 function recBand(r) {
   const you = r.you;
   let p5, p25, p50, p75, p95;
@@ -1585,7 +1603,14 @@ function recBand(r) {
     p25 = t - sp * 0.15; p75 = t + sp * 0.15; p50 = t;
     p5 = t - sp * 0.6; p95 = t + sp * 0.6;
   }
-  return { p5, p25, p50, p75, p95, inZone: you >= p25 && you <= p75 };
+  let inZone = you >= p25 && you <= p75;
+  // A hair outside the zone (move rounds to ~0) is effectively nailed — fold it
+  // into the zone so it shows "✓ in the zone" and lands under "already nailing".
+  if (!inZone) {
+    const edge = you < p25 ? p25 : p75;
+    if (recMoveNegligible(r.unit_kind, you, edge)) inZone = true;
+  }
+  return { p5, p25, p50, p75, p95, inZone };
 }
 
 // One meter row. The bar is anchored to the peer band (p5–p95); if You falls
