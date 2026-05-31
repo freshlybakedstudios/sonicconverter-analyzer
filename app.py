@@ -4168,27 +4168,34 @@ async def analyze_url(
                 # Trajectory must PROVE lane membership via the candidate's
                 # primary identity, with three checks:
                 # (1) If the candidate's PRIMARY genre maps to a strong-foreign
-                #     family (pop/rock/country/hip-hop/jazz/latin/reggae/
-                #     metal/classical) and that family isn't in the lane, the
-                #     candidate's main identity is elsewhere — drop regardless
-                #     of any secondary tag. Catches hyperpop-primary acts with
-                #     stray 'breakcore' tags (Laura Les) from sliding into a
-                #     breaks trajectory.
-                # (2) Otherwise check primary OR secondary OR the artist_genres
+                #     family and that family isn't in the lane, drop. The
+                #     foreign set is lane-aware: pop and rock are added when
+                #     the lane is NOT in the rock/indie/pop cluster (so a
+                #     hyperpop act can't sneak into a breaks/country/electronic
+                #     trajectory). When the lane IS rock-cluster, pop/rock are
+                #     left out — pop-rock and indie-rock are legit crossovers
+                #     and shouldn't be falsely dropped from an alt-rock list.
+                # (2) Otherwise check primary OR secondary OR artist_genres
                 #     aggregate for lane overlap. Keeps Chris Lorenzo-type
                 #     multi-genre acts (primary 'bass house' = electronic,
                 #     secondary 'dnb' = breaks).
-                # (3) If NO usable signal exists anywhere, drop — a trajectory
-                #     slot requires positive proof.
+                # (3) If NO usable signal anywhere, drop — a trajectory slot
+                #     requires positive proof.
                 secondary = (m.get('secondary_genre') or '').strip()
                 primary_fams = _genre_families(primary) if primary else set()
-                TRAJECTORY_STRONG_FOREIGN = EXCLUSIVE_FAMILIES | {'pop', 'rock'}
-                if (primary_fams and (primary_fams & TRAJECTORY_STRONG_FOREIGN)
+                strong_foreign = set(EXCLUSIVE_FAMILIES)
+                if not (track_user_families & {'rock', 'indie', 'pop'}):
+                    strong_foreign |= {'pop', 'rock'}
+                if (primary_fams and (primary_fams & strong_foreign)
                         and not (primary_fams & track_user_families)):
                     continue
-                ps_fams = _genre_families(primary, secondary)
-                if not ps_fams:
-                    ps_fams = _genre_families(*(m.get('artist_genres') or []))
+                # Lane-overlap check uses primary + secondary + artist_genres
+                # together so a legit crossover (e.g. pop-rock with primary
+                # 'pop rock' = {pop} but artist_genres = [pop, rock]) overlaps
+                # an alt-rock lane via the artist tag. Strong-foreign above
+                # already rejected genuinely off-lane primaries.
+                ps_fams = _genre_families(primary, secondary,
+                                          *(m.get('artist_genres') or []))
                 if not ps_fams:
                     continue
                 if not (ps_fams & track_user_families):
