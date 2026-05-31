@@ -4072,16 +4072,26 @@ async def analyze_url(
             return False
         if (cf & EXCLUSIVE_FAMILIES) - allowed:
             return False
-        # Tighten: when primary/secondary genre fields are populated, require
-        # at least one to map to the lane. Drops crossover artists whose
-        # primary identity is elsewhere and only carry a peripheral lane tag
-        # (e.g. an art-pop act with one stray 'breakcore' tag). Sparse-data
-        # rows (both fields empty or unresolvable) pass via the overlap above.
+        # Tighten: if the candidate's PRIMARY family is identity-foreign to the
+        # lane, drop. Foreign is lane-aware: EXCLUSIVE_FAMILIES are always foreign;
+        # pop/rock are foreign when the lane is outside the rock-cluster
+        # (matches the trajectory rule); the electronic *subgenre* split
+        # (jungle/dnb/garage/breaks) is identity-defining within itself — when
+        # the lane is one of those, the OTHERS become foreign (so a DnB act with
+        # a single jungle release in its back-catalog can't surface as a jungle
+        # peer). Outside the foreign cases, the broader cf overlap above carries
+        # the keep — pop-rock primary in an alt-rock lane still survives because
+        # pop isn't foreign-to-rock-cluster.
         primary = (m.get('primary_genre') or '').strip()
-        secondary = (m.get('secondary_genre') or '').strip()
-        if primary or secondary:
-            ps_fams = _genre_families(primary, secondary)
-            if ps_fams and not (ps_fams & allowed):
+        primary_fams = _genre_families(primary) if primary else set()
+        if primary_fams:
+            strong_foreign = set(EXCLUSIVE_FAMILIES)
+            if not (allowed & {'rock', 'indie', 'pop', 'punk'}):
+                strong_foreign |= {'pop', 'rock'}
+            ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks'}
+            if allowed & ELECTRONIC_SUBGENRES:
+                strong_foreign |= (ELECTRONIC_SUBGENRES - allowed)
+            if (primary_fams & strong_foreign) and not (primary_fams & allowed):
                 return False
         return True
 
@@ -4206,14 +4216,17 @@ async def analyze_url(
                 if (primary_fams and (primary_fams & strong_foreign)
                         and not (primary_fams & track_user_families)):
                     continue
-                # Lane-overlap: candidate's primary OR secondary family must
-                # intersect the user's lane (which now uses positions 1 + 2 of
-                # the user's tags, so the gate is symmetric: top-2 ↔ top-2).
-                # Position-3+ noise on either side doesn't enter the gate; the
-                # genre Jaccard nudge in _similarity still uses the full tag
-                # set as a soft signal.
-                ps_fams = _genre_families(primary, secondary)
-                if not (ps_fams & track_user_families):
+                # Identity-foreign electronic split: when the user's lane is
+                # one of {jungle, dnb, garage, breaks}, the OTHERS become
+                # foreign for the primary check, so a DnB-primary candidate
+                # can't surface as a jungle trajectory target. (Outside this
+                # split, the strong_foreign rule above already handles
+                # pop/rock/EXCLUSIVE cases.)
+                ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks'}
+                if (primary_fams
+                        and (track_user_families & ELECTRONIC_SUBGENRES)
+                        and (primary_fams & (ELECTRONIC_SUBGENRES - track_user_families))
+                        and not (primary_fams & track_user_families)):
                     continue
                 total_boost += 0.05 * len(shared)
             cand_pronoun = m.get('pronoun_title', 'They')
