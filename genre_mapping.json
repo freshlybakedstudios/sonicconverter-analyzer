@@ -1,7 +1,7 @@
 {
   "metadata": {
     "description": "Updated genre mapping for GEMS system with comprehensive genres and reassigned subgenres",
-    "version": "1.5",
+    "version": "1.6",
     "last_updated": "2026-05-31",
     "target_genres": [
       "electronic",
@@ -37,7 +37,7 @@
       "drum and bass": "breaks",
       "drum & bass": "breaks",
       "breakbeat": "breaks",
-      "garage": "electronic",
+      "garage": "breaks",
       "hardstyle": "electronic",
       "hardwave": "electronic",
       "hardgroove": "electronic",
@@ -134,7 +134,7 @@
       "fluxwork": "electronic",
       "lounge": "electronic",
       "new age": "electronic",
-      "uk garage": "electronic",
+      "uk garage": "breaks",
       "jungle": "breaks",
       "jungle/dnb": "breaks",
       "drum-and-bass": "breaks",
@@ -142,7 +142,14 @@
       "liquid funk": "breaks",
       "intelligent drum and bass": "breaks",
       "jungle techno": "breaks",
-      "jump-up": "breaks"
+      "jump-up": "breaks",
+      "uk bass": "breaks",
+      "bass music": "breaks",
+      "bassline": "breaks",
+      "halftime": "breaks",
+      "2-step": "breaks",
+      "2 step": "breaks",
+      "liquid drum and bass": "breaks"
     },
     "rock_subgenres": {
       "rock": "rock",

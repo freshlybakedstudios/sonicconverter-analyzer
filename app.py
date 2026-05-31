@@ -4056,6 +4056,17 @@ async def analyze_url(
             return False
         if (cf & EXCLUSIVE_FAMILIES) - allowed:
             return False
+        # Tighten: when primary/secondary genre fields are populated, require
+        # at least one to map to the lane. Drops crossover artists whose
+        # primary identity is elsewhere and only carry a peripheral lane tag
+        # (e.g. an art-pop act with one stray 'breakcore' tag). Sparse-data
+        # rows (both fields empty or unresolvable) pass via the overlap above.
+        primary = (m.get('primary_genre') or '').strip()
+        secondary = (m.get('secondary_genre') or '').strip()
+        if primary or secondary:
+            ps_fams = _genre_families(primary, secondary)
+            if ps_fams and not (ps_fams & allowed):
+                return False
         return True
 
     # Exclude self-matches (the artist being analyzed)
@@ -4155,6 +4166,15 @@ async def analyze_url(
                 foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - track_user_families
                 if foreign_exclusive:
                     continue
+                # Trajectory is stricter than Similar Artists: require the
+                # candidate's PRIMARY genre to map to the lane. Drops the
+                # Superstar-tier crossover acts (e.g. hyperpop artists with
+                # a stray 'breakcore' tag) whose primary identity is elsewhere.
+                # Sparse-data rows (no primary_genre) pass via the overlap above.
+                if primary:
+                    primary_fams = _genre_families(primary)
+                    if primary_fams and not (primary_fams & track_user_families):
+                        continue
                 total_boost += 0.05 * len(shared)
             cand_pronoun = m.get('pronoun_title', 'They')
             flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
