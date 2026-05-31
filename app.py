@@ -3861,20 +3861,28 @@ async def analyze_url(
     # the family filter entirely, which floods results across all genres).
     # The "primary genre only" rule applies on BOTH paths: never let the lane be
     # defined by a multi-tag soup. CM track-metadata sometimes returns 30+ tags
-    # (jungle + european folk + latin + reggae + rock + ...), which would make
-    # user_families = every family and disable filtering. Take only the first
-    # tag that resolves to a real family on each side.
+    # (jungle + european folk + latin + reggae + rock + ...). When the track
+    # list is absurdly long (>5 tags) we sanity-check it against the artist
+    # genres — only tags BOTH sides agree on carry signal; the soup is dropped.
+    # Then take the first tag that resolves to a real family.
     if dropdown_genre:
         genre = dropdown_genre
     else:
         track_parts = [g.strip() for g in (track_genre or '').split(',') if g.strip()]
-        track_primary = next((g for g in track_parts if _genre_families(g)), '')
+        artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
+        if len(track_parts) > 5 and artist_parts:
+            artist_lc = {g.lower() for g in artist_parts}
+            candidate = [g for g in track_parts if g.lower() in artist_lc]
+        else:
+            candidate = track_parts
+        track_primary = next((g for g in candidate if _genre_families(g)), '')
         if track_primary:
             genre = track_primary
         else:
-            _artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
-            genre = next((g for g in _artist_parts if _genre_families(g)),
-                         _artist_parts[0] if _artist_parts else '')
+            # No usable track signal — fall back to the artist's primary (first
+            # resolvable) genre. Single tag, never a blend.
+            genre = next((g for g in artist_parts if _genre_families(g)),
+                         artist_parts[0] if artist_parts else '')
     print(f"  URL analysis: match genre='{genre}' | track='{track_genre}' | artist='{artist_genre}' | dropdown='{dropdown_genre}'")
 
     # Always scan fresh via Mac worker — Spotify desktop playback through Loopback
