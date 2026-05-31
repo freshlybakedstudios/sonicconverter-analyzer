@@ -4094,20 +4094,32 @@ async def analyze_url(
             # Pure electronic-subgenre lane: rock/pop/r&b/indie/punk are foreign
             if not (allowed & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
                 strong_foreign |= {'r&b', 'indie', 'punk'}
-            # CF-level drop ONLY for electronic-subgenre lanes — catches
-            # hyperpop-tagged breakcore acts whose cf carries pop/indie even
-            # though their primary is in-lane. Scoped here (not applied to
-            # country/rock/etc. lanes) to preserve legit secondary-tag
-            # cross-fertilization in those lanes (country-pop, indie-pop, ...).
-            if (cf & strong_foreign) - allowed:
-                return False
+            # CF-level drop for electronic-subgenre lanes: ROCK-CLUSTER
+            # contamination in cf (pop/indie/r&b/punk) drops the candidate,
+            # which catches hyperpop-tagged breakcore (Planet 1999, Lealani —
+            # their cf carries pop/indie even though primary is breakcore).
+            # We deliberately DON'T drop on electronic-cluster cross-pollination
+            # (dnb in cf for a jungle lane is fine — a jungle producer often
+            # has DnB tracks in their catalog, e.g. Tim Reaper's drum & bass
+            # secondary tagging). Scoped to non-rock-cluster lanes — for an
+            # alt-rock lane these rock-cluster families ARE the lane.
+            if not (allowed & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
+                rock_cluster_foreign = {'pop', 'rock', 'r&b', 'indie', 'punk'}
+                if cf & rock_cluster_foreign:
+                    return False
         # Primary-level: if the candidate's PRIMARY family itself is foreign
-        # and not in the lane, drop (covers DnB-with-jungle-secondary leak —
-        # primary is dnb, jungle only in secondary, dnb is foreign to jungle).
+        # and not in the lane, drop UNLESS the candidate's broader artist
+        # genre soup carries a lane-family tag. Grows the niche-lane pool
+        # (jungle producer with a DnB-tagged release keeps; pure DnB act
+        # with no jungle in artist soup still drops).
         primary = (m.get('primary_genre') or '').strip()
         primary_fams = _genre_families(primary) if primary else set()
         if primary_fams and (primary_fams & strong_foreign) and not (primary_fams & allowed):
-            return False
+            artist_lane_signal = set()
+            for g in (m.get('artist_genres') or []):
+                artist_lane_signal |= _genre_families(g)
+            if not (artist_lane_signal & allowed):
+                return False
         return True
 
     # Exclude self-matches (the artist being analyzed)
@@ -4229,16 +4241,23 @@ async def analyze_url(
                     strong_foreign |= (ELECTRONIC_SUBGENRES - track_user_families)
                     if not (track_user_families & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
                         strong_foreign |= {'r&b', 'indie', 'punk'}
-                    # CF-level foreign drop ONLY for electronic-subgenre lanes
-                    # (catches hyperpop-tagged breakcore acts). Scoped here
-                    # to avoid regressing country-pop, indie-pop, etc. peers
-                    # in their respective lanes.
-                    if (cand_families & strong_foreign) - track_user_families:
-                        continue
-                # Primary-level foreign drop
+                    # Rock-cluster contamination in cf catches hyperpop-tagged
+                    # breakcore (Planet 1999, Lealani). Electronic-cluster
+                    # cross (dnb in cf for jungle lane) is OK if primary is
+                    # firmly in-lane (Tim Reaper).
+                    if not (track_user_families & {'rock','indie','pop','punk','r&b'}):
+                        rock_cluster_foreign = {'pop','rock','r&b','indie','punk'}
+                        if cand_families & rock_cluster_foreign:
+                            continue
+                # Primary-level foreign drop — bypassed when artist soup
+                # carries lane-family tag (jungle producer with DnB track).
                 if (primary_fams and (primary_fams & strong_foreign)
                         and not (primary_fams & track_user_families)):
-                    continue
+                    artist_lane_signal = set()
+                    for g in (m.get('artist_genres') or []):
+                        artist_lane_signal |= _genre_families(g)
+                    if not (artist_lane_signal & track_user_families):
+                        continue
                 total_boost += 0.05 * len(shared)
             cand_pronoun = m.get('pronoun_title', 'They')
             flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
