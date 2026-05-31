@@ -3858,12 +3858,14 @@ async def analyze_url(
     # artist's FIRST 1-2 genres (their dominant lane) — never the whole
     # back-catalog union, and never an empty lane (an empty lane would disable
     # the family filter entirely, which floods results across all genres).
-    # The "primary genre only" rule applies on BOTH paths: never let the lane be
-    # defined by a multi-tag soup. CM track-metadata sometimes returns 30+ tags
-    # (jungle + european folk + latin + reggae + rock + ...). When the track
-    # list is absurdly long (>5 tags) we sanity-check it against the artist
-    # genres — only tags BOTH sides agree on carry signal; the soup is dropped.
-    # Then take the first tag that resolves to a real family.
+    # Lane = the user's first TWO resolvable tags (CM positions 1 + 2 =
+    # primary + first secondary, the two positions CM explicitly tags). Both
+    # treated as equally authoritative identity signals. Position 3+ is left
+    # out of the gate — CM doesn't document that ordering, and our policy is
+    # "use the reliable positions, lean on sonic for the rest."
+    #
+    # When the CM track soup is absurdly long (>5 tags) we sanity-check against
+    # the artist genres first — only tags BOTH sides agree on carry signal.
     if dropdown_genre:
         genre = dropdown_genre
     else:
@@ -3874,14 +3876,29 @@ async def analyze_url(
             candidate = [g for g in track_parts if g.lower() in artist_lc]
         else:
             candidate = track_parts
-        track_primary = next((g for g in candidate if _genre_families(g)), '')
-        if track_primary:
-            genre = track_primary
-        else:
-            # No usable track signal — fall back to the artist's primary (first
-            # resolvable) genre. Single tag, never a blend.
-            genre = next((g for g in artist_parts if _genre_families(g)),
-                         artist_parts[0] if artist_parts else '')
+        seen, tags = set(), []
+        for g in candidate:
+            lg = g.lower()
+            if lg in seen:
+                continue
+            if _genre_families(g):
+                tags.append(g); seen.add(lg)
+                if len(tags) >= 2:
+                    break
+        # If we don't have 2 yet, supplement from the artist tags (still
+        # CM-ordered: position 1 = artist primary, etc.).
+        if len(tags) < 2:
+            for g in artist_parts:
+                lg = g.lower()
+                if lg in seen:
+                    continue
+                if _genre_families(g):
+                    tags.append(g); seen.add(lg)
+                    if len(tags) >= 2:
+                        break
+        # Final fallback: first raw artist tag (very rare — no resolvable tags
+        # anywhere). Avoids empty lane = filter-disabled flood.
+        genre = ', '.join(tags) if tags else (artist_parts[0] if artist_parts else '')
     print(f"  URL analysis: match genre='{genre}' | track='{track_genre}' | artist='{artist_genre}' | dropdown='{dropdown_genre}'")
 
     # Always scan fresh via Mac worker — Spotify desktop playback through Loopback
@@ -4189,15 +4206,13 @@ async def analyze_url(
                 if (primary_fams and (primary_fams & strong_foreign)
                         and not (primary_fams & track_user_families)):
                     continue
-                # Lane-overlap check uses primary + secondary + artist_genres
-                # together so a legit crossover (e.g. pop-rock with primary
-                # 'pop rock' = {pop} but artist_genres = [pop, rock]) overlaps
-                # an alt-rock lane via the artist tag. Strong-foreign above
-                # already rejected genuinely off-lane primaries.
-                ps_fams = _genre_families(primary, secondary,
-                                          *(m.get('artist_genres') or []))
-                if not ps_fams:
-                    continue
+                # Lane-overlap: candidate's primary OR secondary family must
+                # intersect the user's lane (which now uses positions 1 + 2 of
+                # the user's tags, so the gate is symmetric: top-2 ↔ top-2).
+                # Position-3+ noise on either side doesn't enter the gate; the
+                # genre Jaccard nudge in _similarity still uses the full tag
+                # set as a soft signal.
+                ps_fams = _genre_families(primary, secondary)
                 if not (ps_fams & track_user_families):
                     continue
                 total_boost += 0.05 * len(shared)
