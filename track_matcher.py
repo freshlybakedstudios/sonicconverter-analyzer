@@ -589,7 +589,21 @@ class TrackMatcher:
             beat_d = abs(_float(profile.get('beat_strength')) - _float(target_profile.get('beat_strength')))
             dance_d = abs(_float(profile.get('danceability')) - _float(target_profile.get('danceability')))
             onset_d = abs(_float(profile.get('onset_rate')) - _float(target_profile.get('onset_rate')))
-            bpm_d = abs((_float(profile.get('bpm')) or 0) - (_float(target_profile.get('bpm')) or 0))
+            # BPM distance is tempo-octave AND triplet-ratio invariant: BPM
+            # detectors regularly alias fast-percussive tracks (jungle/dnb at
+            # ~170, metal blast beats at ~220-250) to half-tempo (1/2) or to
+            # 2/3 of true tempo (triplet/off-beat lock-on). Without this, real
+            # 170-BPM jungle peers get penalized vs a track detected at 117.
+            ta = _float(target_profile.get('bpm')) or 0
+            tb = _float(profile.get('bpm')) or 0
+            if ta > 0 and tb > 0:
+                bpm_d = min(
+                    abs(ta - tb),
+                    abs(2*ta - tb), abs(ta - 2*tb),       # 1/2 (octave) aliasing
+                    abs(1.5*ta - tb), abs(ta - 1.5*tb),   # 2/3 (triplet) aliasing
+                )
+            else:
+                bpm_d = abs(ta - tb)
 
             penalty = 0.0
             if energy_d > 0.15:
