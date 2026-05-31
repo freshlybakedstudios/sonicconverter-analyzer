@@ -3859,19 +3859,22 @@ async def analyze_url(
     # artist's FIRST 1-2 genres (their dominant lane) — never the whole
     # back-catalog union, and never an empty lane (an empty lane would disable
     # the family filter entirely, which floods results across all genres).
+    # The "primary genre only" rule applies on BOTH paths: never let the lane be
+    # defined by a multi-tag soup. CM track-metadata sometimes returns 30+ tags
+    # (jungle + european folk + latin + reggae + rock + ...), which would make
+    # user_families = every family and disable filtering. Take only the first
+    # tag that resolves to a real family on each side.
     if dropdown_genre:
         genre = dropdown_genre
-    elif _genre_families(track_genre):
-        genre = track_genre
     else:
-        # Fallback when the track has no usable genre: the artist's PRIMARY
-        # (first) genre ONLY — never a blend of two. A 2nd tag just drags in a
-        # second lane and muddies a fallback that should be clean. Use the first
-        # tag that resolves to a family (still a single genre) so the lane is
-        # never empty (an empty lane disables the filter -> all-genre flood).
-        _artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
-        genre = next((g for g in _artist_parts if _genre_families(g)),
-                     _artist_parts[0] if _artist_parts else '')
+        track_parts = [g.strip() for g in (track_genre or '').split(',') if g.strip()]
+        track_primary = next((g for g in track_parts if _genre_families(g)), '')
+        if track_primary:
+            genre = track_primary
+        else:
+            _artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
+            genre = next((g for g in _artist_parts if _genre_families(g)),
+                         _artist_parts[0] if _artist_parts else '')
     print(f"  URL analysis: match genre='{genre}' | track='{track_genre}' | artist='{artist_genre}' | dropdown='{dropdown_genre}'")
 
     # Always scan fresh via Mac worker — Spotify desktop playback through Loopback
