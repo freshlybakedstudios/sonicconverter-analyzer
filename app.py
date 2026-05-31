@@ -4166,15 +4166,23 @@ async def analyze_url(
                 foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - track_user_families
                 if foreign_exclusive:
                     continue
-                # Trajectory is stricter than Similar Artists: require the
-                # candidate's PRIMARY genre to map to the lane. Drops the
-                # Superstar-tier crossover acts (e.g. hyperpop artists with
-                # a stray 'breakcore' tag) whose primary identity is elsewhere.
-                # Sparse-data rows (no primary_genre) pass via the overlap above.
-                if primary:
-                    primary_fams = _genre_families(primary)
-                    if primary_fams and not (primary_fams & track_user_families):
-                        continue
+                # Trajectory must PROVE lane membership via the candidate's
+                # primary identity. Try primary + secondary first; if both are
+                # empty/unresolvable, fall back to the union of artist_genre
+                # families. If NO usable family signal exists anywhere, drop —
+                # without proof we can't justify a Superstar-tier trajectory slot.
+                # Catches: region-only primary ('australian'), unmapped tags
+                # ('sped', 'malayalam', 'corecore'), null genres, AND multi-tag
+                # artists like Chris Lorenzo (bass house primary, dnb secondary)
+                # where the primary alone misses but secondary nails the lane.
+                secondary = (m.get('secondary_genre') or '').strip()
+                ps_fams = _genre_families(primary, secondary)
+                if not ps_fams:
+                    ps_fams = _genre_families(*(m.get('artist_genres') or []))
+                if not ps_fams:
+                    continue  # No genre signal anywhere
+                if not (ps_fams & track_user_families):
+                    continue
                 total_boost += 0.05 * len(shared)
             cand_pronoun = m.get('pronoun_title', 'They')
             flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
