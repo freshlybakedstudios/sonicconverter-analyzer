@@ -4033,8 +4033,8 @@ async def analyze_url(
     # rock) AND the genre-soup artists (which carry one of these among many
     # tags). 'reggae' included so reggae acts stop bleeding into an alt track.
     # 'electronic' is NOT exclusive: it's an umbrella that legitimately covers
-    # breaks/house/techno/etc., and real jungle/dnb peers carry both 'breaks'
-    # and 'electronic' tags — excluding it would drop the very peers we want.
+    # dnb/garage/house/techno/etc., and real dnb peers carry both 'dnb' and
+    # 'electronic' tags — excluding it would drop the very peers we want.
     EXCLUSIVE_FAMILIES = {'metal', 'hip-hop', 'country',
                           'classical', 'jazz', 'latin', 'reggae'}
 
