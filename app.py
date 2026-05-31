@@ -4058,41 +4058,56 @@ async def analyze_url(
     def in_lane(m, allowed):
         # Keep a candidate if its genre families OVERLAP the allowed lane —
         # overlap (not a strict subset rule) so legit adjacent peers survive
-        # (e.g. an indie act when the track resolves to just {rock}). But also
-        # reject anything carrying a strong FOREIGN family outside the lane, so
-        # a candidate that merely brushes 'rock' while being mostly country/
+        # (e.g. an indie act when the track resolves to just {rock}). Reject
+        # anything carrying a strong FOREIGN family outside the lane, so a
+        # candidate that merely brushes 'rock' while being mostly country/
         # reggae/electronic (incl. the 16-tag soup artists) is dropped.
-        # Candidates with no resolvable genre data pass rather than vanish.
+        # Sparse-data rows (zero resolvable families across primary/secondary/
+        # artist/track tags — e.g. only language/regional tags like 'malayalam'
+        # or 'japanese') are DROPPED rather than pass-through, because the
+        # gate has no way to confirm they belong in the lane.
         if not allowed:
             return True
         cf = _cand_families(m)
         if not cf:
-            return True
+            return False
         if not (cf & allowed):
             return False
         if (cf & EXCLUSIVE_FAMILIES) - allowed:
             return False
-        # Tighten: if the candidate's PRIMARY family is identity-foreign to the
-        # lane, drop. Foreign is lane-aware: EXCLUSIVE_FAMILIES are always foreign;
-        # pop/rock are foreign when the lane is outside the rock-cluster
-        # (matches the trajectory rule); the electronic *subgenre* split
-        # (jungle/dnb/garage/breaks) is identity-defining within itself — when
-        # the lane is one of those, the OTHERS become foreign (so a DnB act with
-        # a single jungle release in its back-catalog can't surface as a jungle
-        # peer). Outside the foreign cases, the broader cf overlap above carries
-        # the keep — pop-rock primary in an alt-rock lane still survives because
-        # pop isn't foreign-to-rock-cluster.
+        # Build lane-aware foreign set, applied at BOTH cf and primary levels.
+        # Foreign families:
+        #   - EXCLUSIVE_FAMILIES (metal/hip-hop/country/classical/jazz/latin/reggae)
+        #   - pop/rock when lane is outside rock-cluster (matches trajectory rule)
+        #   - electronic-subgenre split: when lane is one of
+        #     {jungle, dnb, garage, breaks, breakcore}, the OTHERS are foreign
+        #     (jungle ≠ dnb ≠ breakcore identity-wise, per taxonomy decision)
+        #   - rock/pop/r&b/indie/punk when lane is a pure electronic-subgenre
+        #     (catches hyperpop-tagged breakcore — Planet 1999, James Ferraro
+        #     style — whose cf carries pop/indie even though primary is breakcore)
+        ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks', 'breakcore'}
+        strong_foreign = set(EXCLUSIVE_FAMILIES)
+        if not (allowed & {'rock', 'indie', 'pop', 'punk'}):
+            strong_foreign |= {'pop', 'rock'}
+        if allowed & ELECTRONIC_SUBGENRES:
+            strong_foreign |= (ELECTRONIC_SUBGENRES - allowed)
+            # Pure electronic-subgenre lane: rock/pop/r&b/indie/punk are foreign
+            if not (allowed & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
+                strong_foreign |= {'r&b', 'indie', 'punk'}
+            # CF-level drop ONLY for electronic-subgenre lanes — catches
+            # hyperpop-tagged breakcore acts whose cf carries pop/indie even
+            # though their primary is in-lane. Scoped here (not applied to
+            # country/rock/etc. lanes) to preserve legit secondary-tag
+            # cross-fertilization in those lanes (country-pop, indie-pop, ...).
+            if (cf & strong_foreign) - allowed:
+                return False
+        # Primary-level: if the candidate's PRIMARY family itself is foreign
+        # and not in the lane, drop (covers DnB-with-jungle-secondary leak —
+        # primary is dnb, jungle only in secondary, dnb is foreign to jungle).
         primary = (m.get('primary_genre') or '').strip()
         primary_fams = _genre_families(primary) if primary else set()
-        if primary_fams:
-            strong_foreign = set(EXCLUSIVE_FAMILIES)
-            if not (allowed & {'rock', 'indie', 'pop', 'punk'}):
-                strong_foreign |= {'pop', 'rock'}
-            ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks'}
-            if allowed & ELECTRONIC_SUBGENRES:
-                strong_foreign |= (ELECTRONIC_SUBGENRES - allowed)
-            if (primary_fams & strong_foreign) and not (primary_fams & allowed):
-                return False
+        if primary_fams and (primary_fams & strong_foreign) and not (primary_fams & allowed):
+            return False
         return True
 
     # Exclude self-matches (the artist being analyzed)
@@ -4185,47 +4200,43 @@ async def analyze_url(
             # not the broad artist union — the union carried the artist's
             # back-catalog reggae/country, which is exactly what was bleeding a
             # reggae act into the top trajectory slot for an alternative track.
-            if track_user_families and cand_families:
+            if track_user_families:
+                if not cand_families:
+                    # Sparse-data candidate (zero resolvable families across
+                    # primary + artist soup — e.g. only language tags like
+                    # 'malayalam'). Drop rather than pass-through: a trajectory
+                    # slot requires positive identity proof.
+                    continue
                 shared = cand_families & track_user_families
                 if not shared:
                     continue  # No genre overlap with the track lane, skip
                 foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - track_user_families
                 if foreign_exclusive:
                     continue
-                # Trajectory must PROVE lane membership via the candidate's
-                # primary identity, with three checks:
-                # (1) If the candidate's PRIMARY genre maps to a strong-foreign
-                #     family and that family isn't in the lane, drop. The
-                #     foreign set is lane-aware: pop and rock are added when
-                #     the lane is NOT in the rock/indie/pop cluster (so a
-                #     hyperpop act can't sneak into a breaks/country/electronic
-                #     trajectory). When the lane IS rock-cluster, pop/rock are
-                #     left out — pop-rock and indie-rock are legit crossovers
-                #     and shouldn't be falsely dropped from an alt-rock list.
-                # (2) Otherwise check primary OR secondary OR artist_genres
-                #     aggregate for lane overlap. Keeps Chris Lorenzo-type
-                #     multi-genre acts (primary 'bass house' = electronic,
-                #     secondary 'dnb' = breaks).
-                # (3) If NO usable signal anywhere, drop — a trajectory slot
-                #     requires positive proof.
+                # Lane-aware foreign-family check at CF and primary levels.
+                # Same rule as in_lane(): EXCLUSIVE_FAMILIES always foreign;
+                # pop/rock foreign when lane outside rock-cluster; electronic-
+                # subgenre split identity-defining within itself; pure
+                # electronic-subgenre lane treats rock/pop/r&b/indie/punk as
+                # foreign (catches hyperpop-tagged breakcore).
                 secondary = (m.get('secondary_genre') or '').strip()
                 primary_fams = _genre_families(primary) if primary else set()
+                ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks', 'breakcore'}
                 strong_foreign = set(EXCLUSIVE_FAMILIES)
-                if not (track_user_families & {'rock', 'indie', 'pop'}):
+                if not (track_user_families & {'rock', 'indie', 'pop', 'punk'}):
                     strong_foreign |= {'pop', 'rock'}
+                if track_user_families & ELECTRONIC_SUBGENRES:
+                    strong_foreign |= (ELECTRONIC_SUBGENRES - track_user_families)
+                    if not (track_user_families & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
+                        strong_foreign |= {'r&b', 'indie', 'punk'}
+                    # CF-level foreign drop ONLY for electronic-subgenre lanes
+                    # (catches hyperpop-tagged breakcore acts). Scoped here
+                    # to avoid regressing country-pop, indie-pop, etc. peers
+                    # in their respective lanes.
+                    if (cand_families & strong_foreign) - track_user_families:
+                        continue
+                # Primary-level foreign drop
                 if (primary_fams and (primary_fams & strong_foreign)
-                        and not (primary_fams & track_user_families)):
-                    continue
-                # Identity-foreign electronic split: when the user's lane is
-                # one of {jungle, dnb, garage, breaks}, the OTHERS become
-                # foreign for the primary check, so a DnB-primary candidate
-                # can't surface as a jungle trajectory target. (Outside this
-                # split, the strong_foreign rule above already handles
-                # pop/rock/EXCLUSIVE cases.)
-                ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks'}
-                if (primary_fams
-                        and (track_user_families & ELECTRONIC_SUBGENRES)
-                        and (primary_fams & (ELECTRONIC_SUBGENRES - track_user_families))
                         and not (primary_fams & track_user_families)):
                     continue
                 total_boost += 0.05 * len(shared)
