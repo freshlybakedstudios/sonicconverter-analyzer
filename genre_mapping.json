@@ -1,7 +1,7 @@
 {
   "metadata": {
     "description": "Updated genre mapping for GEMS system with comprehensive genres and reassigned subgenres",
-    "version": "1.7",
+    "version": "1.8",
     "last_updated": "2026-05-31",
     "target_genres": [
       "electronic",
@@ -24,7 +24,8 @@
       "world",
       "singer-songwriter",
       "dnb",
-      "garage"
+      "garage",
+      "jungle"
     ]
   },
   "genre_mapping": {
@@ -110,11 +111,11 @@
       "vaporwave": "electronic",
       "post-disco": "electronic",
       "broken beat": "electronic",
-      "breakcore": "dnb",
+      "breakcore": "jungle",
       "acid": "electronic",
       "video game soundtrack": "electronic",
       "gymcore": "electronic",
-      "drumfunk": "dnb",
+      "drumfunk": "jungle",
       "downtempo": "electronic",
       "powernoise": "electronic",
       "hard bass": "electronic",
@@ -136,13 +137,13 @@
       "lounge": "electronic",
       "new age": "electronic",
       "uk garage": "garage",
-      "jungle": "dnb",
-      "jungle/dnb": "dnb",
+      "jungle": "jungle",
+      "jungle/dnb": "jungle",
       "drum-and-bass": "dnb",
-      "ragga jungle": "dnb",
+      "ragga jungle": "jungle",
       "liquid funk": "dnb",
       "intelligent drum and bass": "dnb",
-      "jungle techno": "dnb",
+      "jungle techno": "jungle",
       "jump-up": "dnb",
       "uk bass": "garage",
       "bass music": "garage",
