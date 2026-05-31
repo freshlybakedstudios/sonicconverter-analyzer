@@ -1167,20 +1167,19 @@ PITCH_COMPARABLES_MIN_SIMILARITY = 0.70  # Tighter than matcher's 0.55 floor —
 # that survive only because of one shared genre family tag. Filter applies to
 # both the pitch comparables list AND the cohort scatter cloud.
 
-PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT = 0.67  # Fraction of the candidate's
-# individual genre tags whose families overlap with the user's. Catches
-# cross-genre hybrids that pass the OR-based has_foreign filter only because
-# of one shared family tag (e.g. a "uk alternative + uk hip-hop/rap" artist
-# showing up as a rock comparable). 0.67 = candidate must be >2/3 in the
-# user's genre lane.
+PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT = 0.30  # Fraction of the candidate's
+# individual genre tags whose families overlap with the user's. The 0.67
+# original was tuned for broad lanes (rock/electronic) — for narrow lanes
+# like breaks, even legit jungle artists have mixed tags
+# (drum & bass + dance + electronic + uk + …) and the breaks share lands ~0.40,
+# so 0.67 emptied the quadrant. 0.30 keeps the legit narrow-lane candidates
+# while still rejecting "touched the lane on one tag" drift.
 
-PITCH_COMPARABLES_MIN_PRIMARY_SHARE = 0.51  # Fraction of the candidate's
+PITCH_COMPARABLES_MIN_PRIMARY_SHARE = 0.25  # Fraction of the candidate's
 # tags that must resolve to the user's PRIMARY (most-frequent) genre family.
-# Tighter than alignment-fraction because it handles the hybrid-user case:
-# when the user has both rock and hip-hop families, the alignment filter
-# passes any candidate touching either. This filter additionally requires
-# the candidate to be majority in the user's DOMINANT family, not just
-# anywhere in their lane.
+# Same narrow-lane rationale as above — breaks-primary artists carry many
+# electronic/dance tags so the share runs ~0.40; 0.25 lets the real
+# candidates through while still requiring a meaningful primary-lane presence.
 
 
 def _primary_genre_family(genre_string: str) -> str | None:
@@ -4167,20 +4166,31 @@ async def analyze_url(
                 if foreign_exclusive:
                     continue
                 # Trajectory must PROVE lane membership via the candidate's
-                # primary identity. Try primary + secondary first; if both are
-                # empty/unresolvable, fall back to the union of artist_genre
-                # families. If NO usable family signal exists anywhere, drop —
-                # without proof we can't justify a Superstar-tier trajectory slot.
-                # Catches: region-only primary ('australian'), unmapped tags
-                # ('sped', 'malayalam', 'corecore'), null genres, AND multi-tag
-                # artists like Chris Lorenzo (bass house primary, dnb secondary)
-                # where the primary alone misses but secondary nails the lane.
+                # primary identity, with three checks:
+                # (1) If the candidate's PRIMARY genre maps to a strong-foreign
+                #     family (pop/rock/country/hip-hop/jazz/latin/reggae/
+                #     metal/classical) and that family isn't in the lane, the
+                #     candidate's main identity is elsewhere — drop regardless
+                #     of any secondary tag. Catches hyperpop-primary acts with
+                #     stray 'breakcore' tags (Laura Les) from sliding into a
+                #     breaks trajectory.
+                # (2) Otherwise check primary OR secondary OR the artist_genres
+                #     aggregate for lane overlap. Keeps Chris Lorenzo-type
+                #     multi-genre acts (primary 'bass house' = electronic,
+                #     secondary 'dnb' = breaks).
+                # (3) If NO usable signal exists anywhere, drop — a trajectory
+                #     slot requires positive proof.
                 secondary = (m.get('secondary_genre') or '').strip()
+                primary_fams = _genre_families(primary) if primary else set()
+                TRAJECTORY_STRONG_FOREIGN = EXCLUSIVE_FAMILIES | {'pop', 'rock'}
+                if (primary_fams and (primary_fams & TRAJECTORY_STRONG_FOREIGN)
+                        and not (primary_fams & track_user_families)):
+                    continue
                 ps_fams = _genre_families(primary, secondary)
                 if not ps_fams:
                     ps_fams = _genre_families(*(m.get('artist_genres') or []))
                 if not ps_fams:
-                    continue  # No genre signal anywhere
+                    continue
                 if not (ps_fams & track_user_families):
                     continue
                 total_boost += 0.05 * len(shared)
