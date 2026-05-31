@@ -1,8 +1,8 @@
 {
   "metadata": {
     "description": "Updated genre mapping for GEMS system with comprehensive genres and reassigned subgenres",
-    "version": "1.4",
-    "last_updated": "2025-07-16",
+    "version": "1.5",
+    "last_updated": "2026-05-31",
     "target_genres": [
       "electronic",
       "rock",
@@ -22,7 +22,8 @@
       "indie",
       "gospel",
       "world",
-      "singer-songwriter"
+      "singer-songwriter",
+      "breaks"
     ]
   },
   "genre_mapping": {
@@ -33,9 +34,9 @@
       "techno": "electronic",
       "trance": "electronic",
       "dubstep": "electronic",
-      "drum and bass": "electronic",
-      "drum & bass": "electronic",
-      "breakbeat": "electronic",
+      "drum and bass": "breaks",
+      "drum & bass": "breaks",
+      "breakbeat": "breaks",
       "garage": "electronic",
       "hardstyle": "electronic",
       "hardwave": "electronic",
@@ -96,29 +97,29 @@
       "eurobeat": "electronic",
       "progressive uplifting trance": "electronic",
       "state trance": "electronic",
-      "dnb": "electronic",
+      "dnb": "breaks",
       "minimal wave": "electronic",
       "minimal tech house": "electronic",
-      "atmospheric dnb": "electronic",
+      "atmospheric dnb": "breaks",
       "dark electro": "electronic",
       "idm": "electronic",
       "brostep": "electronic",
-      "neurofunk": "electronic",
+      "neurofunk": "breaks",
       "retrowave": "electronic",
       "vaporwave": "electronic",
       "post-disco": "electronic",
       "broken beat": "electronic",
-      "breakcore": "electronic",
+      "breakcore": "breaks",
       "acid": "electronic",
       "video game soundtrack": "electronic",
       "gymcore": "electronic",
-      "drumfunk": "electronic",
+      "drumfunk": "breaks",
       "downtempo": "electronic",
       "powernoise": "electronic",
       "hard bass": "electronic",
       "aggrotech": "electronic",
-      "jump up": "electronic",
-      "liquid dnb": "electronic",
+      "jump up": "breaks",
+      "liquid dnb": "breaks",
       "hi-nrg": "electronic",
       "neotrance": "electronic",
       "deep melodic euro house": "electronic",
@@ -132,8 +133,16 @@
       "plugg": "electronic",
       "fluxwork": "electronic",
       "lounge": "electronic",
-      "new age": "electronic",  
-      "uk garage": "electronic"
+      "new age": "electronic",
+      "uk garage": "electronic",
+      "jungle": "breaks",
+      "jungle/dnb": "breaks",
+      "drum-and-bass": "breaks",
+      "ragga jungle": "breaks",
+      "liquid funk": "breaks",
+      "intelligent drum and bass": "breaks",
+      "jungle techno": "breaks",
+      "jump-up": "breaks"
     },
     "rock_subgenres": {
       "rock": "rock",
@@ -738,7 +747,7 @@
       "choral": "classical",
       "orchestra": "classical",
       "lute": "classical",
-      "valiha": "classical",      
+      "valiha": "classical",
       "neo-classical": "classical",
       "chamber music": "classical",
       "orchestral performance": "classical",
@@ -849,7 +858,7 @@
       "bachata": "latin",
       "cumbia": "latin",
       "grupera": "latin",
-      "tejano": "latin",      
+      "tejano": "latin",
       "grupo": "latin",
       "guaracha": "latin",
       "merengue": "latin",
@@ -1098,7 +1107,7 @@
       "canadian holiday": "world",
       "canadian instrumental": "world",
       "tunisian": "world",
-      "uk holiday": "world",  
+      "uk holiday": "world",
       "afro-cuban percussion": "world",
       "afrobeats": "world",
       "reparto": "world",
@@ -1183,7 +1192,6 @@
       "ninja": "unknown",
       "shib": "unknown"
     },
-
     "soundtrack_instrumental": {
       "soundtrack": "ambient",
       "us soundtrack": "ambient",
@@ -1195,7 +1203,6 @@
       "canadian easy listening": "ambient",
       "chill": "ambient"
     },
-
     "childrens_music": {
       "children's": "pop",
       "kids dance party": "pop",
@@ -1205,7 +1212,6 @@
       "oceania children's music": "pop",
       "european children's music": "pop"
     },
-
     "holiday_music": {
       "holiday": "pop",
       "us holiday": "pop",
@@ -1214,43 +1220,37 @@
       "european holiday": "pop",
       "southeast asian holiday": "pop"
     },
-
     "gaming_internet_culture": {
       "vocaloid": "electronic",
       "otacore": "electronic",
       "rhythm game": "electronic",
       "epicore": "electronic"
     },
-
     "regional_reassignments": {
       "mpb": "latin",
       "funeral doom": "metal"
     },
-
     "from automatic genre organizer": {
-
       "german dance": "electronic",
       "dutch": "world",
       "dansband": "electronic",
-
       "european easy listening": "ambient",
-      "rawstyle": "hip-hop",  
-
+      "rawstyle": "hip-hop",
       "singer/songwriter": "singer-songwriter",
       "european instrumental": "world",
-      "european classical": "classical",  
-      "swedish pop": "pop",  
-      "european pop": "pop",  
-      "european rock": "rock",  
-      "dutch hip-hop": "hip-hop", 
+      "european classical": "classical",
+      "swedish pop": "pop",
+      "european pop": "pop",
+      "european rock": "rock",
+      "dutch hip-hop": "hip-hop",
       "european hip-hop/rap": "hip-hop",
-      "european folk": "folk",  
-      "hip-hop/rap": "hip-hop", 
-      "r&b/soul": "r&b",  
-      "german rock": "rock", 
-      "folk pop": "pop",  
-      "tech house": "electronic", 
-      "soulful house": "electronic" 
+      "european folk": "folk",
+      "hip-hop/rap": "hip-hop",
+      "r&b/soul": "r&b",
+      "german rock": "rock",
+      "folk pop": "pop",
+      "tech house": "electronic",
+      "soulful house": "electronic"
     }
   }
 }

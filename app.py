@@ -4018,11 +4018,14 @@ async def analyze_url(
         return _genre_families(*cand)
 
     # Strong, identity-defining families that must not cross-contaminate the
-    # lane even when a candidate also touches it via a shared 'rock' tag.
+    # lane even when a candidate also touches it via a shared family tag.
     # Rejecting these removes the off-lane stragglers (new-country, r&b, latin
     # rock) AND the genre-soup artists (which carry one of these among many
     # tags). 'reggae' included so reggae acts stop bleeding into an alt track.
-    EXCLUSIVE_FAMILIES = {'electronic', 'metal', 'hip-hop', 'country',
+    # 'electronic' is NOT exclusive: it's an umbrella that legitimately covers
+    # breaks/house/techno/etc., and real jungle/dnb peers carry both 'breaks'
+    # and 'electronic' tags — excluding it would drop the very peers we want.
+    EXCLUSIVE_FAMILIES = {'metal', 'hip-hop', 'country',
                           'classical', 'jazz', 'latin', 'reggae'}
 
     def in_lane(m, allowed):
