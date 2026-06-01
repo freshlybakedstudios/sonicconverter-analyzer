@@ -3915,6 +3915,34 @@ async def analyze_url(
                     tags.append(g); seen.add(lg)
                     if len(tags) >= 2:
                         break
+        # Umbrella deepening: if our positions 1+2 resolve to an umbrella family
+        # ONLY (currently just 'electronic' — the family that covers dance,
+        # edm, house, techno, dubstep, trance, idm... too broad to define a
+        # lane), AND the artist's tag list has specific subgenres available
+        # (jungle, dnb, garage, breaks, breakcore, etc.), promote those. This
+        # handles brand-new releases where CM has no track-level tags yet so
+        # the gems pipeline fell back to the artist's umbrella primary (e.g.
+        # Paradox: artist primary='dance' → gems-track='dance, electronic' →
+        # lane would be {electronic} = flood. Deepen to 'drum & bass' +
+        # 'jungle' from his position-3+ tags so we land on {dnb, jungle}).
+        UMBRELLA_FAMILIES = {'electronic'}
+        tag_fams = _genre_families(*tags) if tags else set()
+        if tag_fams and tag_fams.issubset(UMBRELLA_FAMILIES):
+            specific = []
+            for g in artist_parts:
+                lg = g.lower()
+                fams = _genre_families(g)
+                if not fams or fams.issubset(UMBRELLA_FAMILIES):
+                    continue
+                # de-dup against existing tags AND prior specific picks
+                if lg in seen or any(t.lower() == lg for t in specific):
+                    continue
+                specific.append(g)
+                if len(specific) >= 2:
+                    break
+            if specific:
+                tags = specific
+                print(f"  URL analysis: umbrella-only lane deepened to specific: {tags}")
         # Final fallback: first raw artist tag (very rare — no resolvable tags
         # anywhere). Avoids empty lane = filter-disabled flood.
         genre = ', '.join(tags) if tags else (artist_parts[0] if artist_parts else '')
