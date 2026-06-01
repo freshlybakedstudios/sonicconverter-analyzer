@@ -3834,19 +3834,38 @@ async def analyze_url(
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
     # Track-level genre — the analyzed track's OWN genre (the track-to-track
-    # match signal), distinct from the artist's back-catalog union. Free when the
-    # track is already in our universe; otherwise one CM track-metadata call
-    # (the ISRC→cm_track_id resolve is Supabase-cached). Raw "Genre ID: N" tags
-    # (common in the universe) are resolved to names via CM's genre taxonomy.
+    # match signal), distinct from the artist's back-catalog union. Fallback
+    # chain (cheapest → most expensive):
+    #   1. gems_complete_analysis profile — in-memory, full primary+secondary
+    #      string (e.g. "jungle, breakcore, atmospheric dnb, ..." for Mauja).
+    #      Many ISRCs we've gems-analyzed are NOT in our `tracks` table (the
+    #      tracks table only carries each artist's top/recent track), so this
+    #      is often the only local source.
+    #   2. universe tracks table row — `track_genres` column (may be "Others"
+    #      for un-categorized tracks; resolved via CM's genre-ID taxonomy).
+    #   3. Live CM track-metadata — last resort, costs one CM call.
     track_genre = ''
     if track_isrc:
         _tg_refresh = os.getenv('REFRESH_TOKEN')
         _tg_tok = get_cm_token(_tg_refresh) if _tg_refresh else None
-        universe_row = matcher._tracks.get(track_isrc) or {}
-        if (universe_row.get('track_genres') or '').strip():
-            track_genre = _resolve_genre_ids(universe_row['track_genres'].strip(), _tg_tok)
-            print(f"  URL analysis: track genres (universe) = {track_genre or '(unresolved)'}")
-        elif _tg_tok:
+        gems_row = matcher._gems_by_isrc.get(track_isrc) or {}
+        if gems_row:
+            parts = []
+            p = (gems_row.get('primary_genre') or '').strip()
+            s = (gems_row.get('secondary_genre') or '').strip()
+            if p:
+                parts.append(p)
+            if s:
+                parts.append(s)
+            track_genre = ', '.join(parts)
+            if track_genre:
+                print(f"  URL analysis: track genres (gems) = {track_genre[:120]}")
+        if not track_genre:
+            universe_row = matcher._tracks.get(track_isrc) or {}
+            if (universe_row.get('track_genres') or '').strip():
+                track_genre = _resolve_genre_ids(universe_row['track_genres'].strip(), _tg_tok)
+                print(f"  URL analysis: track genres (universe) = {track_genre or '(unresolved)'}")
+        if not track_genre and _tg_tok:
             try:
                 track_genre = lookup_track_genre(_tg_tok, track_isrc) or ''
                 print(f"  URL analysis: track genres (CM) = {track_genre or '(none)'}")
