@@ -649,11 +649,47 @@ function renderResults(data) {
     if (!trackTags.length && !artistTags.length) {
       genreEl.textContent = '-';
     } else {
-      // Track genres (green) first, then artist genres (white). All shown so the
-      // user can verify which lane each tag came from.
-      genreEl.innerHTML =
-        trackTags.map(g => `<span class="genre-tag genre-tag-track" title="Track genre">${escGenre(g)}</span>`).join('') +
-        artistTags.map(g => `<span class="genre-tag genre-tag-artist" title="Artist genre">${escGenre(g)}</span>`).join('');
+      // Track genres (green chips) always visible — they're the song-specific
+      // identity that drives the lane. Artist back-catalog tags (the soup,
+      // often 10-20 items) collapse to first 3 + a "+N more" toggle so the
+      // card doesn't get visually swamped.
+      const COLLAPSED_ARTIST = 3;
+      const trackChips = trackTags.map(g =>
+        `<span class="genre-tag genre-tag-track" title="Track genre">${escGenre(g)}</span>`
+      ).join('');
+      const artistChipsHTML = (tags) => tags.map(g =>
+        `<span class="genre-tag genre-tag-artist" title="Artist genre">${escGenre(g)}</span>`
+      ).join('');
+      let html = trackChips;
+      if (artistTags.length <= COLLAPSED_ARTIST) {
+        html += artistChipsHTML(artistTags);
+      } else {
+        const head = artistTags.slice(0, COLLAPSED_ARTIST);
+        const tail = artistTags.slice(COLLAPSED_ARTIST);
+        const more = tail.length;
+        html +=
+          artistChipsHTML(head) +
+          `<span class="genre-tag genre-tag-rest" data-expanded="false" style="display:none;">${artistChipsHTML(tail)}</span>` +
+          `<button type="button" class="genre-toggle" data-state="collapsed">+${more} more ▾</button>`;
+      }
+      genreEl.innerHTML = html;
+      const toggle = genreEl.querySelector('.genre-toggle');
+      if (toggle) {
+        toggle.addEventListener('click', () => {
+          const rest = genreEl.querySelector('.genre-tag-rest');
+          const isCollapsed = toggle.dataset.state === 'collapsed';
+          if (isCollapsed) {
+            rest.style.display = 'inline';
+            toggle.textContent = 'Hide ▴';
+            toggle.dataset.state = 'expanded';
+          } else {
+            rest.style.display = 'none';
+            const remaining = artistTags.length - COLLAPSED_ARTIST;
+            toggle.textContent = `+${remaining} more ▾`;
+            toggle.dataset.state = 'collapsed';
+          }
+        });
+      }
     }
     show(artistCard);
   } else {

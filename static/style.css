@@ -585,6 +585,21 @@ body {
   color: var(--text);   /* artist genres — white */
   opacity: 0.8;
 }
+.genre-toggle {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 0 4px 4px 0;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: transparent;
+  border: 1px dashed var(--text);
+  color: var(--text);
+  opacity: 0.6;
+  cursor: pointer;
+  font-family: inherit;
+}
+.genre-toggle:hover { opacity: 1; }
 
 /* ---- RESULTS ---- */
 .stats-grid {
