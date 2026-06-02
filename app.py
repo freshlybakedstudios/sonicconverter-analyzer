@@ -3833,18 +3833,21 @@ async def analyze_url(
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
-    # Track-level genre — the analyzed track's OWN genre (the track-to-track
-    # match signal), distinct from the artist's back-catalog union. Fallback
-    # chain (cheapest → most expensive):
-    #   1. gems_complete_analysis profile — in-memory, full primary+secondary
-    #      string (e.g. "jungle, breakcore, atmospheric dnb, ..." for Mauja).
-    #      Many ISRCs we've gems-analyzed are NOT in our `tracks` table (the
-    #      tracks table only carries each artist's top/recent track), so this
-    #      is often the only local source.
-    #   2. universe tracks table row — `track_genres` column (may be "Others"
-    #      for un-categorized tracks; resolved via CM's genre-ID taxonomy).
-    #   3. Live CM track-metadata — last resort, costs one CM call.
+    # Track-level genre — split into two sources for lane vs display:
+    #
+    # `track_genre` drives the LANE resolver — must be stable + deterministic
+    # across re-scans, so we use gems_complete_analysis (a CM snapshot from
+    # when the track was first analyzed). Same result every scan, no surprise
+    # lane shifts. Fallback: universe tracks table → live CM (if gems missing).
+    #
+    # `track_genre_display` is what the UI renders — we want this to reflect
+    # *current* CM tags, since CM grows its taxonomy over time (e.g. Mr Twin
+    # Sister's "Meet the Frownies" gems stored just 2 tags from years ago;
+    # CM now has 44). So we hit live CM whenever the gems snapshot is sparse
+    # (<3 tags), and overlay the richer list for display only. Lane logic
+    # is unaffected.
     track_genre = ''
+    track_genre_display = ''
     if track_isrc:
         _tg_refresh = os.getenv('REFRESH_TOKEN')
         _tg_tok = get_cm_token(_tg_refresh) if _tg_refresh else None
@@ -3865,12 +3868,23 @@ async def analyze_url(
             if (universe_row.get('track_genres') or '').strip():
                 track_genre = _resolve_genre_ids(universe_row['track_genres'].strip(), _tg_tok)
                 print(f"  URL analysis: track genres (universe) = {track_genre or '(unresolved)'}")
-        if not track_genre and _tg_tok:
+        # Live CM call for display enrichment when the lane-side snapshot is
+        # sparse (also serves as last-resort lane source when gems/universe
+        # gave us nothing). One extra CM call per scan (~1s) — acceptable.
+        lane_tag_count = len([g for g in (track_genre or '').split(',') if g.strip()])
+        if _tg_tok and (lane_tag_count < 3):
             try:
-                track_genre = lookup_track_genre(_tg_tok, track_isrc) or ''
-                print(f"  URL analysis: track genres (CM) = {track_genre or '(none)'}")
+                cm_live = lookup_track_genre(_tg_tok, track_isrc) or ''
+                # CM's "Others" placeholder is uninformative — drop it.
+                if cm_live and cm_live.strip().lower() != 'others':
+                    track_genre_display = cm_live
+                    print(f"  URL analysis: track genres (CM live, display) = {cm_live[:120]}")
+                if not track_genre and cm_live:
+                    track_genre = cm_live  # use CM as last-resort lane source too
             except Exception as e:
                 print(f"  URL analysis: track genre fetch failed for {track_isrc}: {e}")
+        if not track_genre_display:
+            track_genre_display = track_genre
 
     # Matching genre signal (the if-statement): explicit dropdown wins; else the
     # track's own genre IF it resolves to a real family; else fall back to the
@@ -4569,7 +4583,10 @@ async def analyze_url(
             'artist_name': artist_name,
             # Both genre lanes, exposed separately so the UI can color-code them
             # (track = green, artist = white) and the user can verify the split.
-            'track_genres': track_genre or '',
+            # Display uses the richer CM-live track tags when available (gems
+            # snapshot can be a stale subset). Lane resolution upstream uses
+            # `track_genre` (gems-first) — display divergence is intentional.
+            'track_genres': track_genre_display or track_genre or '',
             'artist_genres': artist_genre or '',
             'match_genre': genre or '',   # what actually drove the match (dropdown > track > artist)
             'artist_tier': track_artist_cm_data.get('tier', '') if track_artist_cm_data else '',
