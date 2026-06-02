@@ -1389,6 +1389,48 @@ def _resolve_genre_ids(genre_str: str, token: str = None) -> str:
     return ', '.join(parts)
 
 
+def _extract_track_genres(track_data: dict) -> str:
+    """Union all genre-bearing fields on a CM track payload, dedup case-
+    insensitively, comma-join. Returns 'Others' only when nothing usable.
+
+    Used by both the live track-meta lane resolver and the discovery import
+    that writes `tracks.track_genres`. Fixes the prior priority-chain bug
+    (genre → genres → tags → Others) which (a) returned first-match instead
+    of union and (b) failed to extract names when CM returned
+    genres = list[dict{id,name}] instead of list[str].
+
+    TWIN of `_extract_track_genres` in artist-pipeline/discovery_events_work.py
+    — keep the two copies in sync (extracted helper duplicated rather than
+    cross-repo imported, per PM2 agent guidance).
+    """
+    names = []
+    g = track_data.get('genres')
+    if isinstance(g, list):
+        for entry in g:
+            if isinstance(entry, dict) and entry.get('name'):
+                names.append(str(entry['name']).strip())
+            elif isinstance(entry, str) and entry.strip():
+                names.append(entry.strip())
+    gs = track_data.get('genre')
+    if isinstance(gs, str) and gs.strip():
+        names.append(gs.strip())
+    t = track_data.get('tags')
+    if isinstance(t, list):
+        for tag in t:
+            if isinstance(tag, str) and tag.strip():
+                names.append(tag.strip())
+    elif isinstance(t, str) and t.strip():
+        names.extend([s.strip() for s in t.split(',') if s.strip()])
+    seen, out = set(), []
+    for n in names:
+        k = n.lower()
+        if k == 'others' or k in seen:
+            continue
+        seen.add(k)
+        out.append(n)
+    return ', '.join(out) if out else 'Others'
+
+
 def _genres_from_meta(meta: dict) -> str | None:
     """Comma-joined genre string from CM track/artist metadata.
 
