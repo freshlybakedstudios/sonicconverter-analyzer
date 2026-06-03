@@ -2165,6 +2165,7 @@ async def analyze(
         # CF signal. Does NOT influence tier/listeners (those still come from
         # the user's registered account).
         provided_artist_url = (artist_spotify_url or '').split('?')[0].rstrip('/')
+        track_artist_cm = None
         if provided_artist_url:
             print(f"  Upload: form-provided artist URL = {provided_artist_url}")
             t_cm = time.time()
@@ -2518,23 +2519,39 @@ async def analyze(
         u_followers = 0
         u_conversion = None
 
-        # Reuse cached artist data from Spotify URL lookup (done before matching)
-        if cached_artist_data:
+        # Priority chain for user_profile data:
+        #   1. Form-provided Artist Spotify URL — the actual artist of the
+        #      uploaded track. Wins over registered account when the user
+        #      is analyzing someone else's release. Without this, Where You
+        #      Stand / Originality / Pitch Comparables / Revenue / Save Rate
+        #      all skip rendering because user_profile stays None.
+        #   2. Registered account data from cache.
+        #   3. CM live lookup of registered URL.
+        if track_artist_cm:
+            u_listeners = float(track_artist_cm.get('listeners') or 0) or u_listeners
+            u_followers = float(track_artist_cm.get('followers') or 0)
+            u_conversion = track_artist_cm.get('conversion_rate')
+            print(f"  User profile (form-artist): {track_artist_cm.get('name')}, "
+                  f"listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
+        elif cached_artist_data:
             aid, adata = cached_artist_data
             tier_data = matcher._tiers.get(str(aid), {})
             u_listeners = float(tier_data.get('listeners') or 0) or u_listeners
             u_followers = float(tier_data.get('followers') or 0)
             if u_listeners > 0 and u_followers > 0:
                 u_conversion = round((u_followers * 0.1) / (u_listeners * 4.3) * 100, 2)
-            print(f"  User profile: {adata.get('name')}, listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
+            print(f"  User profile (registered cache): {adata.get('name')}, "
+                  f"listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
         elif cm_data:
-            # Use Chartmetric data for user profile
             u_listeners = float(cm_data['listeners'] or 0) or u_listeners
             u_followers = float(cm_data['followers'] or 0)
             u_conversion = cm_data.get('conversion_rate')
-            print(f"  User profile (CM): {cm_data['name']}, listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
+            print(f"  User profile (registered CM live): {cm_data['name']}, "
+                  f"listeners={u_listeners}, followers={u_followers}, conversion={u_conversion}")
         else:
-            print(f"  User profile: no Spotify match (url={'yes' if spotify_base else 'no'}, monthly_listeners={u_listeners})")
+            print(f"  User profile: no source (form_artist={'yes' if provided_artist_url else 'no'}, "
+                  f"registered_url={'yes' if spotify_base else 'no'}, "
+                  f"monthly_listeners={u_listeners})")
 
         # Cap user conversion at 15% — same sanity bound applied to peer pool.
         # Prevents stale-follower outliers (e.g. 1.1K followers / 61 listeners)
@@ -2712,9 +2729,14 @@ async def analyze(
         # Create background enrichment job
         job_id = job_mgr.create_job(token, features, matches, all_matches=matches)
 
-        # Get user's CM artist ID for related artists lookup
+        # Get user's CM artist ID for related-artists lookup (used by the
+        # background enrichment job for the "related artists" reverse lookup).
+        # Same priority chain as user_profile: form-provided artist URL wins
+        # so enrichment uses the actual uploaded track's artist.
         user_cm_id = None
-        if cm_data:
+        if track_artist_cm:
+            user_cm_id = track_artist_cm.get('cm_id')
+        elif cm_data:
             user_cm_id = cm_data.get('cm_id')
         elif cached_artist_data:
             aid, adata = cached_artist_data
