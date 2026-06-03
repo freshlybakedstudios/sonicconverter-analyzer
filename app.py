@@ -2110,6 +2110,7 @@ async def analyze(
     file: UploadFile = File(...),
     token: str = Form(...),
     genre: Optional[str] = Form(None),
+    artist_spotify_url: Optional[str] = Form(None),
 ):
     """
     Accept an uploaded audio file, run analysis, return results.
@@ -2143,32 +2144,53 @@ async def analyze(
         t_features = time.time() - t0
         print(f"  Feature extraction: {t_features:.1f}s")
 
-        # Save original dropdown selection before it gets overwritten
-        dropdown_genre = genre or ''
+        # Save original dropdown selection — drives the LANE (heavy weight).
+        dropdown_genre = (genre or '').strip()
 
         # Pause enrichment so user-facing CM calls get priority
         _pause_enrichment()
 
-        # If user provided Spotify URL, pull their genre from cache for matching
-        spotify_url = lead.get('spotify_url', '')
-        spotify_base = spotify_url.split('?')[0].rstrip('/') if spotify_url else ''
+        # `artist_genre` carries the CM artist tags (separate from dropdown).
+        # Used for in_lane CF checks only, NEVER widens the dropdown-defined
+        # lane (per user's "heavy weight on dropdown" requirement).
+        artist_genre = ''
         cached_artist_data = None
         cm_data = None
         user_code2 = None
         user_pronoun = None
+
+        # Priority 1: form-provided artist Spotify URL (specific to the uploaded
+        # track — typically when the user is analyzing a track by someone other
+        # than the artist on their account). Drives `artist_genre` for the gate's
+        # CF signal. Does NOT influence tier/listeners (those still come from
+        # the user's registered account).
+        provided_artist_url = (artist_spotify_url or '').split('?')[0].rstrip('/')
+        if provided_artist_url:
+            print(f"  Upload: form-provided artist URL = {provided_artist_url}")
+            t_cm = time.time()
+            track_artist_cm = lookup_artist_by_spotify(provided_artist_url)
+            t_cm = time.time() - t_cm
+            if track_artist_cm:
+                artist_genre = track_artist_cm.get('genres', '') or ''
+                print(f"  Upload: CM (form-artist) = {track_artist_cm.get('name')} — "
+                      f"genres={artist_genre[:120]} [{t_cm:.1f}s]")
+            else:
+                print(f"  Upload: form-artist CM lookup empty [{t_cm:.1f}s]")
+
+        # Priority 2: user's registered Spotify URL (existing behavior — still
+        # gives us user_code2 / user_pronoun for boosts, even when the form
+        # artist URL took over the genre signal).
+        spotify_url = lead.get('spotify_url', '')
+        spotify_base = spotify_url.split('?')[0].rstrip('/') if spotify_url else ''
         if spotify_base:
             for aid, adata in matcher._artists.items():
                 cache_url = (adata.get('spotify_url') or '').split('?')[0].rstrip('/')
                 if cache_url == spotify_base:
                     cached_artist_data = (aid, adata)
-                    # Use cached genres if available, fall back to dropdown
                     cached_genres = adata.get('genres', '')
-                    if cached_genres:
-                        print(f"  Using cached genres: {cached_genres} (ignoring dropdown: {genre or 'empty'})")
-                        genre = cached_genres
-                    else:
-                        print(f"  No cached genres — keeping dropdown: {genre or 'empty'}")
-                    # Get user's country code and pronouns
+                    if not artist_genre and cached_genres:
+                        artist_genre = cached_genres
+                        print(f"  Upload: registered-artist genres (cache) = {cached_genres[:120]}")
                     user_code2 = adata.get('code2', '')
                     if user_code2:
                         print(f"  User country: {user_code2}")
@@ -2177,8 +2199,7 @@ async def analyze(
                         print(f"  User pronoun: {user_pronoun}")
                     break
 
-        # If not in cache, try Chartmetric real-time lookup
-        if not cached_artist_data and spotify_base:
+        if not cached_artist_data and spotify_base and not provided_artist_url:
             print(f"  Cache miss for {spotify_base} — trying Chartmetric lookup...")
             t_cm = time.time()
             cm_data = lookup_artist_by_spotify(spotify_base)
@@ -2187,19 +2208,20 @@ async def analyze(
                 print(f"  CM lookup: {cm_data['name']} — {cm_data['genres']} "
                       f"({cm_data['tier']}, {cm_data['listeners']:.0f} listeners) "
                       f"[{t_cm:.1f}s]")
-                # Use CM genres if available, fall back to dropdown
-                if cm_data['genres']:
-                    print(f"  Using CM genres: {cm_data['genres']} (ignoring dropdown: {genre or 'empty'})")
-                    genre = cm_data['genres']
-                else:
-                    print(f"  No CM genres — keeping dropdown: {genre or 'empty'}")
-                # Extract pronoun from CM metadata
+                if not artist_genre and cm_data['genres']:
+                    artist_genre = cm_data['genres']
                 cm_meta = cm_data.get('_meta', {})
                 if cm_meta and cm_meta.get('pronoun_title'):
                     user_pronoun = cm_meta['pronoun_title']
                     print(f"  User pronoun (CM): {user_pronoun}")
             else:
                 print(f"  CM lookup: no result [{t_cm:.1f}s]")
+
+        # The matcher's `genre_hint` is empty (pure sonic match) — the lane is
+        # applied as a post-filter in_lane below. So `genre` doesn't need to
+        # carry artist-soup data anymore; keep it as the dropdown value (the
+        # heavy-weight lane signal). Match logging keeps "genre=" readable.
+        genre = dropdown_genre
 
         # Find matches — get extra so we can filter by tier
         user_monthly = lead.get('monthly_listeners')
@@ -2244,40 +2266,87 @@ async def analyze(
         # Save unfiltered matches for flattery (uses looser filtering)
         all_matches_unfiltered = list(all_matches)
 
-        # Filter out matches with genre families the artist doesn't have
-        # Uses the full genre taxonomy from genre_mapping.json
-        # (e.g., electronic artists won't appear for pop/rock artists)
-        # This strict filtering applies to Similar Artists only
-        user_families = _genre_families(genre or '')
-
-        # Dropdown expands allowed families - user knows their track's lane
+        # Lane resolution — HEAVY WEIGHT on the dropdown (per user's request).
+        # Dropdown family ONLY defines the lane. The artist's CM genres (from
+        # form-provided URL or registered account) supplement the gate's CF
+        # check but never widen the lane itself. When no dropdown was picked,
+        # fall back to the artist's first two resolvable families (positional,
+        # same approach as the URL path).
         if dropdown_genre:
-            dropdown_families = _genre_families(dropdown_genre)
-            user_families = user_families | dropdown_families
-            print(f"  Dropdown '{dropdown_genre}' adds families: {dropdown_families}")
+            user_families = _genre_families(dropdown_genre)
+        else:
+            artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
+            seen, tags = set(), []
+            for g in artist_parts:
+                lg = g.lower()
+                if lg in seen:
+                    continue
+                if _genre_families(g):
+                    tags.append(g); seen.add(lg)
+                    if len(tags) >= 2:
+                        break
+            user_families = _genre_families(*tags) if tags else set()
 
-        print(f"  Allowed families: {user_families}")
+        print(f"  Upload lane (heavy-weight dropdown): {user_families} | "
+              f"dropdown='{dropdown_genre}' | artist_genre='{artist_genre[:80]}'")
 
-        def has_foreign_families(m):
-            # Collect all genre strings from the match
-            cand_genres = []
+        # Mirrored from the URL path's in_lane (commit 590bee6). Same gates:
+        #   - sparse-data drop (cf empty → drop)
+        #   - cf-overlap with the lane
+        #   - EXCLUSIVE_FAMILIES drop on foreign exclusive (metal/hip-hop/
+        #     country/classical/jazz/latin/reggae — NB: 'electronic' is NOT
+        #     exclusive here, it's an umbrella over DnB/jungle/house/etc.)
+        #   - For electronic-subgenre lanes (jungle/dnb/garage/breaks/breakcore):
+        #     rock-cluster contamination in cf (pop/rock/r&b/indie/punk) drops
+        #     the candidate. Catches hyperpop-tagged-as-breakcore.
+        #   - Primary-foreign check with artist-soup bypass.
+        EXCLUSIVE_FAMILIES = {'metal', 'hip-hop', 'country',
+                              'classical', 'jazz', 'latin', 'reggae'}
+        ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks', 'breakcore'}
+
+        def _cand_families(m):
+            cand = []
             for field in ('primary_genre', 'secondary_genre'):
                 g = (m.get(field) or '').strip()
                 if g:
-                    cand_genres.append(g)
-            for g in m.get('artist_genres', []):
-                if g:
-                    cand_genres.append(g)
-            # Get families for this candidate
-            cand_families = _genre_families(*cand_genres)
-            # If candidate has families that user doesn't have, it's foreign
-            foreign = cand_families - user_families
-            # Allow through if no foreign families, or if user has no families (no filtering)
-            return bool(foreign) and bool(user_families)
+                    cand.append(g)
+            cand.extend(m.get('artist_genres') or [])
+            cand.extend(m.get('track_genres') or [])
+            return _genre_families(*cand)
+
+        def in_lane(m, allowed):
+            if not allowed:
+                return True
+            cf = _cand_families(m)
+            if not cf:
+                return False
+            if not (cf & allowed):
+                return False
+            if (cf & EXCLUSIVE_FAMILIES) - allowed:
+                return False
+            strong_foreign = set(EXCLUSIVE_FAMILIES)
+            if not (allowed & {'rock', 'indie', 'pop', 'punk'}):
+                strong_foreign |= {'pop', 'rock'}
+            if allowed & ELECTRONIC_SUBGENRES:
+                strong_foreign |= (ELECTRONIC_SUBGENRES - allowed)
+                if not (allowed & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
+                    strong_foreign |= {'r&b', 'indie', 'punk'}
+                    rock_cluster = {'pop', 'rock', 'r&b', 'indie', 'punk'}
+                    if cf & rock_cluster:
+                        return False
+            primary = (m.get('primary_genre') or '').strip()
+            primary_fams = _genre_families(primary) if primary else set()
+            if primary_fams and (primary_fams & strong_foreign) and not (primary_fams & allowed):
+                artist_lane_signal = set()
+                for g in (m.get('artist_genres') or []):
+                    artist_lane_signal |= _genre_families(g)
+                if not (artist_lane_signal & allowed):
+                    return False
+            return True
 
         pre_filter_count = len(all_matches)
-        all_matches = [m for m in all_matches if not has_foreign_families(m)]
-        print(f"  Family filter: {pre_filter_count} → {len(all_matches)} matches")
+        all_matches = [m for m in all_matches if in_lane(m, user_families)]
+        print(f"  Family filter (upload, new gate): {pre_filter_count} → {len(all_matches)} matches")
 
         # Country boost: same-region artists get a small boost
         COUNTRY_BOOST = 0.02
@@ -2357,7 +2426,12 @@ async def analyze(
                 if aid in seen_artists:
                     continue
 
-                # Family-based filtering with exclusive family check
+                # Same gate as Similar Artists (in_lane above) — keeps the
+                # trajectory pool consistent with what's surfacing in the table.
+                if not in_lane(m, user_families):
+                    continue
+                # Sparse-data drop already enforced by in_lane(); explicit sparse
+                # check here keeps the trajectory-specific log readable.
                 cand_genre_parts = []
                 for field in ('primary_genre', 'secondary_genre'):
                     g = (m.get(field) or '').strip()
@@ -2366,19 +2440,7 @@ async def analyze(
                 for g in m.get('artist_genres', []):
                     if g:
                         cand_genre_parts.append(g)
-                cand_genre_str = ', '.join(cand_genre_parts)
-                cand_families = _genre_families(cand_genre_str)
-
-                # Must share at least one family
-                if not (user_families & cand_families):
-                    continue
-
-                # Exclusive families: if candidate has these and user doesn't, filter out
-                # These are strong genre identities that shouldn't cross-contaminate
-                EXCLUSIVE_FAMILIES = {'electronic', 'metal', 'hip-hop', 'country', 'classical', 'jazz', 'latin'}
-                foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - user_families
-                if foreign_exclusive:
-                    continue  # Has exclusive family user doesn't have
+                cand_families = _genre_families(*cand_genre_parts)
 
                 seen_artists.add(aid)
 

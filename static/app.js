@@ -439,6 +439,8 @@ async function analyzeTrack() {
       form.append('file', selectedFile);
       form.append('token', accessToken);
       if (genre) form.append('genre', genre);
+      const artistUrl = ($('#upload-artist-url') && $('#upload-artist-url').value.trim()) || '';
+      if (artistUrl) form.append('artist_spotify_url', artistUrl);
       res = await fetch(`${API_URL}/api/analyze`, { method: 'POST', body: form });
     }
     clearInterval(statusInterval);

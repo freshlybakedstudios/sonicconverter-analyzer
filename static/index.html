@@ -316,9 +316,15 @@
         <p class="upload-hint">Paste a Spotify track link to analyze without uploading</p>
       </div>
 
+      <div class="form-group" id="artist-url-group">
+        <label for="upload-artist-url">Artist Spotify URL <span class="optional-hint">(optional, improves matching)</span></label>
+        <input type="url" id="upload-artist-url" placeholder="https://open.spotify.com/artist/..." autocomplete="off">
+        <p class="genre-hint">If this track is by a different artist than the one on your account, paste their Spotify URL here so we can pull their genre lane.</p>
+      </div>
+
       <div class="genre-picker">
         <label for="genre-select">Genre</label>
-        <p class="genre-hint">Under 10K monthly listeners? Select the genre closest to your song for better results.</p>
+        <p class="genre-hint">Required. The dropdown sets the lane; artist genres (if URL above) only supplement it.</p>
         <select id="genre-select" required>
           <option value="" disabled selected>Select genre</option>
           <option value="ambient">Ambient</option>
