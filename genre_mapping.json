@@ -1169,10 +1169,10 @@
       "gen z singer-songwriter": "singer-songwriter",
       "canadian singer-songwriter": "singer-songwriter",
       "lilith": "singer-songwriter",
-      "vocal": "singer-songwriter",
       "acapella": "singer-songwriter",
       "indiecoustica": "singer-songwriter",
-      "acousti cover": "singer-songwriter"
+      "acousti cover": "singer-songwriter",
+      "singer/songwriter": "singer-songwriter"
     },
     "unknown_subgenres": {
       "unknown": "unknown",

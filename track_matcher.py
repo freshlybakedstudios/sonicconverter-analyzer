@@ -39,12 +39,27 @@ def _genre_words(genre_str: Optional[str]) -> Set[str]:
 
 
 def _parse_track_genres(genre_str: Optional[str]) -> Set[str]:
+    """Split a comma-joined CM genre string into a set of TAG PHRASES.
+
+    Multi-word tags like 'southeast asian pop' or 'us devotional & spiritual'
+    are preserved as single entries — previously this function also split on
+    spaces and slashes, which fragmented those phrases into bare tokens like
+    'pop' or 'spiritual'. The lone 'pop' token then resolved (incorrectly)
+    to the pop family, leaking 'southeast asian pop' artists into a pop lane
+    and 'us devotional & spiritual' artists into a gospel lane via 'spiritual'.
+
+    _genre_families (the downstream resolver) handles each phrase as: full-
+    phrase match first, then regional-prefix stripping, then a word-level
+    fallback for genuinely-unrecognised multi-word tags. So the families
+    that legitimately come from word-level matches still surface; we just
+    don't fragment proactively.
+    """
     if not genre_str:
         return set()
     lower = genre_str.lower()
     if 'genre id:' in lower or lower in {'others', 'other', 'various'}:
         return set()
-    return {t.strip() for t in lower.replace(',', ' ').replace('/', ' ').split() if t.strip()}
+    return {t.strip() for t in lower.split(',') if t.strip()}
 
 
 INCOMPATIBLE_GENRE_PAIRS = {
@@ -254,15 +269,24 @@ _REGION_PREFIXES = (
 def _genre_families(*genre_strings: str) -> Set[str]:
     """Resolve genre families from raw genre strings using the comprehensive mapping.
 
-    Tries full genre term match first (e.g. "melodic death metal" → metal),
-    then strips regional prefixes (e.g. "us hip-hop" → "hip-hop" → hip-hop),
-    then falls back to individual word matching (e.g. "metal" → metal).
+    Resolution order per input string:
+      1. Try the FULL phrase as-is — preserves slash-containing tags like
+         'singer/songwriter' and 'hip-hop/rap' that would otherwise be
+         fragmented into bare 'singer'/'songwriter' tokens that don't map.
+      2. Comma/slash split — for legacy callers that hand in a multi-tag
+         string like 'jungle, breakcore, atmospheric dnb'.
+      3. Per-term: full match → regional-prefix strip → word-level fallback.
     """
     families: Set[str] = set()
     for gs in genre_strings:
         if not gs or gs == 'unknown':
             continue
-        # Split by comma or slash to get individual genre terms
+        # Step 1: try the full input phrase first
+        full = gs.strip().lower()
+        if full in _GENRE_FAMILY_MAP:
+            families.add(_GENRE_FAMILY_MAP[full])
+            continue
+        # Step 2: split on comma OR slash (handles multi-tag strings)
         terms = [t.strip().lower() for t in gs.replace('/', ',').split(',') if t.strip()]
         for term in terms:
             if term in _GENRE_FAMILY_MAP:
@@ -470,9 +494,22 @@ class TrackMatcher:
         breakdown['genre'] = {'score': track_genre_score, 'weight': 0.06}
 
         # Artist channel (Jaccard): user artist genre vs candidate artist genre.
-        # Light secondary verification — never the main driver.
-        aa = artist_genres_a or set()
-        ab = artist_genres_b or set()
+        # Light secondary verification — never the main driver. After the
+        # _parse_track_genres change to preserve multi-word phrases (no more
+        # space-splitting), enrich each side with word-level tokens too so the
+        # Jaccard still picks up shared genre WORDS even when the phrases
+        # don't align exactly (e.g. 'indie pop' vs 'pop' would otherwise
+        # fail to overlap; with word enrichment, both share 'pop').
+        def _enrich(tags):
+            out = set(tags or [])
+            for t in (tags or []):
+                for w in t.replace('/', ' ').split():
+                    w = w.strip()
+                    if w:
+                        out.add(w)
+            return out
+        aa = _enrich(artist_genres_a)
+        ab = _enrich(artist_genres_b)
         artist_genre_score = len(aa & ab) / len(aa | ab) if (aa and ab) else 0
         breakdown['artist_genre'] = {'score': artist_genre_score, 'weight': 0.02}
 
