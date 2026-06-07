@@ -7,6 +7,7 @@ This pre-joins all GEMS, tracks, artists, and tier data for instant access.
 import argparse
 import json
 import os
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -14,14 +15,50 @@ from pathlib import Path
 from supabase import create_client
 
 
+def _safe_int(v):
+    """Coerce a value to int. Tolerates None, ints, floats, and string-encoded numbers
+    ('353', '0.0', etc.) — many tracks columns store metrics as text. Returns 0 on
+    anything unparseable so downstream sort/percentile math stays well-behaved."""
+    if v is None or v == '':
+        return 0
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        return int(v) if v == v else 0  # guard NaN
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return 0
+
+
 GEMS_COLUMNS = [
     'isrc',
+    # Frequency band ratios (7)
     'sub_ratio', 'bass_ratio', 'low_mid_ratio', 'mid_ratio', 'high_mid_ratio', 'presence_ratio', 'air_ratio',
+    # Energy & dynamics
     'energy', 'dynamic_range', 'loudness_range', 'attack_time', 'compression_amount', 'crest_factor',
-    'beat_strength', 'onset_rate', 'danceability',
+    # Rhythm
+    'beat_strength', 'onset_rate', 'danceability', 'bpm',
+    # Loudness / dissonance / harmonic / brightness
     'lufs_integrated', 'dissonance', 'key_strength', 'zcr',
+    # Set A — populated for all rows since 2024-12-15
+    'brightness', 'brightness_variance', 'spectral_rolloff', 'spectral_complexity', 'spectral_flux',
+    'key', 'scale',
+    # Set B — populated for rows analyzed since 2026-03-20 (~33K rows). Null on older rows.
+    'stereo_width', 'mid_side_ratio', 'stereo_correlation', 'true_peak_dbfs', 'harmonic_distortion',
+    # Emotion (4 labels + 4 scores)
     'emotion_1', 'emotion_1_score', 'emotion_2', 'emotion_2_score', 'emotion_3', 'emotion_3_score', 'emotion_4', 'emotion_4_score',
-    'primary_genre', 'secondary_genre', 'overall_description', 'sonic_signature_text', 'bpm'
+    # Genre + descriptive
+    'primary_genre', 'secondary_genre', 'overall_description', 'sonic_signature_text',
+    # Deviation / positioning scores (heuristic — see fixed_gems_pipeline_v2.py:734-821)
+    'genre_deviation_score', 'tonal_deviation_score', 'genre_positioning_score',
+    'genre_match_score', 'genre_confidence',
+    # Categorical descriptors
+    'bass_character', 'brightness_character', 'tonal_balance', 'tonal_balance_description',
+    'tempo_description', 'danceability_description',
+    'is_instrumental',
 ]
 
 
@@ -133,7 +170,10 @@ class UniverseCacheBuilder:
             for attempt in range(max_retries):
                 try:
                     rows = self.supabase.table('tracks')\
-                        .select('isrc, artist_id, track_genres, top_track, spotify_url')\
+                        .select('isrc, artist_id, track_genres, top_track, spotify_url, '
+                                'sp_track_popularity, sp_track_popularity_fetched_at, '
+                                'cm_track_score, cm_track_score_fetched_at, '
+                                'editorial_playlists, user_playlists')\
                         .in_('isrc', batch)\
                         .execute()
                     break
@@ -160,7 +200,15 @@ class UniverseCacheBuilder:
                     'artist_id': r.get('artist_id'),
                     'track_genres': r.get('track_genres', ''),
                     'top_track': r.get('top_track', ''),
-                    'spotify_url': r.get('spotify_url', '')
+                    'spotify_url': r.get('spotify_url', ''),
+                    'sp_track_popularity': r.get('sp_track_popularity'),
+                    'sp_track_popularity_fetched_at': r.get('sp_track_popularity_fetched_at'),
+                    'cm_track_score': r.get('cm_track_score'),
+                    'cm_track_score_fetched_at': r.get('cm_track_score_fetched_at'),
+                    # Coerce — these columns can be int OR string-encoded number in the DB.
+                    # Strings break downstream percentile sort, so normalize at cache-build time.
+                    'editorial_playlists': _safe_int(r.get('editorial_playlists')),
+                    'user_playlists': _safe_int(r.get('user_playlists')),
                 }
                 top_track_matches += 1
 
@@ -179,7 +227,10 @@ class UniverseCacheBuilder:
                 for attempt in range(max_retries):
                     try:
                         rows = self.supabase.table('tracks')\
-                            .select('recent_track_isrc, artist_id, recent_track, recent_track_spotify_url, recent_track_genres')\
+                            .select('recent_track_isrc, artist_id, recent_track, recent_track_spotify_url, recent_track_genres, '
+                                    'recent_track_sp_popularity, recent_track_sp_popularity_fetched_at, '
+                                    'recent_track_cm_score, recent_track_cm_score_fetched_at, '
+                                    'recent_track_editorial_playlists, recent_track_user_playlists')\
                             .in_('recent_track_isrc', batch)\
                             .execute()
                         break
@@ -201,7 +252,16 @@ class UniverseCacheBuilder:
                                 'artist_id': r.get('artist_id'),
                                 'track_genres': r.get('recent_track_genres', ''),
                                 'top_track': r.get('recent_track', ''),
-                                'spotify_url': r.get('recent_track_spotify_url', '')
+                                'spotify_url': r.get('recent_track_spotify_url', ''),
+                                # When recent track wins this slot, map recent_track_* to the unified
+                                # sp_track_popularity / cm_track_score / editorial_playlists / user_playlists
+                                # keys so downstream consumers (the matcher) read one shape regardless of source.
+                                'sp_track_popularity': r.get('recent_track_sp_popularity'),
+                                'sp_track_popularity_fetched_at': r.get('recent_track_sp_popularity_fetched_at'),
+                                'cm_track_score': r.get('recent_track_cm_score'),
+                                'cm_track_score_fetched_at': r.get('recent_track_cm_score_fetched_at'),
+                                'editorial_playlists': _safe_int(r.get('recent_track_editorial_playlists')),
+                                'user_playlists': _safe_int(r.get('recent_track_user_playlists')),
                             }
                             recent_track_matches += 1
 
@@ -560,8 +620,109 @@ class UniverseCacheBuilder:
 
         return cache
 
+    def refresh_genre_columns(self, cache):
+        """Refresh the (lightweight) genre columns on EXISTING cache entries
+        from current Supabase state. Lets incremental rebuilds propagate
+        artist-/track-/gems-genre backfills without a full --rebuild
+        (which is the 100-min one that re-pulls snapshot history).
+
+        Three layers, all small string columns, all batched 200 per call:
+          - artists.genres
+          - tracks.track_genres
+          - gems_complete_analysis.primary_genre / secondary_genre /
+            tonal_balance / genre_confidence / fallback_used
+
+        Total cost on a fully-populated cache (~145K artists + ~153K
+        tracks + ~235K gems): ~1-2 min of Supabase reads. Versus the
+        100-min full rebuild it replaces, this is essentially free.
+        """
+        # 1. artists.genres
+        artist_ids = list(cache.get('artists', {}).keys())
+        if artist_ids:
+            print(f"\n🔄 Refreshing artists.genres for {len(artist_ids)} existing artists...")
+            start = time.time()
+            refreshed = 0
+            batch_size = 200
+            for i in range(0, len(artist_ids), batch_size):
+                batch = artist_ids[i:i+batch_size]
+                try:
+                    rows = self.supabase.table('artists')\
+                        .select('id, genres')\
+                        .in_('id', batch)\
+                        .execute()
+                    for r in rows.data:
+                        aid = str(r['id'])
+                        if aid in cache['artists']:
+                            cache['artists'][aid]['genres'] = r.get('genres', '')
+                            refreshed += 1
+                except Exception as e:
+                    print(f"   ⚠️  artists batch {i//batch_size} failed: {e}")
+            print(f"   ✅ Refreshed {refreshed} artist.genres in {time.time()-start:.1f}s")
+
+        # 2. tracks.track_genres
+        track_isrcs = list(cache.get('tracks', {}).keys())
+        if track_isrcs:
+            print(f"\n🔄 Refreshing tracks.track_genres for {len(track_isrcs)} existing tracks...")
+            start = time.time()
+            refreshed = 0
+            batch_size = 200
+            for i in range(0, len(track_isrcs), batch_size):
+                batch = track_isrcs[i:i+batch_size]
+                try:
+                    rows = self.supabase.table('tracks')\
+                        .select('isrc, track_genres')\
+                        .in_('isrc', batch)\
+                        .execute()
+                    for r in rows.data:
+                        if r['isrc'] in cache['tracks']:
+                            cache['tracks'][r['isrc']]['track_genres'] = r.get('track_genres', '')
+                            refreshed += 1
+                except Exception as e:
+                    print(f"   ⚠️  tracks batch {i//batch_size} failed: {e}")
+            print(f"   ✅ Refreshed {refreshed} tracks.track_genres in {time.time()-start:.1f}s")
+
+        # 3. gems_complete_analysis genre columns (in-place update on list)
+        gems_list = cache.get('gems') or []
+        if gems_list:
+            isrc_to_idx = {g.get('isrc'): i for i, g in enumerate(gems_list) if g.get('isrc')}
+            all_isrcs = list(isrc_to_idx.keys())
+            print(f"\n🔄 Refreshing gems genre cols for {len(all_isrcs)} existing gems...")
+            start = time.time()
+            refreshed = 0
+            batch_size = 200
+            for i in range(0, len(all_isrcs), batch_size):
+                batch = all_isrcs[i:i+batch_size]
+                try:
+                    rows = self.supabase.table('gems_complete_analysis')\
+                        .select('isrc, primary_genre, secondary_genre, tonal_balance, '
+                                'genre_confidence, fallback_used')\
+                        .in_('isrc', batch)\
+                        .execute()
+                    for r in rows.data:
+                        idx = isrc_to_idx.get(r['isrc'])
+                        if idx is not None:
+                            g = gems_list[idx]
+                            g['primary_genre'] = r.get('primary_genre')
+                            g['secondary_genre'] = r.get('secondary_genre')
+                            g['tonal_balance'] = r.get('tonal_balance')
+                            g['genre_confidence'] = r.get('genre_confidence')
+                            g['fallback_used'] = r.get('fallback_used', False)
+                            refreshed += 1
+                except Exception as e:
+                    print(f"   ⚠️  gems batch {i//batch_size} failed: {e}")
+            print(f"   ✅ Refreshed {refreshed} gems genre rows in {time.time()-start:.1f}s")
+
     def incremental_update(self):
-        """Incrementally update existing cache with new records."""
+        """Incrementally update existing cache with new records.
+
+        Two phases:
+          1. Append new gems + tracks + artists discovered since last build.
+          2. Refresh genre columns on all EXISTING entries from current
+             Supabase state (catches backfills like artists.genres rewrite,
+             tracks.track_genres rewrite, gems re-derive). This is what
+             makes the daily 5AM cron pick up multi-day backfills without
+             needing a manual --rebuild.
+        """
         print("\n" + "="*70)
         print("🔄 INCREMENTAL CACHE UPDATE")
         print("="*70)
@@ -581,37 +742,38 @@ class UniverseCacheBuilder:
         # Fetch only new GEMS
         new_gems = self.fetch_all_gems(existing_isrcs)
 
-        if not new_gems:
-            print("   ✅ No new GEMS records found. Cache is up to date!")
-            return existing_cache
-
-        print(f"\n   🆕 Found {len(new_gems)} new GEMS records")
-
-        # Fetch data for new ISRCs
-        new_isrcs = [g['isrc'] for g in new_gems if g.get('isrc')]
-        new_tracks = self.fetch_tracks_batch(new_isrcs)
-
-        # Fetch artists that we don't already have
-        new_artist_ids = set()
-        for track in new_tracks.values():
-            aid = track.get('artist_id')
-            if aid and str(aid) not in existing_cache.get('artists', {}):
-                new_artist_ids.add(aid)
-
-        if new_artist_ids:
-            new_artists = self.fetch_artists_batch(new_artist_ids)
-            new_tiers = self.fetch_tiers_batch(new_artist_ids)
-        else:
-            new_artists = {}
-            new_tiers = {}
-            print("\n   ℹ️  No new artists to fetch")
-
-        # Merge with existing cache
         cache = existing_cache.copy()
-        cache['gems'].extend(new_gems)
-        cache['tracks'].update(new_tracks)
-        cache['artists'].update(new_artists)
-        cache['tiers'].update(new_tiers)
+
+        if new_gems:
+            print(f"\n   🆕 Found {len(new_gems)} new GEMS records")
+            new_isrcs = [g['isrc'] for g in new_gems if g.get('isrc')]
+            new_tracks = self.fetch_tracks_batch(new_isrcs)
+
+            new_artist_ids = set()
+            for track in new_tracks.values():
+                aid = track.get('artist_id')
+                if aid and str(aid) not in existing_cache.get('artists', {}):
+                    new_artist_ids.add(aid)
+
+            if new_artist_ids:
+                new_artists = self.fetch_artists_batch(new_artist_ids)
+                new_tiers = self.fetch_tiers_batch(new_artist_ids)
+            else:
+                new_artists = {}
+                new_tiers = {}
+                print("\n   ℹ️  No new artists to fetch")
+
+            cache['gems'].extend(new_gems)
+            cache['tracks'].update(new_tracks)
+            cache['artists'].update(new_artists)
+            cache['tiers'].update(new_tiers)
+        else:
+            print("   ✅ No new GEMS records — skipping new-data fetch.")
+
+        # Always refresh genre columns on existing entries (the patch).
+        # Cheap (~1-2 min for the lightweight string columns) and ensures
+        # backfills propagate without a full --rebuild.
+        self.refresh_genre_columns(cache)
 
         # Refresh brand affinity and events for all artists in cache (keeps data current even if no new GEMS)
         all_artist_ids = set()
@@ -698,6 +860,31 @@ def main():
 
     if cache:
         builder.save_cache(cache)
+
+        # Upload to GCS so Railway gets the updated cache on next deploy
+        print("\n☁️  Uploading cache to GCS...")
+        gcs_result = subprocess.run(
+            ['gsutil', '-o', 'GSUtil:parallel_composite_upload_threshold=150M',
+             'cp', str(builder.cache_path),
+             'gs://fbs-static-assets/gems_universe.json'],
+            capture_output=True, text=True
+        )
+        if gcs_result.returncode == 0:
+            print("   ✅ Cache uploaded to GCS")
+
+            # Restart Railway so it downloads the fresh cache
+            print("\n🚂 Restarting Railway service...")
+            restart_result = subprocess.run(
+                ['railway', 'service', 'restart', '--yes'],
+                capture_output=True, text=True
+            )
+            if restart_result.returncode == 0:
+                print("   ✅ Railway service restarting")
+            else:
+                print(f"   ❌ Railway restart failed: {restart_result.stderr}")
+        else:
+            print(f"   ❌ GCS upload failed: {gcs_result.stderr}")
+
         print("\n✅ Done! Use --use-cache flag with final_sonic_matcher.py for instant matching.")
     else:
         print("\n❌ Cache build failed!")
