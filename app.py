@@ -349,8 +349,13 @@ FEATURE_DESCRIPTIONS = {
         'domain': 'Dynamics', 'unit': 'LUFS',
     },
     'dynamic_range': {
-        'higher': 'Open up dynamic contrast — widening the loudness range for more movement',
-        'lower': 'Tighten dynamics — narrowing the loudness range for a denser, more consistent sound',
+        # Peak-to-RMS DR meter — NOT the EBU R128 LRA below (which uses
+        # "loudness range" / "loudness variation" wording). Keeping the
+        # two distinct in the UI so a rec card never reads "narrow the
+        # loudness range" + "tighten the loudness variation" as if they
+        # were two takes on the same measurement.
+        'higher': 'Open up peak dynamics — widening the dynamic range for more movement',
+        'lower': 'Tighten peak dynamics — narrowing the dynamic range for a denser, more consistent sound',
         'domain': 'Dynamics', 'unit': 'dB',
     },
     'compression_amount': {
