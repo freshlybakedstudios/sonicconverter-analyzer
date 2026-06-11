@@ -308,6 +308,159 @@ def _genre_families(*genre_strings: str) -> Set[str]:
     return families
 
 
+# =============================================================================
+# Canonical genre gate — SINGLE SOURCE OF TRUTH for lane filtering.
+#
+# Consumers: app.py URL path (Similar Artists + flattery/trajectory),
+# app.py upload path (same), scripts/backfill_reference_artists.py (email
+# reference artists). Any new surface that filters candidates by genre lane
+# must call these instead of copying the rules — three hand-copies of this
+# logic drifted apart once already (the email refs missed the reggae fix and
+# the electronic-subgenre split for a month).
+# =============================================================================
+
+# Strong, identity-defining families that must not cross-contaminate a lane
+# even when a candidate also touches the lane via a shared family tag.
+# 'reggae' included so reggae acts stop bleeding into alt-rock lanes.
+# 'electronic' is NOT exclusive: it's an umbrella that legitimately covers
+# dnb/garage/house/techno — excluding it would drop the very peers we want.
+EXCLUSIVE_FAMILIES = frozenset({'metal', 'hip-hop', 'country',
+                                'classical', 'jazz', 'latin', 'reggae'})
+
+# Each identity-defining within itself: jungle ≠ dnb ≠ garage ≠ breakcore
+# (per taxonomy decision — "drum and bass is not jungle").
+ELECTRONIC_SUBGENRES = frozenset({'jungle', 'dnb', 'garage', 'breaks', 'breakcore'})
+
+_ROCK_CLUSTER = frozenset({'rock', 'indie', 'pop', 'punk', 'r&b'})
+
+
+def lane_strong_foreign(allowed: Set[str]) -> Set[str]:
+    """Lane-aware strong-foreign family set (applied at cf + primary levels)."""
+    strong = set(EXCLUSIVE_FAMILIES)
+    if not (allowed & {'rock', 'indie', 'pop', 'punk'}):
+        strong |= {'pop', 'rock'}
+    if allowed & ELECTRONIC_SUBGENRES:
+        strong |= (ELECTRONIC_SUBGENRES - allowed)
+        if not (allowed & _ROCK_CLUSTER):
+            strong |= {'r&b', 'indie', 'punk'}
+    return strong
+
+
+def in_lane_families(cf: Set[str], primary_fams: Set[str],
+                     artist_soup_fams: Set[str], allowed: Set[str]) -> bool:
+    """Pure-set canonical gate. True = candidate belongs in the lane.
+
+    cf            candidate families across ALL fields (primary + secondary +
+                  artist genres + track genres)
+    primary_fams  families of the candidate's primary genre alone
+    artist_soup_fams  families across the candidate's artist_genres soup
+    allowed       the lane (empty = no lane → pass everything)
+
+    Rules (in order):
+      1. Sparse-data drop: cf empty → drop (no positive identity proof)
+      2. cf must overlap the lane
+      3. Foreign-exclusive drop: cf carries an EXCLUSIVE family outside lane
+      4. Electronic-subgenre lanes (non-rock-cluster): rock-cluster
+         contamination anywhere in cf drops the candidate (hyperpop-tagged
+         breakcore — Planet 1999, Lealani). Electronic-cluster cross-
+         pollination (dnb in cf for a jungle lane) is deliberately allowed.
+      5. Primary-foreign drop with artist-soup bypass: candidate whose
+         PRIMARY family is strong-foreign and out-of-lane drops UNLESS the
+         artist soup carries a lane tag (jungle producer with one DnB-tagged
+         release keeps; pure DnB act still drops).
+    """
+    if not allowed:
+        return True
+    if not cf:
+        return False
+    if not (cf & allowed):
+        return False
+    if (cf & EXCLUSIVE_FAMILIES) - allowed:
+        return False
+    strong_foreign = lane_strong_foreign(allowed)
+    if (allowed & ELECTRONIC_SUBGENRES) and not (allowed & _ROCK_CLUSTER):
+        if cf & _ROCK_CLUSTER:
+            return False
+    if primary_fams and (primary_fams & strong_foreign) and not (primary_fams & allowed):
+        if not (artist_soup_fams & allowed):
+            return False
+    return True
+
+
+def candidate_lane_families(m: Dict) -> Set[str]:
+    """Canonical candidate-family extraction for matcher match dicts:
+    primary + secondary + artist genres + track genres."""
+    cand = []
+    for field in ('primary_genre', 'secondary_genre'):
+        g = (m.get(field) or '').strip()
+        if g:
+            cand.append(g)
+    cand.extend(m.get('artist_genres') or [])
+    cand.extend(m.get('track_genres') or [])
+    return _genre_families(*cand)
+
+
+def match_in_lane(m: Dict, allowed: Set[str]) -> bool:
+    """Canonical gate applied to a matcher match dict."""
+    if not allowed:
+        return True
+    primary = (m.get('primary_genre') or '').strip()
+    primary_fams = _genre_families(primary) if primary else set()
+    artist_soup_fams: Set[str] = set()
+    for g in (m.get('artist_genres') or []):
+        artist_soup_fams |= _genre_families(g)
+    return in_lane_families(candidate_lane_families(m), primary_fams,
+                            artist_soup_fams, allowed)
+
+
+# --- Sub-scene refinement gates (origin: email reference-artist picks; ---
+# --- shared here so web surfaces can adopt them without re-copying)    ---
+
+# Inside the metal family the sub-scenes don't cross-pitch: a metalcore band
+# should not get a power-metal reference. Keyword → coarse sub-scene group.
+METAL_SUBSCENES = {
+    'core': ('metalcore', 'deathcore', 'post-hardcore', 'post hardcore',
+             'mathcore', 'melodic death', 'melodeath', 'nu-metalcore',
+             'hardcore', 'screamo', 'emocore'),
+    'power': ('power metal', 'symphonic metal', 'epic metal'),
+    'trad': ('heavy metal', 'thrash metal', 'thrash', 'speed metal',
+             'nwobhm', 'traditional metal', 'classic metal'),
+    'extreme': ('death metal', 'black metal', 'grindcore', 'deathgrind',
+                'blackened'),
+    'doom': ('doom metal', 'sludge metal', 'stoner metal', 'stoner doom',
+             'drone metal', 'funeral doom', 'post-metal'),
+    'alt': ('nu metal', 'nu-metal', 'alternative metal', 'rap metal',
+            'industrial metal', 'rapcore', 'groove metal'),
+    'prog': ('progressive metal', 'djent', 'tech metal', 'technical death',
+             'math metal'),
+}
+
+# Aggressive-music markers across any family — used as a coarse signal check:
+# an aggressive user should get aggressive candidates.
+AGGRESSIVE_TOKENS = (
+    'metal', 'metalcore', 'deathcore', 'hardcore', 'thrash', 'grindcore',
+    'grind', 'doom', 'punk', 'post-hardcore', '-core', 'djent', 'sludge',
+    'black metal', 'death metal', 'screamo',
+)
+
+
+def metal_subscene_groups(genre_str: Optional[str]) -> Set[str]:
+    """Return the METAL_SUBSCENES group keys present in a genre string."""
+    if not genre_str:
+        return set()
+    gl = genre_str.lower()
+    return {group for group, keywords in METAL_SUBSCENES.items()
+            if any(k in gl for k in keywords)}
+
+
+def has_aggressive_signal(genre_str: Optional[str]) -> bool:
+    """True if the genre string contains any aggressive-music marker."""
+    if not genre_str:
+        return False
+    gl = genre_str.lower()
+    return any(tok in gl for tok in AGGRESSIVE_TOKENS)
+
+
 class TrackMatcher:
     """Loads the GEMS universe cache and matches uploaded track features against it."""
 

@@ -54,7 +54,8 @@ from chartmetric_lookup import (
 )
 from email_sender import send_results_email
 from job_manager import JobManager
-from track_matcher import TrackMatcher, _genre_families
+from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
+                           candidate_lane_families)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -2296,59 +2297,13 @@ async def analyze(
         print(f"  Upload lane (heavy-weight dropdown): {user_families} | "
               f"dropdown='{dropdown_genre}' | artist_genre='{artist_genre[:80]}'")
 
-        # Mirrored from the URL path's in_lane (commit 590bee6). Same gates:
-        #   - sparse-data drop (cf empty → drop)
-        #   - cf-overlap with the lane
-        #   - EXCLUSIVE_FAMILIES drop on foreign exclusive (metal/hip-hop/
-        #     country/classical/jazz/latin/reggae — NB: 'electronic' is NOT
-        #     exclusive here, it's an umbrella over DnB/jungle/house/etc.)
-        #   - For electronic-subgenre lanes (jungle/dnb/garage/breaks/breakcore):
-        #     rock-cluster contamination in cf (pop/rock/r&b/indie/punk) drops
-        #     the candidate. Catches hyperpop-tagged-as-breakcore.
-        #   - Primary-foreign check with artist-soup bypass.
-        EXCLUSIVE_FAMILIES = {'metal', 'hip-hop', 'country',
-                              'classical', 'jazz', 'latin', 'reggae'}
-        ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks', 'breakcore'}
-
-        def _cand_families(m):
-            cand = []
-            for field in ('primary_genre', 'secondary_genre'):
-                g = (m.get(field) or '').strip()
-                if g:
-                    cand.append(g)
-            cand.extend(m.get('artist_genres') or [])
-            cand.extend(m.get('track_genres') or [])
-            return _genre_families(*cand)
-
-        def in_lane(m, allowed):
-            if not allowed:
-                return True
-            cf = _cand_families(m)
-            if not cf:
-                return False
-            if not (cf & allowed):
-                return False
-            if (cf & EXCLUSIVE_FAMILIES) - allowed:
-                return False
-            strong_foreign = set(EXCLUSIVE_FAMILIES)
-            if not (allowed & {'rock', 'indie', 'pop', 'punk'}):
-                strong_foreign |= {'pop', 'rock'}
-            if allowed & ELECTRONIC_SUBGENRES:
-                strong_foreign |= (ELECTRONIC_SUBGENRES - allowed)
-                if not (allowed & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
-                    strong_foreign |= {'r&b', 'indie', 'punk'}
-                    rock_cluster = {'pop', 'rock', 'r&b', 'indie', 'punk'}
-                    if cf & rock_cluster:
-                        return False
-            primary = (m.get('primary_genre') or '').strip()
-            primary_fams = _genre_families(primary) if primary else set()
-            if primary_fams and (primary_fams & strong_foreign) and not (primary_fams & allowed):
-                artist_lane_signal = set()
-                for g in (m.get('artist_genres') or []):
-                    artist_lane_signal |= _genre_families(g)
-                if not (artist_lane_signal & allowed):
-                    return False
-            return True
+        # Canonical gate — shared single source of truth in track_matcher.py
+        # (match_in_lane / in_lane_families). Rules: sparse-data drop,
+        # cf-overlap with lane, EXCLUSIVE_FAMILIES foreign drop (incl. reggae;
+        # 'electronic' deliberately NOT exclusive), electronic-subgenre
+        # identity split, rock-cluster contamination drop for pure electronic-
+        # subgenre lanes, primary-foreign drop with artist-soup bypass.
+        in_lane = match_in_lane
 
         pre_filter_count = len(all_matches)
         all_matches = [m for m in all_matches if in_lane(m, user_families)]
@@ -4184,93 +4139,14 @@ async def analyze_url(
     # Kept broad (track ∪ artist) for the looser flattery pass downstream.
     user_families = track_user_families | artist_user_families
 
-    def _cand_families(m):
-        cand = []
-        for field in ('primary_genre', 'secondary_genre'):
-            g = (m.get(field) or '').strip()
-            if g:
-                cand.append(g)
-        cand.extend(m.get('artist_genres') or [])
-        cand.extend(m.get('track_genres') or [])
-        return _genre_families(*cand)
-
-    # Strong, identity-defining families that must not cross-contaminate the
-    # lane even when a candidate also touches it via a shared family tag.
-    # Rejecting these removes the off-lane stragglers (new-country, r&b, latin
-    # rock) AND the genre-soup artists (which carry one of these among many
-    # tags). 'reggae' included so reggae acts stop bleeding into an alt track.
-    # 'electronic' is NOT exclusive: it's an umbrella that legitimately covers
-    # dnb/garage/house/techno/etc., and real dnb peers carry both 'dnb' and
-    # 'electronic' tags — excluding it would drop the very peers we want.
-    EXCLUSIVE_FAMILIES = {'metal', 'hip-hop', 'country',
-                          'classical', 'jazz', 'latin', 'reggae'}
-
-    def in_lane(m, allowed):
-        # Keep a candidate if its genre families OVERLAP the allowed lane —
-        # overlap (not a strict subset rule) so legit adjacent peers survive
-        # (e.g. an indie act when the track resolves to just {rock}). Reject
-        # anything carrying a strong FOREIGN family outside the lane, so a
-        # candidate that merely brushes 'rock' while being mostly country/
-        # reggae/electronic (incl. the 16-tag soup artists) is dropped.
-        # Sparse-data rows (zero resolvable families across primary/secondary/
-        # artist/track tags — e.g. only language/regional tags like 'malayalam'
-        # or 'japanese') are DROPPED rather than pass-through, because the
-        # gate has no way to confirm they belong in the lane.
-        if not allowed:
-            return True
-        cf = _cand_families(m)
-        if not cf:
-            return False
-        if not (cf & allowed):
-            return False
-        if (cf & EXCLUSIVE_FAMILIES) - allowed:
-            return False
-        # Build lane-aware foreign set, applied at BOTH cf and primary levels.
-        # Foreign families:
-        #   - EXCLUSIVE_FAMILIES (metal/hip-hop/country/classical/jazz/latin/reggae)
-        #   - pop/rock when lane is outside rock-cluster (matches trajectory rule)
-        #   - electronic-subgenre split: when lane is one of
-        #     {jungle, dnb, garage, breaks, breakcore}, the OTHERS are foreign
-        #     (jungle ≠ dnb ≠ breakcore identity-wise, per taxonomy decision)
-        #   - rock/pop/r&b/indie/punk when lane is a pure electronic-subgenre
-        #     (catches hyperpop-tagged breakcore — Planet 1999, James Ferraro
-        #     style — whose cf carries pop/indie even though primary is breakcore)
-        ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks', 'breakcore'}
-        strong_foreign = set(EXCLUSIVE_FAMILIES)
-        if not (allowed & {'rock', 'indie', 'pop', 'punk'}):
-            strong_foreign |= {'pop', 'rock'}
-        if allowed & ELECTRONIC_SUBGENRES:
-            strong_foreign |= (ELECTRONIC_SUBGENRES - allowed)
-            # Pure electronic-subgenre lane: rock/pop/r&b/indie/punk are foreign
-            if not (allowed & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
-                strong_foreign |= {'r&b', 'indie', 'punk'}
-            # CF-level drop for electronic-subgenre lanes: ROCK-CLUSTER
-            # contamination in cf (pop/indie/r&b/punk) drops the candidate,
-            # which catches hyperpop-tagged breakcore (Planet 1999, Lealani —
-            # their cf carries pop/indie even though primary is breakcore).
-            # We deliberately DON'T drop on electronic-cluster cross-pollination
-            # (dnb in cf for a jungle lane is fine — a jungle producer often
-            # has DnB tracks in their catalog, e.g. Tim Reaper's drum & bass
-            # secondary tagging). Scoped to non-rock-cluster lanes — for an
-            # alt-rock lane these rock-cluster families ARE the lane.
-            if not (allowed & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
-                rock_cluster_foreign = {'pop', 'rock', 'r&b', 'indie', 'punk'}
-                if cf & rock_cluster_foreign:
-                    return False
-        # Primary-level: if the candidate's PRIMARY family itself is foreign
-        # and not in the lane, drop UNLESS the candidate's broader artist
-        # genre soup carries a lane-family tag. Grows the niche-lane pool
-        # (jungle producer with a DnB-tagged release keeps; pure DnB act
-        # with no jungle in artist soup still drops).
-        primary = (m.get('primary_genre') or '').strip()
-        primary_fams = _genre_families(primary) if primary else set()
-        if primary_fams and (primary_fams & strong_foreign) and not (primary_fams & allowed):
-            artist_lane_signal = set()
-            for g in (m.get('artist_genres') or []):
-                artist_lane_signal |= _genre_families(g)
-            if not (artist_lane_signal & allowed):
-                return False
-        return True
+    # Canonical gate — shared single source of truth in track_matcher.py
+    # (match_in_lane / in_lane_families). Rules: sparse-data drop, cf-overlap
+    # with lane, EXCLUSIVE_FAMILIES foreign drop (incl. reggae; 'electronic'
+    # deliberately NOT exclusive — it's an umbrella over dnb/garage/etc.),
+    # electronic-subgenre identity split (jungle ≠ dnb ≠ breakcore),
+    # rock-cluster contamination drop for pure electronic-subgenre lanes,
+    # primary-foreign drop with artist-soup bypass.
+    in_lane = match_in_lane
 
     # Exclude self-matches (the artist being analyzed)
     exclude_artist_id = None
@@ -4350,64 +4226,17 @@ async def analyze_url(
                 continue
             seen_artists.add(aid)
             total_boost = 0
-            cand_genres = []
-            for g in m.get('artist_genres', []):
-                if g:
-                    cand_genres.append(g)
-            primary = (m.get('primary_genre') or '').strip()
-            if primary:
-                cand_genres.append(primary)
-            cand_families = _genre_families(*cand_genres)
             # Scope trajectory targets to the TRACK lane (same as Similar Artists),
             # not the broad artist union — the union carried the artist's
             # back-catalog reggae/country, which is exactly what was bleeding a
             # reggae act into the top trajectory slot for an alternative track.
+            # Canonical gate (track_matcher.match_in_lane) — same rules and
+            # same candidate extraction as the Similar Artists table, so the
+            # trajectory pool can never drift from what the table shows.
             if track_user_families:
-                if not cand_families:
-                    # Sparse-data candidate (zero resolvable families across
-                    # primary + artist soup — e.g. only language tags like
-                    # 'malayalam'). Drop rather than pass-through: a trajectory
-                    # slot requires positive identity proof.
+                if not match_in_lane(m, track_user_families):
                     continue
-                shared = cand_families & track_user_families
-                if not shared:
-                    continue  # No genre overlap with the track lane, skip
-                foreign_exclusive = (cand_families & EXCLUSIVE_FAMILIES) - track_user_families
-                if foreign_exclusive:
-                    continue
-                # Lane-aware foreign-family check at CF and primary levels.
-                # Same rule as in_lane(): EXCLUSIVE_FAMILIES always foreign;
-                # pop/rock foreign when lane outside rock-cluster; electronic-
-                # subgenre split identity-defining within itself; pure
-                # electronic-subgenre lane treats rock/pop/r&b/indie/punk as
-                # foreign (catches hyperpop-tagged breakcore).
-                secondary = (m.get('secondary_genre') or '').strip()
-                primary_fams = _genre_families(primary) if primary else set()
-                ELECTRONIC_SUBGENRES = {'jungle', 'dnb', 'garage', 'breaks', 'breakcore'}
-                strong_foreign = set(EXCLUSIVE_FAMILIES)
-                if not (track_user_families & {'rock', 'indie', 'pop', 'punk'}):
-                    strong_foreign |= {'pop', 'rock'}
-                if track_user_families & ELECTRONIC_SUBGENRES:
-                    strong_foreign |= (ELECTRONIC_SUBGENRES - track_user_families)
-                    if not (track_user_families & {'rock', 'indie', 'pop', 'punk', 'r&b'}):
-                        strong_foreign |= {'r&b', 'indie', 'punk'}
-                    # Rock-cluster contamination in cf catches hyperpop-tagged
-                    # breakcore (Planet 1999, Lealani). Electronic-cluster
-                    # cross (dnb in cf for jungle lane) is OK if primary is
-                    # firmly in-lane (Tim Reaper).
-                    if not (track_user_families & {'rock','indie','pop','punk','r&b'}):
-                        rock_cluster_foreign = {'pop','rock','r&b','indie','punk'}
-                        if cand_families & rock_cluster_foreign:
-                            continue
-                # Primary-level foreign drop — bypassed when artist soup
-                # carries lane-family tag (jungle producer with DnB track).
-                if (primary_fams and (primary_fams & strong_foreign)
-                        and not (primary_fams & track_user_families)):
-                    artist_lane_signal = set()
-                    for g in (m.get('artist_genres') or []):
-                        artist_lane_signal |= _genre_families(g)
-                    if not (artist_lane_signal & track_user_families):
-                        continue
+                shared = candidate_lane_families(m) & track_user_families
                 total_boost += 0.05 * len(shared)
             cand_pronoun = m.get('pronoun_title', 'They')
             flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
