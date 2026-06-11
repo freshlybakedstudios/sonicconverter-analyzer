@@ -631,6 +631,9 @@ class UniverseCacheBuilder:
           - tracks.track_genres
           - gems_complete_analysis.primary_genre / secondary_genre /
             tonal_balance / genre_confidence / fallback_used
+            + emotion_1..4 (+scores) + emotional_signature, so offline
+            emotion re-derives (e.g. the 2026-06-10 V8 re-derive) propagate
+            on the daily incremental instead of needing a full --rebuild
 
         Total cost on a fully-populated cache (~145K artists + ~153K
         tracks + ~235K gems): ~1-2 min of Supabase reads. Versus the
@@ -695,7 +698,9 @@ class UniverseCacheBuilder:
                 try:
                     rows = self.supabase.table('gems_complete_analysis')\
                         .select('isrc, primary_genre, secondary_genre, tonal_balance, '
-                                'genre_confidence, fallback_used')\
+                                'genre_confidence, fallback_used, emotional_signature, '
+                                'emotion_1, emotion_1_score, emotion_2, emotion_2_score, '
+                                'emotion_3, emotion_3_score, emotion_4, emotion_4_score')\
                         .in_('isrc', batch)\
                         .execute()
                     for r in rows.data:
@@ -707,10 +712,14 @@ class UniverseCacheBuilder:
                             g['tonal_balance'] = r.get('tonal_balance')
                             g['genre_confidence'] = r.get('genre_confidence')
                             g['fallback_used'] = r.get('fallback_used', False)
+                            g['emotional_signature'] = r.get('emotional_signature')
+                            for k in range(1, 5):
+                                g[f'emotion_{k}'] = r.get(f'emotion_{k}')
+                                g[f'emotion_{k}_score'] = r.get(f'emotion_{k}_score')
                             refreshed += 1
                 except Exception as e:
                     print(f"   ⚠️  gems batch {i//batch_size} failed: {e}")
-            print(f"   ✅ Refreshed {refreshed} gems genre rows in {time.time()-start:.1f}s")
+            print(f"   ✅ Refreshed {refreshed} gems genre+emotion rows in {time.time()-start:.1f}s")
 
     def incremental_update(self):
         """Incrementally update existing cache with new records.
