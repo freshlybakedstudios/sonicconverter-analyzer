@@ -4690,6 +4690,45 @@ async def deal_lookup(
             all_matches = matcher.find_matches(features, genre_hint=genres_str, top_n=5000, threshold=0.55)
             print(f"Deal lookup: {len(all_matches)} sonic matches found")
 
+            # Canonical genre gate (track_matcher.match_in_lane) — same rules as
+            # Similar Artists / trajectory / email refs. Without this, the sonic
+            # gap consensus and conversion-opportunity peers were derived from
+            # ANY high-converting sound-alike regardless of genre (a country
+            # artist could get production advice computed from hip-hop peers).
+            # Lane: track tags first (gems primary/secondary, present when
+            # features came from cache), artist first-2 resolvable tags as
+            # fallback, electronic umbrella deepening — mirrors the URL path.
+            deal_lane = set()
+            track_tags = [t for t in (features.get('primary_genre'),
+                                      features.get('secondary_genre')) if t]
+            if track_tags:
+                deal_lane = _genre_families(*track_tags)
+            if not deal_lane and genres_str:
+                seen_tags, lane_tags = set(), []
+                for g in (p.strip() for p in genres_str.split(',') if p.strip()):
+                    lg = g.lower()
+                    if lg in seen_tags:
+                        continue
+                    if _genre_families(g):
+                        lane_tags.append(g); seen_tags.add(lg)
+                        if len(lane_tags) >= 2:
+                            break
+                deal_lane = _genre_families(*lane_tags) if lane_tags else set()
+            if deal_lane == {'electronic'} and genres_str:
+                from track_matcher import ELECTRONIC_SUBGENRES
+                deep = _genre_families(genres_str) & ELECTRONIC_SUBGENRES
+                if deep:
+                    deal_lane = deal_lane | deep
+
+            if deal_lane:
+                in_lane_matches = [m for m in all_matches if match_in_lane(m, deal_lane)]
+                # Relax if the lane starves the pool — sonic gap needs peers
+                if len(in_lane_matches) >= 25:
+                    print(f"Deal lookup: lane {deal_lane} kept {len(in_lane_matches)}/{len(all_matches)}")
+                    all_matches = in_lane_matches
+                else:
+                    print(f"Deal lookup: lane {deal_lane} kept only {len(in_lane_matches)} — keeping ungated pool")
+
             if all_matches:
                 # Sonic gap: consensus vs high-converting matches
                 high_converter_matches = [
