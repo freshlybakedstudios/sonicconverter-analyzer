@@ -4787,7 +4787,10 @@ async def deal_lookup(
                         target_followers = int(round((target_cr / 100) * listeners * 4.3 / 0.1))
                         current_followers = int(followers) if followers > 0 else 0
                         additional_fans = max(int(round(target_followers - current_followers)), 0)
-                        additional_revenue = additional_fans * 25  # ~$25/fan/year (streaming + merch + tickets)
+                        # $5/fan/year — top of the defensible all-in range
+                        # (streaming + merch + tickets) per fan-revenue research;
+                        # was $25 which couldn't survive manager/lawyer scrutiny.
+                        additional_revenue = additional_fans * 5
 
                         conversion_opportunity = {
                             'additional_fans': additional_fans,
