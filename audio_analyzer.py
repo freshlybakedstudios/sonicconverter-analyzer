@@ -3,6 +3,8 @@ Audio feature extraction for uploaded tracks.
 Ported from GEMS/fixed_gems_pipeline_v2.py - adapted for file upload (no Loopback needed).
 """
 
+import math
+
 import numpy as np
 import librosa
 import pyloudnorm as pyln
@@ -238,6 +240,101 @@ class GenreAwareEmotionDetector:
         },
     }
 
+    # ---- V8 scoring (2026-06-10) — TWIN of GEMS/gems_emotion_detector.py ----
+    # KEEP IN SYNC with the GEMS detector: the matcher compares the live
+    # user's emotion labels against universe labels slot-by-slot (5% weight),
+    # so the two implementations must produce the same labels for the same
+    # features. Changes: anchored sigmoid scoring (0.8 at threshold, spreads
+    # frozen from the 235K universe), dead-threshold repairs (compression
+    # rules were calibrated pre crest-dB-migration), major/minor mode wired
+    # into valence feelings, and gate x evidence structure (definitional
+    # features multiply). See GEMS/emotion_rederive_prototype.py for the
+    # validation history.
+
+    V8_OFFSET = math.log(0.8 / 0.2)  # sigmoid(V8_OFFSET) = 0.8 at threshold
+    GATE_FLOOR = 0.2
+
+    THRESHOLD_REPAIRS = {
+        ('bass_heavy', 'power', 'compression_amount'): 0.660,
+        ('bass_heavy', 'tension', 'compression_amount'): 0.660,
+        ('bass_heavy', 'joyfulness', 'energy'): 0.373,
+        ('bass_heavy', 'peacefulness', 'onset_rate'): 4.250,
+        ('bass_heavy', 'peacefulness', 'spectral_complexity'): 0.072,
+        ('bass_heavy', 'transcendence', 'loudness_range'): 4.320,
+        ('energy_focused', 'power', 'compression_amount'): 0.633,
+        ('energy_focused', 'intense', 'compression_amount'): 0.633,
+        ('energy_focused', 'joyfulness', 'energy'): 0.340,
+        ('energy_focused', 'peacefulness', 'spectral_complexity'): 0.070,
+        ('energy_focused', 'transcendence', 'loudness_range'): 3.158,
+        # extreme_metal uses the energy_focused repairs for universal emotions
+        ('extreme_metal', 'joyfulness', 'energy'): 0.340,
+        ('extreme_metal', 'peacefulness', 'spectral_complexity'): 0.070,
+        ('extreme_metal', 'transcendence', 'loudness_range'): 3.158,
+        ('balanced', 'power', 'compression_amount'): 0.629,
+        ('balanced', 'joyfulness', 'energy'): 0.335,
+        ('balanced', 'transcendence', 'loudness_range'): 4.145,
+        ('soft', 'power', 'compression_amount'): 0.609,
+        ('soft', 'joyfulness', 'energy'): 0.314,
+    }
+
+    GROUP_SPREADS = {
+        'balanced': {
+            'air_ratio': 0.041562, 'bass_ratio': 0.031633, 'beat_strength': 0.112053,
+            'bpm': 19.171055, 'brightness': 556.339426, 'compression_amount': 0.050304,
+            'danceability': 0.126757, 'dissonance': 0.020517, 'dynamic_range': 3.892159,
+            'energy': 0.050931, 'high_mid_ratio': 0.028616, 'loudness_range': 1.131408,
+            'lufs_integrated': 1.518536, 'mid_ratio': 0.0464, 'onset_rate': 1.625,
+            'spectral_complexity': 0.010362,
+        },
+        'soft': {
+            'air_ratio': 0.050487, 'bass_ratio': 0.040219, 'beat_strength': 0.1453,
+            'bpm': 20.145408, 'brightness': 682.943725, 'compression_amount': 0.058987,
+            'danceability': 0.167432, 'dissonance': 0.024171, 'dynamic_range': 4.059437,
+            'energy': 0.064316, 'high_mid_ratio': 0.030534, 'loudness_range': 1.429242,
+            'lufs_integrated': 2.175985, 'mid_ratio': 0.056244, 'onset_rate': 1.75,
+            'spectral_complexity': 0.01364,
+        },
+        'bass_heavy': {
+            'air_ratio': 0.04502, 'bass_ratio': 0.031337, 'beat_strength': 0.156749,
+            'bpm': 18.157728, 'brightness': 572.479191, 'compression_amount': 0.051409,
+            'danceability': 0.150893, 'dissonance': 0.027934, 'dynamic_range': 4.747274,
+            'energy': 0.055297, 'high_mid_ratio': 0.022525, 'loudness_range': 1.186059,
+            'lufs_integrated': 1.401391, 'mid_ratio': 0.040999, 'onset_rate': 1.1875,
+            'spectral_complexity': 0.009933,
+        },
+        'energy_focused': {
+            'air_ratio': 0.035334, 'bass_ratio': 0.025942, 'beat_strength': 0.079953,
+            'bpm': 21.110983, 'brightness': 469.557702, 'compression_amount': 0.046074,
+            'danceability': 0.115272, 'dissonance': 0.01637, 'dynamic_range': 2.409165,
+            'energy': 0.04697, 'high_mid_ratio': 0.031489, 'loudness_range': 0.895832,
+            'lufs_integrated': 1.461087, 'mid_ratio': 0.038491, 'onset_rate': 2.0,
+            'spectral_complexity': 0.008886,
+        },
+    }
+    # extreme_metal is a web-only refinement of energy_focused — same universe
+    # cohort, so it shares those spreads.
+    GROUP_SPREADS['extreme_metal'] = GROUP_SPREADS['energy_focused']
+
+    GATE_FEATURES = {
+        'power':         ['lufs_integrated'],
+        'aggressive':    ['energy', 'dissonance'],
+        'intense':       ['energy'],
+        'dark':          ['brightness'],
+        'brooding':      ['brightness'],
+        'tension':       ['dissonance'],
+        'nostalgia':     ['air_ratio', 'brightness'],
+        'tenderness':    ['energy'],
+        'joyfulness':    ['brightness'],
+        'sadness':       ['energy'],
+        'peacefulness':  ['energy', 'dissonance'],
+        'wonder':        ['spectral_complexity'],
+        'transcendence': ['air_ratio'],
+    }
+
+    MODE_GATES = {'sadness': 'minor', 'brooding': 'minor', 'joyfulness': 'major'}
+    MODE_RULES = {'dark': ('minor', 0.10), 'tension': ('minor', 0.10),
+                  'peacefulness': ('major', 0.05)}
+
     def get_genre_group(self, genre: str) -> str:
         if not genre:
             return 'balanced'
@@ -252,19 +349,32 @@ class GenreAwareEmotionDetector:
                     return group
         return 'balanced'
 
-    def _calc_feature_score(self, value, comparison, threshold):
+    @staticmethod
+    def _sigmoid(x):
+        if x > 30:
+            return 1.0
+        if x < -30:
+            return 0.0
+        return 1.0 / (1.0 + math.exp(-x))
+
+    def _score_rule(self, group, value, comparison, threshold, feature):
+        """Anchored continuous score for one rule (0.8 at threshold)."""
+        spread = self.GROUP_SPREADS.get(group, {}).get(feature)
+        if spread is None or spread <= 0:
+            if comparison == 'gt':
+                return 1.0 if value > threshold else 0.0
+            if comparison == 'lt':
+                return 1.0 if value < threshold else 0.0
+            lo, hi = threshold
+            return 1.0 if lo <= value <= hi else 0.0
         if comparison == 'gt':
-            return min(1.0, value / threshold) if value >= threshold else (value / threshold) * 0.8
-        elif comparison == 'lt':
-            return 1.0 if value <= threshold else min(1.0, (threshold / (value + 0.001)) * 0.8)
-        elif comparison == 'range':
-            min_val, max_val = threshold
-            if min_val <= value <= max_val:
-                return 1.0
-            elif value < min_val:
-                return max(0.0, 1.0 - (min_val - value) / min_val * 0.6)
-            else:
-                return max(0.0, 1.0 - (value - max_val) / max_val * 0.6)
+            return self._sigmoid(self.V8_OFFSET + (value - threshold) / spread)
+        if comparison == 'lt':
+            return self._sigmoid(self.V8_OFFSET + (threshold - value) / spread)
+        if comparison == 'range':
+            lo, hi = threshold
+            return (self._sigmoid(self.V8_OFFSET + (value - lo) / spread)
+                    * self._sigmoid(self.V8_OFFSET + (hi - value) / spread))
         return 0.0
 
     def detect(self, features: Dict, genre_hint: str = '') -> Dict:
@@ -283,17 +393,46 @@ class GenreAwareEmotionDetector:
         all_emotions = {**genre_emotions, **self.UNIVERSAL_EMOTIONS}
 
         # For extreme metal, suppress soft emotions so they can't outscore
-        # aggression/tension. These emotions exist in the cache but shouldn't
-        # dominate for extreme genres.
+        # aggression/tension — keeps user-side labels aligned with what the
+        # universe carries for extreme genres (aggressive/intense/power).
         _SOFT_EMOTIONS = {'tenderness', 'joyfulness', 'peacefulness', 'nostalgia', 'wonder'}
+
+        track_scale = features.get('scale')
+        key_strength = features.get('key_strength') or 0.0
+        try:
+            key_strength = max(0.0, min(1.0, float(key_strength)))
+        except (TypeError, ValueError):
+            key_strength = 0.0
 
         scores = {}
         for emotion, rules in all_emotions.items():
-            total = 0.0
+            gate_feats = set(self.GATE_FEATURES.get(emotion, []))
+            gate = 1.0
+            total, wsum = 0.0, 0.0
             for feat_name, (comp, thresh, weight) in rules.items():
-                val = features.get(feat_name, 0)
-                total += self._calc_feature_score(val, comp, thresh) * weight
-            score = min(1.0, total)
+                val = features.get(feat_name)
+                if not isinstance(val, (int, float)):
+                    continue
+                thresh = self.THRESHOLD_REPAIRS.get((group, emotion, feat_name), thresh)
+                s = self._score_rule(group, val, comp, thresh, feat_name)
+                if feat_name in gate_feats:
+                    gate *= self.GATE_FLOOR + (1.0 - self.GATE_FLOOR) * s
+                else:
+                    total += s * weight
+                    wsum += weight
+
+            if emotion in self.MODE_GATES:
+                if track_scale in ('major', 'minor'):
+                    match = 1.0 if track_scale == self.MODE_GATES[emotion] else 0.0
+                    ms = 1.0 - key_strength * (1.0 - match)
+                    gate *= self.GATE_FLOOR + (1.0 - self.GATE_FLOOR) * ms
+            elif emotion in self.MODE_RULES and track_scale in ('major', 'minor'):
+                want, mw = self.MODE_RULES[emotion]
+                total += (1.0 if track_scale == want else 0.0) * key_strength * mw
+                wsum += mw
+
+            evidence = (total / wsum) if wsum > 0 else 1.0
+            score = gate * evidence
             if group == 'extreme_metal' and emotion in _SOFT_EMOTIONS:
                 score *= 0.4  # Cap soft emotions at ~40% of raw score
             scores[emotion] = score
