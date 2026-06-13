@@ -5458,20 +5458,37 @@ async def chat_telegram_webhook(update: dict, secret: str = ''):
     reply_to = msg.get('reply_to_message') or {}
     reply_to_id = reply_to.get('message_id')
 
-    # Only act on a reply to one of our forwarded messages.
-    if not text or not reply_to_id or not supabase:
+    # Ignore empty messages and bot commands (e.g. /start).
+    if not text or text.startswith('/') or not supabase:
         return {"ok": True}
 
     try:
-        found = (
-            supabase.table('chat_messages')
-            .select('conversation_id')
-            .eq('telegram_message_id', reply_to_id)
-            .limit(1)
-            .execute()
-        )
-        if found.data:
-            conv = found.data[0]['conversation_id']
+        conv = None
+        # Precise routing: owner replied to a specific forwarded message.
+        if reply_to_id:
+            found = (
+                supabase.table('chat_messages')
+                .select('conversation_id')
+                .eq('telegram_message_id', reply_to_id)
+                .limit(1)
+                .execute()
+            )
+            if found.data:
+                conv = found.data[0]['conversation_id']
+        # Fallback: a plain message with no reply-to (watch / notification quick
+        # replies drop the reply context) routes to the most recent visitor thread.
+        if not conv:
+            recent = (
+                supabase.table('chat_messages')
+                .select('conversation_id')
+                .eq('sender', 'visitor')
+                .order('id', desc=True)
+                .limit(1)
+                .execute()
+            )
+            if recent.data:
+                conv = recent.data[0]['conversation_id']
+        if conv:
             supabase.table('chat_messages').insert({
                 'conversation_id': conv,
                 'sender': 'owner',
