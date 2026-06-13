@@ -84,6 +84,11 @@ def send_pushover_notification(title: str, message: str):
 # ---------------------------------------------------------------------------
 matcher = TrackMatcher()
 supabase = None
+# Telegram chat-widget bridge — values set as Railway env vars (never in code/git)
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_OWNER_CHAT_ID = os.getenv('TELEGRAM_OWNER_CHAT_ID', '')
+TELEGRAM_WEBHOOK_SECRET = os.getenv('TELEGRAM_WEBHOOK_SECRET', '')
+CHAT_BACKEND_URL = os.getenv('BACKEND_PUBLIC_URL', 'https://analyze.freshlybakedstudios.com')
 access_tokens: dict = {}  # DEPRECATED — kept for backwards compat during migration
 NDA_VERSION = "2026-03-v1"
 job_mgr = JobManager()
@@ -176,6 +181,23 @@ async def lifespan(app: FastAPI):
         job_mgr.set_supabase(supabase)
     else:
         print("⚠️  SUPABASE_URL/SUPABASE_SERVICE_KEY not set - some features disabled")
+
+    # Self-register the Telegram webhook so the chat widget works without any
+    # manual setWebhook step. No-op if the bot token/secret aren't configured.
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET:
+        try:
+            hook_url = (
+                f"{CHAT_BACKEND_URL}/api/chat/telegram-webhook"
+                f"?secret={TELEGRAM_WEBHOOK_SECRET}"
+            )
+            requests.get(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
+                params={'url': hook_url, 'allowed_updates': '["message"]'},
+                timeout=10,
+            )
+            print("✅ Telegram chat webhook registered")
+        except Exception as e:
+            print(f"⚠️  Telegram webhook registration failed: {e}")
 
     # Start resource-switching activity monitor
     activity_thread = threading.Thread(target=_check_idle_and_notify, daemon=True)
@@ -5330,6 +5352,136 @@ def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
     except Exception as e:
         print(f"Contract email send failed: {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# Chat widget — visitor <-> owner-via-Telegram bridge
+# ---------------------------------------------------------------------------
+def _telegram_api(method: str, payload: dict):
+    """Call the Telegram Bot API. Returns parsed JSON or None."""
+    if not TELEGRAM_BOT_TOKEN:
+        return None
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}",
+            json=payload,
+            timeout=10,
+        )
+        return r.json()
+    except Exception as e:
+        print(f"Telegram {method} error: {e}")
+        return None
+
+
+@app.post("/api/chat/send")
+async def chat_send(data: dict):
+    """Visitor sends a message: store it and forward to the owner's Telegram."""
+    conv = (data.get('conversation_id') or '').strip()
+    text = (data.get('text') or '').strip()
+    contact = (data.get('contact') or '').strip() or None
+    if not conv or not text:
+        raise HTTPException(400, "conversation_id and text required")
+
+    row_id = None
+    if supabase:
+        try:
+            res = supabase.table('chat_messages').insert({
+                'conversation_id': conv,
+                'sender': 'visitor',
+                'text': text,
+                'visitor_contact': contact,
+                'created_at': datetime.utcnow().isoformat(),
+            }).execute()
+            if res.data:
+                row_id = res.data[0].get('id')
+        except Exception as e:
+            print(f"chat_send insert error: {e}")
+
+    # Forward to the owner's Telegram with a conversation tag. The owner replies
+    # to that Telegram message; the webhook maps the reply back to this thread.
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_OWNER_CHAT_ID:
+        header = f"💬 [#{conv[:8]}]"
+        if contact:
+            header += f"  ·  {contact}"
+        body = f"{header}\n{text}\n\n↩️ Reply to this message to respond."
+        sent = _telegram_api('sendMessage', {
+            'chat_id': TELEGRAM_OWNER_CHAT_ID,
+            'text': body,
+        })
+        try:
+            tg_msg_id = sent['result']['message_id'] if sent and sent.get('ok') else None
+        except Exception:
+            tg_msg_id = None
+        # Record which Telegram message corresponds to this conversation so a
+        # reply-to can be routed back to the right visitor.
+        if tg_msg_id and supabase and row_id is not None:
+            try:
+                supabase.table('chat_messages').update({
+                    'telegram_message_id': tg_msg_id,
+                }).eq('id', row_id).execute()
+            except Exception as e:
+                print(f"chat_send tg-map error: {e}")
+
+    return {"ok": True}
+
+
+@app.get("/api/chat/poll")
+async def chat_poll(conversation_id: str, after_id: int = 0):
+    """Widget polls for new owner replies in this conversation."""
+    if not supabase:
+        return {"messages": []}
+    try:
+        res = (
+            supabase.table('chat_messages')
+            .select('id,text,created_at')
+            .eq('conversation_id', conversation_id)
+            .eq('sender', 'owner')
+            .gt('id', after_id)
+            .order('id')
+            .execute()
+        )
+        return {"messages": res.data or []}
+    except Exception as e:
+        print(f"chat_poll error: {e}")
+        return {"messages": []}
+
+
+@app.post("/api/chat/telegram-webhook")
+async def chat_telegram_webhook(update: dict, secret: str = ''):
+    """Telegram calls this when the owner replies. Route the reply to the
+    correct visitor thread via the replied-to message id."""
+    if not TELEGRAM_WEBHOOK_SECRET or secret != TELEGRAM_WEBHOOK_SECRET:
+        raise HTTPException(403, "forbidden")
+
+    msg = update.get('message') or {}
+    text = (msg.get('text') or '').strip()
+    reply_to = msg.get('reply_to_message') or {}
+    reply_to_id = reply_to.get('message_id')
+
+    # Only act on a reply to one of our forwarded messages.
+    if not text or not reply_to_id or not supabase:
+        return {"ok": True}
+
+    try:
+        found = (
+            supabase.table('chat_messages')
+            .select('conversation_id')
+            .eq('telegram_message_id', reply_to_id)
+            .limit(1)
+            .execute()
+        )
+        if found.data:
+            conv = found.data[0]['conversation_id']
+            supabase.table('chat_messages').insert({
+                'conversation_id': conv,
+                'sender': 'owner',
+                'text': text,
+                'created_at': datetime.utcnow().isoformat(),
+            }).execute()
+    except Exception as e:
+        print(f"chat_webhook error: {e}")
+
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
