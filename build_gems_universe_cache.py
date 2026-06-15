@@ -778,6 +778,9 @@ class UniverseCacheBuilder:
             cache['tiers'].update(new_tiers)
         else:
             print("   ✅ No new GEMS records — skipping new-data fetch.")
+            # Define so the stats block below doesn't UnboundLocalError on
+            # zero-new-GEMS days (this path also runs in the 5AM cron).
+            new_artists = {}
 
         # Always refresh genre columns on existing entries (the patch).
         # Cheap (~1-2 min for the lightweight string columns) and ensures
