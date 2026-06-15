@@ -400,8 +400,40 @@ def candidate_lane_families(m: Dict) -> Set[str]:
     return _genre_families(*cand)
 
 
+# Categorically blocked genres — never surfaced as comps/matches regardless of
+# sonic similarity. Seasonal + kids/novelty productions are bright, simple, and
+# vocal-forward, so they score spuriously close to airy pop captures, but they
+# are never a legitimate reference artist. Matched as raw substrings against ALL
+# of a candidate's genre tags (these map to the 'pop' family, so the lane gate
+# alone won't catch them). Applies everywhere match_in_lane is used.
+BLOCKED_GENRE_TOKENS = (
+    'christmas', 'holiday', 'seasonal',
+    "children", "child's", 'kids', 'nursery', 'lullab',  # lullaby/lullabies
+)
+
+
+def is_blocked_genre(m: Dict) -> bool:
+    """True if any of the candidate's raw genre tags is a categorically
+    blocked genre (christmas / holiday / children's / kids)."""
+    parts = []
+    for field in ('primary_genre', 'secondary_genre'):
+        g = m.get(field)
+        if g:
+            parts.append(g)
+    parts.extend(m.get('artist_genres') or [])
+    parts.extend(m.get('track_genres') or [])
+    blob = ' , '.join(parts).lower()
+    return any(tok in blob for tok in BLOCKED_GENRE_TOKENS)
+
+
 def match_in_lane(m: Dict, allowed: Set[str]) -> bool:
-    """Canonical gate applied to a matcher match dict."""
+    """Canonical gate applied to a matcher match dict.
+
+    Categorically blocked genres (christmas/holiday/children's) are dropped
+    first, before any lane logic — they're never valid comps even with no lane.
+    """
+    if is_blocked_genre(m):
+        return False
     if not allowed:
         return True
     primary = (m.get('primary_genre') or '').strip()
