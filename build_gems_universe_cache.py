@@ -13,6 +13,13 @@ from datetime import datetime
 from pathlib import Path
 
 from supabase import create_client
+try:
+    from supabase.client import ClientOptions
+except Exception:  # older/newer client layout
+    try:
+        from supabase.lib.client_options import ClientOptions
+    except Exception:
+        ClientOptions = None
 
 
 def _safe_int(v):
@@ -64,7 +71,20 @@ GEMS_COLUMNS = [
 
 class UniverseCacheBuilder:
     def __init__(self, supabase_url, service_key, max_pages=None):
-        self.supabase = create_client(supabase_url, service_key)
+        # Hard per-request timeout so a stuck PostgREST call errors out instead
+        # of hanging the whole build forever (the events fetch hung indefinitely
+        # with no timeout, which the retry loop couldn't catch — it only catches
+        # exceptions, not infinite blocks).
+        if ClientOptions is not None:
+            try:
+                self.supabase = create_client(
+                    supabase_url, service_key,
+                    options=ClientOptions(postgrest_client_timeout=60),
+                )
+            except Exception:
+                self.supabase = create_client(supabase_url, service_key)
+        else:
+            self.supabase = create_client(supabase_url, service_key)
         root = Path(__file__).resolve().parent
         self.cache_dir = root / 'cache' / 'universe'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -358,7 +378,10 @@ class UniverseCacheBuilder:
                         print(f"\n   ⚠️  Timeout on batch, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
                         time.sleep(wait_time)
                     else:
-                        raise
+                        print(f"\n   ⚠️  Brand-affinity batch failed after {max_retries} tries — skipping: {str(e)[:80]}")
+                        rows = None
+            if rows is None:
+                continue
 
             for r in rows.data or []:
                 aid = r.get('artist_id')
@@ -407,7 +430,13 @@ class UniverseCacheBuilder:
                         print(f"\n   ⚠️  Timeout on batch, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
                         time.sleep(wait_time)
                     else:
-                        raise
+                        # Events are non-critical enrichment — skip this batch
+                        # rather than crash the whole build (which would lose the
+                        # genre/emotion fix that ran earlier).
+                        print(f"\n   ⚠️  Events batch failed after {max_retries} tries — skipping: {str(e)[:80]}")
+                        rows = None
+            if rows is None:
+                continue
 
             for r in rows.data or []:
                 aid = r.get('artist_id')
