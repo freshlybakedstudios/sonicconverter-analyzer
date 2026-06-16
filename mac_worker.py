@@ -319,6 +319,20 @@ def _play_track(track_id: str, device_id: str = None) -> bool:
         timeout=10,
     )
     if resp.status_code in (200, 204):
+        # The Web API can return success (and later report is_playing=true)
+        # while the desktop app stays paused after a device transfer — so
+        # Loopback records silence and the capture fails intermittently.
+        # Force the local Spotify app to actually start rendering audio via
+        # AppleScript. The Web API has already loaded the correct track URI on
+        # this device; this just guarantees real playback. Best-effort: never
+        # let a scripting hiccup break the worker.
+        try:
+            subprocess.run(
+                ['osascript', '-e', 'tell application "Spotify" to play'],
+                capture_output=True, timeout=10,
+            )
+        except Exception as e:
+            print(f"AppleScript play nudge failed (continuing): {e}")
         return True
     print(f"Play failed: {resp.status_code} {resp.text[:100]}")
     return False
