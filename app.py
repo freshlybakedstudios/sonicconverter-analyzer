@@ -830,6 +830,40 @@ def _listeners_to_tier(listeners: int) -> str:
     return 'unknown'
 
 
+# --- Trajectory-target market weighting -------------------------------------
+# Non-Anglophone-market pop/regional tags. These routinely score high *sonic*
+# matches against bright Western pop (shared production aesthetic), but a US/UK
+# pitch deck shouldn't open with four J-pop superstars stacked on top. We do NOT
+# drop or band them — they're real matches and a strong one can still rank high.
+# We just apply a SLIGHT similarity penalty so same-market peers interleave and
+# break up the run. Tuning is two dials: edit the token tuple (add
+# 'latin'/'spanish' to nudge those too, drop a token to let that market rank
+# natively) and NON_NATIVE_TRAJECTORY_PENALTY (bigger = pushes them down harder;
+# 0 = off). Auto-disabled when the user is themselves a non-native artist.
+NON_NATIVE_TRAJECTORY_PENALTY = 0.03  # ~ erases the typical foreign sonic edge so they interleave
+NON_NATIVE_TRAJECTORY_TOKENS = (
+    # East / SE Asian markets
+    'j-pop', 'j-rock', 'j-rap', 'japanese', 'anime', 'city pop',
+    'k-pop', 'k-rap', 'k-rock', 'korean',
+    'c-pop', 'cantopop', 'mandopop', 'chinese', 'taiwanese', 'hong kong',
+    'thai', 'vietnamese', 'indonesian', 'malaysian', 'opm', 'pinoy',
+    # Non-Anglophone European / other markets
+    'italian', 'french', 'german', 'greek', 'turkish', 'russian',
+    'hebrew', 'israeli', 'arabic', 'hindi', 'bollywood', 'persian',
+)
+
+
+def _is_non_native_market(*genre_strings) -> bool:
+    blob = ' '.join(g for g in genre_strings if g).lower()
+    return any(tok in blob for tok in NON_NATIVE_TRAJECTORY_TOKENS)
+
+
+def _cand_non_native(m: dict) -> bool:
+    parts = [m.get('primary_genre') or '', m.get('secondary_genre') or '']
+    parts += [g for g in (m.get('artist_genres') or []) if g]
+    return _is_non_native_market(*parts)
+
+
 # ---------------------------------------------------------------------------
 # Track-level momentum panel — empirical peer comparison for the scanned track.
 # Compares the scanned track's track-level signals (popularity / cm_score /
@@ -2394,6 +2428,9 @@ async def analyze(
 
             # Use family-based filtering (same as Similar Artists)
             user_families = _genre_families(genre or '')
+            # Market banding: only demote foreign-market targets when the USER
+            # is an Anglophone-market artist themselves (else it's not "foreign").
+            user_non_native = _is_non_native_market(genre or '')
             print(f"  Flattery: user families = {user_families}")
 
             flattery_candidates = []
@@ -2440,9 +2477,13 @@ async def analyze(
                     pronoun_boost = 0.035  # 3.5% boost for matching pronouns
 
                 total_boost = genre_boost + pronoun_boost
-                flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
+                # Slight market penalty: nudge foreign-market targets down so they
+                # interleave with same-market peers instead of stacking on top.
+                nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _is_non_native_market(*cand_genre_parts)) else 0.0
+                score = m.get('similarity', 0) + total_boost - nn_penalty
+                flattery_candidates.append((cand_tier_num, score, m, cand_pronoun))
 
-            # Sort by tier (highest first), then sonic similarity as tiebreaker
+            # Sort by tier (highest first), then market-weighted sonic similarity.
             flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
             # Debug: show top candidates with pronoun info
@@ -4236,6 +4277,9 @@ async def analyze_url(
     if user_tier and all_matches_unfiltered:
         tier_order_map = {t: i for i, t in enumerate(TIER_RANGES.keys())}
         user_tier_num = tier_order_map.get(user_tier, 0)
+        # Market banding: demote foreign-market targets to a second band, but
+        # only when the user is an Anglophone-market artist themselves.
+        user_non_native = _is_non_native_market(artist_genre or '', track_genre or '', genre or '')
         flattery_candidates = []
         seen_artists = set()
         for m in all_matches_unfiltered:
@@ -4261,9 +4305,13 @@ async def analyze_url(
                 shared = candidate_lane_families(m) & track_user_families
                 total_boost += 0.05 * len(shared)
             cand_pronoun = m.get('pronoun_title', 'They')
-            flattery_candidates.append((cand_tier_num, m.get('similarity', 0) + total_boost, m, cand_pronoun))
+            # Slight market penalty: nudge foreign-market targets down so they
+            # interleave with same-market peers instead of stacking on top.
+            nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _cand_non_native(m)) else 0.0
+            score = m.get('similarity', 0) + total_boost - nn_penalty
+            flattery_candidates.append((cand_tier_num, score, m, cand_pronoun))
 
-        # Sort by tier (highest first), then sonic similarity as tiebreaker
+        # Sort by tier (highest first), then market-weighted sonic similarity.
         flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
         if flattery_candidates:
