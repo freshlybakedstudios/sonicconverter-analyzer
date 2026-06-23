@@ -506,6 +506,7 @@ class TrackMatcher:
         self._artists = {}
         self._tiers = {}
         self._emotion_index = {}
+        self._cand_cache = {}
 
     def load_cache(self):
         """Load the 1.2 GB universe cache into memory."""
@@ -541,8 +542,39 @@ class TrackMatcher:
                 gem['conversion_rate'] = cr
                 enriched += 1
 
+        # Precompute static per-candidate data used by find_matches: the normalized
+        # profile, parsed track/artist genres, genre families, and emotion set. These
+        # derive ONLY from static cache rows and were previously rebuilt for EVERY
+        # track on EVERY query — the bulk of find_matches' cost. Building them once
+        # here changes no math: _similarity and all target-dependent logic are
+        # untouched; candidates without an artist_id are skipped exactly as before.
+        self._cand_cache = {}
+        for isrc, row in self._gems_by_isrc.items():
+            track_data = self._tracks.get(isrc, {})
+            artist_id = track_data.get('artist_id')
+            if not artist_id:
+                continue
+            artist_data = self._artists.get(str(artist_id), {})
+            profile = self._build_profile(row)
+            cand_emotions = {
+                profile.get('emotion_1'), profile.get('emotion_2'),
+                profile.get('emotion_3'), profile.get('emotion_4'),
+            } - {None, ''}
+            self._cand_cache[isrc] = {
+                'profile': profile,
+                'cand_emotions': cand_emotions,
+                'track_genres': _parse_track_genres(track_data.get('track_genres', '')),
+                'artist_genres': _parse_track_genres(artist_data.get('genres', '')),
+                'cand_fams': _genre_families(
+                    track_data.get('track_genres', ''),
+                    artist_data.get('genres', ''),
+                    profile.get('primary_genre', ''),
+                    profile.get('secondary_genre', ''),
+                ),
+            }
+
         stats = self.cache.get('stats', {})
-        print(f"  Loaded in {elapsed:.1f}s — {stats.get('total_gems', 0):,} GEMS records, {enriched:,} enriched with conversion_rate")
+        print(f"  Loaded in {elapsed:.1f}s — {stats.get('total_gems', 0):,} GEMS records, {enriched:,} enriched with conversion_rate, {len(self._cand_cache):,} candidate profiles precomputed")
 
     def _build_profile(self, row: Dict) -> Dict:
         """Convert a GEMS cache row into a normalized profile dict."""
@@ -778,28 +810,19 @@ class TrackMatcher:
         all_scored = []  # Score ALL tracks first, dedupe later
 
         for isrc in candidate_isrcs:
-            row = self._gems_by_isrc.get(isrc)
-            if not row:
+            # Static per-candidate data precomputed at load (no artist_id -> absent,
+            # same candidates skipped as before). _similarity below is unchanged.
+            cand = self._cand_cache.get(isrc)
+            if not cand:
                 continue
 
-            profile = self._build_profile(row)
-
-            # Quick emotion pre-check (need at least 1 overlap)
-            cand_emotions = {
-                profile.get('emotion_1'),
-                profile.get('emotion_2'),
-                profile.get('emotion_3'),
-                profile.get('emotion_4'),
-            } - {None, ''}
+            profile = cand['profile']
+            cand_emotions = cand['cand_emotions']
+            track_genres = cand['track_genres']
+            cand_artist_genres = cand['artist_genres']
 
             track_data = self._tracks.get(isrc, {})
-            track_genres = _parse_track_genres(track_data.get('track_genres', ''))
             artist_id = track_data.get('artist_id')
-            if not artist_id:
-                continue
-            cand_artist_genres = _parse_track_genres(
-                self._artists.get(str(artist_id), {}).get('genres', '')
-            )
 
             similarity, breakdown = self._similarity(
                 target_profile, profile, target_genre_words, track_genres,
@@ -856,7 +879,7 @@ class TrackMatcher:
 
             # Incompatible genre filter
             artist_data = self._artists.get(str(artist_id), {})
-            artist_genres = _parse_track_genres(artist_data.get('genres', ''))
+            artist_genres = cand['artist_genres']
             cand_all = track_genres | artist_genres
             skip = False
             for pair in INCOMPATIBLE_GENRE_PAIRS:
@@ -870,12 +893,7 @@ class TrackMatcher:
             # Genre family penalty — penalise candidates from a different genre family
             # so that e.g. "art rock" prioritises rock tracks over metal tracks.
             if target_genre_words:
-                cand_fams = _genre_families(
-                    track_data.get('track_genres', ''),
-                    artist_data.get('genres', ''),
-                    profile.get('primary_genre', ''),
-                    profile.get('secondary_genre', ''),
-                )
+                cand_fams = cand['cand_fams']
                 if target_fams:
                     if not cand_fams:
                         # Candidate has no recognisable genre → heavy penalty
