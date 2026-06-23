@@ -4749,8 +4749,9 @@ async def deal_lookup(
 
         # Match against GEMS universe
         try:
+            _tfm = time.time()
             all_matches = matcher.find_matches(features, genre_hint=genres_str, top_n=5000, threshold=0.55)
-            print(f"Deal lookup: {len(all_matches)} sonic matches found")
+            print(f"[TIMING] find_matches: {time.time()-_tfm:.1f}s ({len(all_matches)} matches)")
 
             # Canonical genre gate (track_matcher.match_in_lane) — same rules as
             # Similar Artists / trajectory / email refs. Without this, the sonic
