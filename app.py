@@ -4640,7 +4640,9 @@ async def deal_lookup(
         raise HTTPException(400, "Valid Spotify URL required")
 
     # 1. Look up artist via existing function (upserts fire automatically)
+    _t0 = time.time()
     artist_data = lookup_artist_by_spotify(spotify_url)
+    print(f"[TIMING] artist fetch (chartmetric): {time.time()-_t0:.1f}s")
     if not artist_data:
         raise HTTPException(404, "Artist not found on Spotify/Chartmetric")
 
@@ -4922,6 +4924,8 @@ async def deal_lookup(
     platform_multiplier = min(platform_multiplier, 3.0)
     print(f"Deal lookup: platform multiplier = {platform_multiplier:.2f}x for {artist_data.get('name')}")
 
+    print(f"[TIMING] through sonic + platform: {time.time()-_t0:.1f}s")
+
     # 5. Fetch historical data — use Supabase snapshots (all platforms) + CM API fallback (Spotify only)
     listener_history = []
     platform_history = {}  # All platform snapshots from Supabase
@@ -5094,6 +5098,8 @@ async def deal_lookup(
         "Deal Calculator Lookup",
         f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners"
     )
+
+    print(f"[TIMING] through history + events (total): {time.time()-_t0:.1f}s")
 
     # Extract image URL from Chartmetric metadata
     image_url = None
