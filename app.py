@@ -4687,62 +4687,43 @@ async def deal_lookup(
     top_track = artist_data.get('top_track')
     features = None
 
+    _artist_cm_id = artist_data.get('cm_id')
+
+    # 1) Newest track: try cached GEMS features by ISRC (proven path).
     if top_track and top_track.get('isrc'):
         isrc = top_track['isrc']
-        # Try cached features first
         features = _lookup_gems_features(isrc)
         if features:
-            print(f"Deal lookup: using cached GEMS features for ISRC {isrc}")
+            print(f"Deal lookup: using cached GEMS features for newest-track ISRC {isrc}")
         else:
-            print(f"Deal lookup: no GEMS cache for ISRC {isrc}")
+            print(f"Deal lookup: newest-track ISRC {isrc} not cached")
 
-    # If no cached features, use Mac worker to play + record via Spotify desktop
-    if not features and top_track and top_track.get('spotify_url'):
-        track_url = top_track['spotify_url']
-        print(f"Deal lookup: no cached features, creating job for Mac worker — {track_url}")
-        # Pause local scripts before Mac worker captures audio
-        _notify_local_pipeline('user_active')
+    # 2) Cache-first fallback: if the newest track isn't cached, reuse ANY already-
+    #    analyzed track by this artist instead of a slow live scan. A cached track is
+    #    still the artist's real music — a valid basis for the production-gap recs.
+    #    Find the most representative cached track in-memory (instant), then load its
+    #    canonical features via the same proven path.
+    if not features and _artist_cm_id and matcher._gems_list:
+        aid = str(_artist_cm_id)
+        candidates = sorted(
+            [g for g in matcher._gems_list
+             if str(g.get('artist_id', '')) == aid and g.get('isrc')],
+            key=lambda g: g.get('sp_track_popularity') or 0, reverse=True,
+        )
+        for g in candidates:
+            features = _lookup_gems_features(g['isrc'])
+            if features:
+                print(f"Deal lookup: newest track uncached — using cached track "
+                      f"{g['isrc']} for artist {aid} ({len(candidates)} cached candidates)")
+                break
 
-        try:
-            # Create a Supabase job so Mac worker picks it up
-            deal_job_id = job_mgr.create_job('deal-lookup', {}, [])
-            job_mgr.update_job(deal_job_id, status='pending_features', spotify_url=track_url)
-            print(f"Deal lookup: created job {deal_job_id}, waiting for Mac worker (up to 150s)...")
-
-            def _poll_deal_features():
-                if not job_mgr._supabase:
-                    return None
-                try:
-                    resp = job_mgr._supabase.table('analysis_jobs').select('status,features').eq('id', deal_job_id).execute()
-                    if resp.data:
-                        row = resp.data[0]
-                        if row.get('status') == 'features_ready':
-                            f = row.get('features', {})
-                            if isinstance(f, str):
-                                f = json.loads(f)
-                            return f
-                except Exception as e:
-                    print(f"Deal lookup: poll error: {e}")
-                return None
-
-            loop = asyncio.get_event_loop()
-            deadline = time.time() + 150
-            while time.time() < deadline:
-                result = await loop.run_in_executor(None, _poll_deal_features)
-                if result:
-                    features = result
-                    print(f"Deal lookup: features received from Mac worker")
-                    # Cache for next time
-                    if top_track.get('isrc'):
-                        genres_str = artist_data.get('genres', '')
-                        _upsert_gems_features(top_track['isrc'], features, genre=genres_str)
-                    break
-                await asyncio.sleep(3)
-
-            if not features:
-                print(f"Deal lookup: Mac worker timed out after 150s")
-        except Exception as e:
-            print(f"Deal lookup: Mac worker job failed: {e}")
+    # 3) No cached tracks for this artist (truly new/unknown): skip the slow live
+    #    scan and stay instant. Qualification + conversion gap still render; sonic
+    #    production recs are simply omitted for these rare cases ("skip recs, stay
+    #    instant" — the deal calc's job is qualification, not the scan).
+    if not features:
+        print(f"Deal lookup: no cached features for artist {_artist_cm_id} — "
+              f"skipping live scan (instant), no sonic recs this run")
 
     # If we have features, run sonic matching to get conversion opportunity + gap
     print(f"Deal lookup: features={'yes' if features else 'NO'}, gems_list={len(matcher._gems_list) if matcher._gems_list else 0}")
