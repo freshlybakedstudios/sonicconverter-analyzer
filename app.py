@@ -873,6 +873,11 @@ def _cand_non_native(m: dict) -> bool:
 # $0.13/listener/year rate (Loud & Clear 2025). Empirical lookup, not a model.
 # ---------------------------------------------------------------------------
 REVENUE_PER_LISTENER_PER_YEAR = 0.13  # Loud & Clear 2025 mid-tier per-listener annualized
+# All-in revenue per *converted fan* per year (streaming + merch + tickets).
+# $5 is the top of the defensible range; the old $25 couldn't survive
+# manager/lawyer scrutiny. Single source of truth — used by both the deal
+# calculator lookup and the main sonic analyzer so the two never diverge.
+REVENUE_PER_FAN_PER_YEAR = 5
 
 def _safe_int(v):
     try: return int(v) if v is not None else 0
@@ -2638,7 +2643,7 @@ async def analyze(
                 top25_followers_target = int(round((peer_top_25 / 100) * u_listeners * 4.3 / 0.1))
                 current_followers = u_followers if u_followers > 0 else 0
                 additional_fans = max(int(round(top25_followers_target - current_followers)), 0)
-                additional_revenue = additional_fans * 25
+                additional_revenue = additional_fans * REVENUE_PER_FAN_PER_YEAR
 
             # Estimated save rate range from follower conversion (proxy)
             # Based on industry benchmarks: Playlist Push, LoudLab, Chartlex
@@ -4419,7 +4424,7 @@ async def analyze_url(
             target_followers = int(round((target_rate / 100) * u_listeners * 4.3 / 0.1))
             current_followers = u_followers if u_followers > 0 else 0
             additional_fans = max(int(round(target_followers - current_followers)), 0)
-            additional_revenue = additional_fans * 25
+            additional_revenue = additional_fans * REVENUE_PER_FAN_PER_YEAR
 
         # Estimated save rate range from follower conversion (proxy)
         conv = u_conversion or 0.5
@@ -4643,6 +4648,10 @@ async def deal_lookup(
     followers = artist_data.get('followers', 0) or 0
     tier = artist_data.get('tier') or _listeners_to_tier(int(listeners))
     conversion_rate = artist_data.get('conversion_rate', 0) or 0
+    # Cap at 15% — same sanity bound the analyzer applies — so stale-follower
+    # outliers (more followers than listeners) don't show an inflated rate.
+    if conversion_rate > 15.0:
+        conversion_rate = 15.0
 
     # 2. Peer comparison: filter GEMS cache by tier
     peer_comparison = None
@@ -4857,10 +4866,7 @@ async def deal_lookup(
                         target_followers = int(round((target_cr / 100) * listeners * 4.3 / 0.1))
                         current_followers = int(followers) if followers > 0 else 0
                         additional_fans = max(int(round(target_followers - current_followers)), 0)
-                        # $5/fan/year — top of the defensible all-in range
-                        # (streaming + merch + tickets) per fan-revenue research;
-                        # was $25 which couldn't survive manager/lawyer scrutiny.
-                        additional_revenue = additional_fans * 5
+                        additional_revenue = additional_fans * REVENUE_PER_FAN_PER_YEAR
 
                         conversion_opportunity = {
                             'additional_fans': additional_fans,
@@ -4891,7 +4897,7 @@ async def deal_lookup(
             current_followers_equiv = conversion_rate * listeners * 4.3 / (0.1 * 100)
             target_followers_equiv = target_cr * listeners * 4.3 / (0.1 * 100)
             additional_fans = max(int(target_followers_equiv - current_followers_equiv), 0)
-            additional_revenue = additional_fans * 25  # $25/fan/year
+            additional_revenue = additional_fans * REVENUE_PER_FAN_PER_YEAR
             conversion_opportunity = {
                 'additional_fans': additional_fans,
                 'additional_revenue': additional_revenue,
