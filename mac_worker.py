@@ -686,15 +686,42 @@ def process_job(job: dict, loopback_device: int):
         update_job(job_id, 'error')
         return
 
-    # Quick audio routing check (same as GEMS pipeline)
-    try:
-        test_audio = sd.rec(int(0.5 * SAMPLE_RATE), samplerate=SAMPLE_RATE,
-                            channels=2, device=loopback_device, blocking=True)
-        if np.max(np.abs(test_audio)) < 0.001:
-            print(f"[{job_id[:8]}] Audio routing check: no signal, waiting 3s...")
-            time.sleep(3)
-    except Exception:
-        pass
+    # Active audio-routing gate. The Web API can report is_playing=true while the
+    # desktop app hasn't actually started rendering into Loopback yet — so the
+    # old passive "no signal, wait 3s, sample anyway" path captured pure silence
+    # and failed all 3 samples. Instead, probe the loopback device and, if it's
+    # silent, re-nudge Spotify via AppleScript and re-probe — up to N times —
+    # before giving up. This is the reliability fix for the intermittent
+    # silent-capture bug.
+    def _loopback_has_signal():
+        try:
+            test = sd.rec(int(0.5 * SAMPLE_RATE), samplerate=SAMPLE_RATE,
+                          channels=2, device=loopback_device, blocking=True)
+            return float(np.max(np.abs(test))) >= 0.001
+        except Exception:
+            return False
+
+    for routing_try in range(5):
+        if _loopback_has_signal():
+            if routing_try:
+                print(f"[{job_id[:8]}] Loopback signal acquired after {routing_try} nudge(s)")
+            break
+        print(f"[{job_id[:8]}] No loopback signal (try {routing_try + 1}/5) — nudging Spotify play...")
+        try:
+            # A bare "play" is a no-op when the desktop app already reports
+            # playing but audio isn't routing to Loopback (the real 20:11 failure
+            # — 5 plain nudges all yielded silence). Force a pause→play TRANSITION
+            # so the app tears down and re-attaches its audio output into Loopback.
+            subprocess.run(['osascript',
+                            '-e', 'tell application "Spotify" to pause',
+                            '-e', 'delay 0.3',
+                            '-e', 'tell application "Spotify" to play'],
+                           capture_output=True, timeout=10)
+        except Exception as e:
+            print(f"[{job_id[:8]}] play nudge failed (continuing): {e}")
+        time.sleep(2)
+    else:
+        print(f"[{job_id[:8]}] WARNING: still no loopback signal after 5 nudges — sampling anyway")
 
     # Sample at 3 positions: 25%, 50%, 75%
     sample_points = [
@@ -726,6 +753,25 @@ def process_job(job: dict, loopback_device: int):
 
         _seek_to(pos_ms)
         time.sleep(1.5)  # Match GEMS pipeline settle time
+
+        # A seek can leave Spotify briefly silent/buffering even while the Web
+        # API still reports is_playing=true. Probe the loopback and re-nudge via
+        # AppleScript before recording, so we never capture a silent sample just
+        # because the seek hadn't re-attached audio yet.
+        for _ in range(3):
+            if _loopback_has_signal():
+                break
+            try:
+                # pause→play transition (not a bare play) — re-attaches audio to
+                # Loopback when the app reports playing but isn't routing.
+                subprocess.run(['osascript',
+                                '-e', 'tell application "Spotify" to pause',
+                                '-e', 'delay 0.3',
+                                '-e', 'tell application "Spotify" to play'],
+                               capture_output=True, timeout=10)
+            except Exception:
+                pass
+            time.sleep(1.5)
 
         mono, stereo_buf = _record_sample(loopback_device)
         if mono is not None:
