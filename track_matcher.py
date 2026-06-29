@@ -334,6 +334,30 @@ ELECTRONIC_SUBGENRES = frozenset({'jungle', 'dnb', 'garage', 'breaks', 'breakcor
 _ROCK_CLUSTER = frozenset({'rock', 'indie', 'pop', 'punk', 'r&b'})
 
 
+def dominant_lane_families(genre_strings) -> Set[str]:
+    """Like _genre_families, but drops a stray-minority EXCLUSIVE family from a
+    target's lane. A futurepop/aggrotech act often carries one noisy regional
+    tag ('german metal') that resolves to 'metal' and wrongly opens a metal
+    lane, so metal acts pass as same-family. Count families across the target's
+    tags; drop an EXCLUSIVE family only when it's a lone tag (<=1) while another
+    family is clearly dominant (>=2). A genuinely metal act — where 'metal' is
+    the top family — is unaffected. Conservative: never drops on a tie.
+    """
+    counts: Dict[str, int] = {}
+    for gs in genre_strings:
+        for fam in _genre_families(gs):
+            counts[fam] = counts.get(fam, 0) + 1
+    if not counts:
+        return set()
+    fams = set(counts)
+    top = max(counts.values())
+    if top >= 2:
+        for fam in list(fams):
+            if fam in EXCLUSIVE_FAMILIES and counts[fam] <= 1 and counts[fam] < top:
+                fams.discard(fam)
+    return fams
+
+
 def lane_strong_foreign(allowed: Set[str]) -> Set[str]:
     """Lane-aware strong-foreign family set (applied at cf + primary levels)."""
     strong = set(EXCLUSIVE_FAMILIES)
