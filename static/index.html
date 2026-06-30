@@ -370,6 +370,10 @@
     <!-- RESULTS -->
     <section class="section hidden" id="results-section">
 
+      <div class="results-toolbar">
+        <button class="csv-download-btn pdf-download-btn hidden" id="pdf-download-btn" title="Download a one-card-per-page PDF report">Download PDF</button>
+      </div>
+
       <!-- 1. Artist Card -->
       <div class="artist-card hidden" id="artist-card">
         <div class="artist-card-header">
@@ -683,6 +687,7 @@
     </div>
   </footer>
 
-  <script src="/static/app.js?v=20260529-1"></script>
+  <script src="/static/vendor/jspdf.umd.min.js"></script>
+  <script src="/static/app.js?v=20260630-1"></script>
 </body>
 </html>

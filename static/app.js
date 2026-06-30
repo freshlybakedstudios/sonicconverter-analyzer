@@ -531,6 +531,7 @@ function startSSE(jobId) {
   eventSource.addEventListener('campaign_forecast', (e) => {
     const data = JSON.parse(e.data);
     data._complete = true;
+    window._lastCampaignForecast = data;  // for PDF export
     renderCampaignForecast(data);
   });
 
@@ -596,6 +597,13 @@ function renderResults(data) {
   const genreAlignment = data.genre_alignment || null;
   const userProfile = data.user_profile || null;
   const flatteryMatches = data.flattery_matches || [];
+
+  // Stash the full result so the PDF export can rebuild the metric cards
+  // without recomputing anything (campaign forecast is stashed separately
+  // when its SSE event arrives — see startSSE).
+  window._lastAnalysisResult = data;
+  const pdfBtn = $('#pdf-download-btn');
+  if (pdfBtn) pdfBtn.classList.remove('hidden');
 
   // Descriptive labels for numeric features
   function energyLabel(v) {
@@ -2439,6 +2447,236 @@ function downloadCuratorCSV() {
 (function() {
   const btn = document.getElementById('curator-csv-btn');
   if (btn) btn.addEventListener('click', downloadCuratorCSV);
+})();
+
+// -------------------------------------------------------
+// PDF Export — one metric card per page (slide-deck style)
+// Pure client-side: rebuilds the cards from the result already
+// in the browser (window._lastAnalysisResult) + the campaign
+// forecast SSE payload (window._lastCampaignForecast). No backend.
+// -------------------------------------------------------
+function generateAnalysisPDF() {
+  const lib = window.jspdf;
+  if (!lib || !lib.jsPDF) { alert('PDF library not loaded — please refresh and try again.'); return; }
+  const d = window._lastAnalysisResult;
+  if (!d) { alert('Run an analysis first.'); return; }
+
+  const doc = new lib.jsPDF({ unit: 'pt', format: 'letter', orientation: 'portrait' });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 54;
+
+  const INK = [22, 24, 30], MUTED = [120, 124, 134], ACCENT = [34, 197, 94], HAIR = [225, 227, 231];
+
+  const f = d.features || {};
+  const up = d.user_profile || {};
+  const src = d.source || {};
+  const tm = up.track_momentum || {};
+  const quad = up.quadrant || {};
+  const recs = d.recommendations || [];
+  const flattery = d.flattery_matches || [];
+  const cf = window._lastCampaignForecast || null;
+  const curators = (typeof curatorRows !== 'undefined' ? curatorRows : []);
+
+  const artist = src.artist_name || up.name || 'Unknown Artist';
+  const track = src.track_name || 'Untitled Track';
+  const scanDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const compact = n => {
+    if (n == null || isNaN(n)) return '—';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return String(Math.round(n));
+  };
+  const ordinal = n => {
+    const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
+
+  // ---- drawing primitives ----
+  const cards = [];
+  const card = (kicker, draw) => cards.push({ kicker, draw });
+
+  function chrome(kicker) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, ACCENT);
+    doc.text('SONICCONVERTER', M, M);
+    doc.setFont('helvetica', 'normal'); doc.setTextColor.apply(doc, MUTED);
+    doc.text(String(kicker).toUpperCase(), W - M, M, { align: 'right' });
+    doc.setDrawColor.apply(doc, HAIR); doc.setLineWidth(0.8);
+    doc.line(M, M + 10, W - M, M + 10);
+    doc.setFontSize(8); doc.setTextColor.apply(doc, MUTED);
+    doc.text(`${track} — ${artist}`, M, H - M + 16);
+  }
+  function heading(title, y) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(26); doc.setTextColor.apply(doc, INK);
+    doc.text(doc.splitTextToSize(title, W - 2 * M), M, y);
+  }
+  function subhead(text, y) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor.apply(doc, MUTED);
+    doc.text(doc.splitTextToSize(text, W - 2 * M), M, y);
+  }
+  function bigStat(value, label, y) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(40); doc.setTextColor.apply(doc, INK);
+    doc.text(String(value), M, y);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor.apply(doc, MUTED);
+    doc.text(String(label).toUpperCase(), M, y + 20);
+  }
+  function paragraph(text, y, size, color) {
+    size = size || 12; color = color || MUTED;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(size); doc.setTextColor.apply(doc, color);
+    const lines = doc.splitTextToSize(text, W - 2 * M);
+    doc.text(lines, M, y);
+    return y + lines.length * size * 1.4;
+  }
+  function row(left, right, y) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor.apply(doc, INK);
+    doc.text(doc.splitTextToSize(left, W - 2 * M - 120), M, y);
+    if (right) {
+      doc.setFont('helvetica', 'normal'); doc.setTextColor.apply(doc, MUTED);
+      doc.text(String(right), W - M, y, { align: 'right' });
+    }
+    doc.setDrawColor.apply(doc, HAIR); doc.setLineWidth(0.5);
+    doc.line(M, y + 10, W - M, y + 10);
+  }
+
+  // ---- Card 1: Cover ----
+  card('Analysis', () => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor.apply(doc, MUTED);
+    doc.text('TRACK ANALYSIS', M, 230);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(40); doc.setTextColor.apply(doc, INK);
+    const tl = doc.splitTextToSize(track, W - 2 * M);
+    doc.text(tl, M, 272);
+    let yy = 272 + tl.length * 44;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(20); doc.setTextColor.apply(doc, MUTED);
+    doc.text(artist, M, yy);
+    doc.setFontSize(11);
+    doc.text(`Generated ${scanDate}`, M, H - M - 6);
+  });
+
+  // ---- Card 2: Audience ----
+  card('Audience', () => {
+    heading('Audience Snapshot', 150);
+    bigStat(compact(up.listeners), 'Monthly listeners', 240);
+    bigStat(compact(up.followers), 'Total followers', 340);
+    bigStat(up.conversion_rate != null ? up.conversion_rate.toFixed(2) + '%' : '—', 'Listener-to-follower conversion', 440);
+  });
+
+  // ---- Card 3: Sonic breakdown ----
+  card('Sonic', () => {
+    heading('Sonic Breakdown', 150);
+    const bands = [['Sub', f.sub_ratio], ['Bass', f.bass_ratio], ['Low-mid', f.low_mid_ratio], ['Mid', f.mid_ratio], ['High-mid', f.high_mid_ratio], ['Presence', f.presence_ratio], ['Air', f.air_ratio]].filter(b => b[1] != null);
+    const dom = bands.length ? bands.slice().sort((a, b) => b[1] - a[1])[0][0] : null;
+    let y = 230;
+    row('Tempo', f.bpm != null ? Math.round(f.bpm) + ' BPM' : '—', y); y += 50;
+    row('Key', (f.key || '—') + (f.scale ? ' ' + f.scale : ''), y); y += 50;
+    row('Integrated loudness', f.lufs_integrated != null ? f.lufs_integrated.toFixed(1) + ' LUFS' : '—', y); y += 50;
+    row('Frequency balance', dom ? dom + '-forward' : '—', y);
+  });
+
+  // ---- Card 4: Where it stands ----
+  card('Standing', () => {
+    heading('Where It Stands', 150);
+    const pctile = tm.composite_percentile != null ? Math.round(tm.composite_percentile * 100) : null;
+    bigStat(pctile != null ? ordinal(pctile) : '—', 'Percentile in sonic cohort', 240);
+    bigStat(tm.scanned_popularity != null ? Math.round(tm.scanned_popularity) : '—', 'Spotify popularity score', 340);
+    if (quad.label) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor.apply(doc, ACCENT);
+      doc.text(quad.label, M, 430);
+      if (quad.message) paragraph(quad.message, 456, 12, MUTED);
+    }
+  });
+
+  // ---- Card 5: Algorithmic readiness ----
+  card('Algorithm', () => {
+    heading('Algorithmic Readiness', 150);
+    const sl = up.estimated_save_rate_low, sh = up.estimated_save_rate_high;
+    const range = (sl != null && sh != null) ? `${sl}–${sh}%` : '—';
+    bigStat(range, 'Estimated save rate', 250);
+    const meets = sh != null && sh >= 5;
+    paragraph(
+      `Spotify's algorithmic flywheel typically ignites above a ~5% save rate. This track's estimated save rate is ${range}, which is ${meets ? 'at or near' : 'below'} that threshold. ${meets ? 'It is positioned to trigger algorithmic placements (Discover Weekly, Radio) with a strong playlist push.' : 'Closing the gap to 5% — via the production adjustments and sonically-targeted playlist pitching — is the lever for algorithmic ignition.'}`,
+      330, 13, INK
+    );
+  });
+
+  // ---- Card 6: Production recommendations ----
+  if (recs.length) {
+    card('Production', () => {
+      heading('Production Recommendations', 150);
+      let y = 220;
+      recs.slice(0, 6).forEach(r => {
+        y = paragraph(String(r), y, 13, INK) + 14;
+      });
+      if (recs.length > 6) subhead(`+ ${recs.length - 6} more in the full analysis`, y + 4);
+    });
+  }
+
+  // ---- Card 7: Trajectory artists ----
+  if (flattery.length) {
+    card('Targeting', () => {
+      heading('Trajectory Artists', 150);
+      subhead('Higher-tier sonic comps — use for Meta ad targeting', 176);
+      let y = 230;
+      flattery.slice(0, 9).forEach(a => {
+        const sim = a.similarity != null ? Math.round(a.similarity * 100) + '%' : '';
+        const tier = a.tier ? a.tier.charAt(0).toUpperCase() + a.tier.slice(1) : '';
+        row(`${a.name}${a.track_name ? ' — ' + a.track_name : ''}`, [tier, sim].filter(Boolean).join(' · '), y);
+        y += 40;
+      });
+    });
+  }
+
+  // ---- Card 8: Playlist campaign ----
+  card('Campaign', () => {
+    heading('Playlist Campaign Projection', 150);
+    if (cf) {
+      let y = 230;
+      row('Combined playlist reach', compact(cf.total_reach) + ' followers', y); y += 46;
+      row('Expected placements', `${cf.placements_low}–${cf.placements_high}`, y); y += 46;
+      row('Estimated streams', `${compact(cf.streams_low)}–${compact(cf.streams_high)}`, y); y += 46;
+      row('With algorithmic bonus', `${compact(cf.total_streams_low)}–${compact(cf.total_streams_high)}`, y); y += 46;
+      row('Out-of-pocket cost', '$' + (cf.total_cost || 0).toFixed(0), y);
+    } else {
+      paragraph('The campaign forecast is still calculating from curator enrichment (~1-2 minutes after the scan). Re-export the PDF once enrichment completes to include projected reach, placements, streams, and cost.', 240, 13, MUTED);
+    }
+  });
+
+  // ---- Card 9 (optional): Curators ----
+  if (curators.length) {
+    card('Curators', () => {
+      heading('Curator Contacts', 150);
+      subhead('Top contactable curators — full list in the CSV export', 176);
+      let y = 230;
+      const top = curators.slice().sort((a, b) => (b.followers || 0) - (a.followers || 0)).slice(0, 12);
+      top.forEach(c => {
+        const contact = c.email || c.instagram_url || c.website_url || c.groover_url || c.submithub_url || '';
+        row(`${c.name}${c.playlist_name ? ' — ' + c.playlist_name : ''}`, compact(c.followers), y);
+        if (contact) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, MUTED); doc.text(String(contact), M, y + 22); }
+        y += 40;
+      });
+    });
+  }
+
+  // ---- render + paginate ----
+  cards.forEach((c, i) => {
+    if (i > 0) doc.addPage();
+    chrome(c.kicker);
+    c.draw();
+  });
+  const total = doc.getNumberOfPages();
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, MUTED);
+    doc.text(`${p} / ${total}`, W - M, H - M + 16, { align: 'right' });
+  }
+
+  const safe = s => String(s).replace(/[\/\\:*?"<>|]/g, '_').trim();
+  doc.save(`${safe(artist)} - ${safe(track)} - SonicConverter.pdf`);
+}
+
+(function() {
+  const btn = document.getElementById('pdf-download-btn');
+  if (btn) btn.addEventListener('click', generateAnalysisPDF);
 })();
 
 // -------------------------------------------------------
