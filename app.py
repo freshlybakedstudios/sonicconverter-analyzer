@@ -2197,8 +2197,8 @@ async def analyze(
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}')
     try:
         contents = await file.read()
-        if len(contents) > 50 * 1024 * 1024:  # 50 MB limit
-            raise HTTPException(400, "File too large (max 50 MB)")
+        if len(contents) > 100 * 1024 * 1024:  # 100 MB limit
+            raise HTTPException(400, "File too large (max 100 MB)")
         tmp.write(contents)
         tmp.flush()
         tmp_path = tmp.name

@@ -300,8 +300,8 @@ function handleFile(file) {
     alert('Please upload an audio file (MP3, WAV, FLAC, OGG, M4A, AAC)');
     return;
   }
-  if (file.size > 50 * 1024 * 1024) {
-    alert('File too large (max 50 MB)');
+  if (file.size > 100 * 1024 * 1024) {
+    alert('File too large (max 100 MB)');
     return;
   }
   selectedFile = file;
