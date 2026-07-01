@@ -2503,7 +2503,12 @@ async function generateAnalysisPDF() {
     const imgW = W - 2 * M;
     const avail = H - 2 * M;
 
-    for (const el of nodes) {
+    for (let i = 0; i < nodes.length; i++) {
+      const el = nodes[i];
+      if (btn) {
+        btn.textContent = `Building PDF… ${i + 1}/${nodes.length}`;
+        await new Promise(r => requestAnimationFrame(r)); // let the counter repaint before html2canvas blocks
+      }
       const canvas = await html2canvas(el, {
         scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
         scrollX: 0, scrollY: -window.scrollY,
