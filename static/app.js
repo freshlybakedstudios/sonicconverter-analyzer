@@ -2507,6 +2507,14 @@ async function generateAnalysisPDF() {
       const canvas = await html2canvas(el, {
         scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
         scrollX: 0, scrollY: -window.scrollY,
+        onclone: (clonedDoc) => {
+          // html2canvas can't render repeating-linear-gradient, so the striped
+          // "target zone" bands come out invisible. Repaint them solid in the
+          // capture clone only (opacity stays → still reads as a translucent zone).
+          clonedDoc.querySelectorAll('.rec-range-band, .conv-bar-opportunity').forEach(b => {
+            b.style.background = '#D8E166';
+          });
+        },
       });
       if (!canvas.width || !canvas.height) continue;
       const ratio = imgW / canvas.width;
