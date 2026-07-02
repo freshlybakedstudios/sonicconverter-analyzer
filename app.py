@@ -1817,6 +1817,62 @@ def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -
     return ranges
 
 
+def _generate_full_target_ranges(features: dict, high_converter_gems: list) -> list:
+    """Target ranges for EVERY production feature — the plugin/export variant.
+
+    _generate_recommendation_ranges caps output at 12 (2/domain, consensus
+    only) as a display choice for the web UI. The mastering-meter plugin wants
+    the full picture: one range object per PRODUCTION_FEATURE with the peer
+    percentile band and both targets. Consensus fields (action/direction/agree)
+    are populated when the cohort agrees, null otherwise — same realism guards
+    as the curated list apply to those fields only, never to the band itself.
+    """
+    if not high_converter_gems:
+        return []
+
+    consensus_by_feat = {c['feature']: c for c in _find_consensus(features, high_converter_gems)}
+    signature_peers = _signature_subset(high_converter_gems)
+
+    ranges = []
+    for feat in PRODUCTION_FEATURES:
+        user_val = features.get(feat)
+        try:
+            user_val = float(user_val)
+        except (TypeError, ValueError):
+            continue
+
+        percentiles = _feature_percentiles(features, high_converter_gems, feat)
+        cohort_target = _feature_avg(features, high_converter_gems, feat)
+        if percentiles is None or cohort_target is None:
+            continue
+
+        desc = FEATURE_DESCRIPTIONS.get(feat, {})
+        sig_target = _feature_avg(features, signature_peers, feat) if signature_peers else None
+
+        c = consensus_by_feat.get(feat)
+        if c:
+            # Same realism guards as _format_rec / _generate_recommendation_ranges
+            if feat == 'crest_factor' and c['converter_avg'] < 6.0:
+                c = None
+            elif feat == 'dynamic_range' and c['direction'] == 'lower' and c['converter_avg'] < 15.0:
+                c = None
+
+        ranges.append({
+            'feature': feat,
+            'domain': desc.get('domain', ''),
+            'action': desc.get(c['direction'], '') if c else None,
+            'unit_kind': _rec_unit_kind(feat, desc.get('unit', '')),
+            'you': round(user_val, 6),
+            'target_cohort': round(cohort_target, 6),
+            'target_signature': round(sig_target, 6) if sig_target is not None else None,
+            'percentiles': percentiles,
+            'agree': [c['count'], c['total']] if c else None,
+            'direction': c['direction'] if c else None,
+        })
+
+    return ranges
+
+
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
@@ -2779,6 +2835,10 @@ async def analyze(
                 'key': features.get('key', '?'),
                 'scale': features.get('scale', ''),
                 'lufs_integrated': features.get('lufs_integrated', 0),
+                # Whole-track BS.1770 (stereo) — display-only mastering readout;
+                # upload path only, absent on Spotify scans (12s captures).
+                'lufs_whole_track': features.get('lufs_whole_track'),
+                'lra_whole_track': features.get('lra_whole_track'),
                 'energy': features.get('energy', 0),
                 'dynamic_range': features.get('dynamic_range', 0),
                 'compression_amount': features.get('compression_amount', 0),
@@ -2809,6 +2869,7 @@ async def analyze(
             'recommendations': recs,
             'signature_recommendations': signature_recs,
             'recommendation_ranges': _generate_recommendation_ranges(features, high_converter_gems),
+            'full_target_ranges': _generate_full_target_ranges(features, high_converter_gems),
             'genre_alignment': genre_alignment,
             'timing': {
                 'feature_extraction_s': round(t_features, 2),
@@ -4570,6 +4631,7 @@ async def analyze_url(
         'recommendations': recs,
         'signature_recommendations': _generate_signature_recommendations(features, high_converter_gems_url),
         'recommendation_ranges': _generate_recommendation_ranges(features, high_converter_gems_url),
+        'full_target_ranges': _generate_full_target_ranges(features, high_converter_gems_url),
         'source': {
             'type': 'spotify_url',
             'track_name': track_name,

@@ -1390,6 +1390,23 @@ body {
 .rec-range-legend b { color: var(--text); font-weight: 600; }
 .rrl.you b { color: var(--accent-light); }
 .rrl.zone b { color: var(--accent); }
+.export-targets-btn {
+  float: right;
+  padding: 5px 12px;
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.export-targets-btn:hover {
+  background: var(--card);
+  color: var(--text);
+}
+
 .rec-group-label {
   font-size: 11px;
   font-weight: 700;
