@@ -712,7 +712,13 @@ function renderResults(data) {
   const stats = [
     { value: (f.bpm || 0).toFixed(0), label: 'BPM' },
     { value: `${f.key || '?'} ${f.scale || ''}`, label: 'KEY' },
-    { value: (f.lufs_integrated || 0).toFixed(1), label: 'LUFS', subtitle: 'Integrated Loudness' },
+    // Whole-track BS.1770 (matches Pro Tools/Insight) when available (file
+    // uploads); Spotify scans only capture short samples, so those show the
+    // loudest-section reading — labeled honestly either way.
+    f.lufs_whole_track != null
+      ? { value: f.lufs_whole_track.toFixed(1), label: 'LUFS',
+          subtitle: 'Whole Track' + (f.lra_whole_track != null ? ` · LRA ${f.lra_whole_track.toFixed(1)}` : '') }
+      : { value: (f.lufs_integrated || 0).toFixed(1), label: 'LUFS', subtitle: 'Loudest Section' },
     { value: energyLabel(f.energy || 0), label: 'ENERGY' },
     { value: compressionLabel(f.compression_amount || 0), label: 'COMPRESSION' },
     { value: danceabilityLabel(f.danceability || 0), label: 'DANCEABILITY' },
@@ -1550,6 +1556,10 @@ function renderResults(data) {
   const recRanges = data.recommendation_ranges || [];
   const recRangesWrap = $('#rec-ranges');
   const recList = $('#rec-list');
+  const exportBtn = $('#export-targets-btn');
+  if (exportBtn) {
+    (data.full_target_ranges || []).length ? show(exportBtn) : hide(exportBtn);
+  }
   if (recRangesWrap && recRanges.length > 0) {
     renderRecRanges(recRanges);
     show(recRangesWrap);
@@ -1847,6 +1857,44 @@ function switchMatchView(view) {
   renderMatchView();
 }
 
+// Export ALL target ranges (full_target_ranges — every production feature,
+// not just the curated 12 above) as a .sonictargets.json the SonicMeter
+// plugin loads. Static features ride along for the plugin's non-live rows.
+const TARGETS_STATIC_FEATURES = ['bpm', 'key', 'scale', 'key_strength',
+  'danceability', 'beat_strength', 'onset_rate', 'attack_time'];
+
+function exportPluginTargets() {
+  const data = window._lastAnalysisResult;
+  const ranges = data && data.full_target_ranges;
+  if (!ranges || !ranges.length) return;
+
+  const src = data.source || {};
+  const feats = data.features || {};
+  const staticFeatures = {};
+  TARGETS_STATIC_FEATURES.forEach(f => { if (feats[f] != null) staticFeatures[f] = feats[f]; });
+
+  const payload = {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    track: {
+      name: src.track_name || '',
+      artist: src.artist_name || '',
+      job_id: data.job_id || currentJobId || '',
+    },
+    static_features: staticFeatures,
+    ranges,
+  };
+
+  const base = [src.artist_name, src.track_name].filter(Boolean).join(' - ') || 'track';
+  const fname = base.replace(/[^\w\s.-]/g, '').trim().replace(/\s+/g, '_') + '.sonictargets.json';
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fname;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 // Wire up Show More and Tier Toggle buttons
 document.addEventListener('DOMContentLoaded', () => {
   const btn = $('#show-more-btn');
@@ -1855,6 +1903,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnAll = $('#tier-btn-all');
   if (btnMine) btnMine.addEventListener('click', () => switchMatchView('tier'));
   if (btnAll) btnAll.addEventListener('click', () => switchMatchView('all'));
+  const exportBtn = $('#export-targets-btn');
+  if (exportBtn) exportBtn.addEventListener('click', exportPluginTargets);
 });
 
 // -------------------------------------------------------

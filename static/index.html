@@ -444,7 +444,9 @@
            high-converter cohort (safe/genre edge) and the signature-of-success
            subset (distinctive-winners edge). Aim anywhere in the band. -->
       <div class="result-card">
-        <h3>Production Recommendations</h3>
+        <h3>Production Recommendations
+          <button class="export-targets-btn hidden" id="export-targets-btn" type="button" title="Download all target ranges as a .sonictargets.json file for the SonicMeter plugin">Export targets for plugin</button>
+        </h3>
         <p class="card-sub">Each bar is scaled to where high-converting peers in your lane actually sit, so the distance reads as <strong>real adjustment effort</strong>. The striped band is the zone the winners land in — aim into it. The headline shows the move in real units (e.g. <strong>≈ −1 dB</strong>); the dot is you.</p>
         <div class="rec-ranges" id="rec-ranges"></div>
         <!-- Fallback: legacy formatted-string list if no structured ranges -->
@@ -689,6 +691,6 @@
 
   <script src="/static/vendor/jspdf.umd.min.js"></script>
   <script src="/static/vendor/html2canvas.min.js"></script>
-  <script src="/static/app.js?v=20260701-3"></script>
+  <script src="/static/app.js?v=20260702-1"></script>
 </body>
 </html>

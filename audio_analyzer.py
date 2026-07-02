@@ -516,6 +516,30 @@ def extract_features(file_path: str, genre_hint: str = '') -> Dict:
 
     features = _extract_core(audio, sr, audio_stereo=audio_stereo)
 
+    # --- Whole-track loudness (display-only, NOT used for peer comparison) ---
+    # The universe (gems_complete_analysis) was measured on short highest-energy
+    # captures, so `lufs_integrated` must stay chunk-based to remain
+    # apples-to-apples with peers. These two fields are true BS.1770 over the
+    # FULL file (stereo when available, matching Pro Tools / Insight) so the
+    # artist sees the same number their mastering meter shows.
+    try:
+        _wt_meter = pyln.Meter(sr)
+        _wt_audio = y_stereo_full if y_stereo_full is not None else y
+        _wt = _wt_meter.integrated_loudness(_wt_audio)
+        if not np.isnan(_wt):
+            features['lufs_whole_track'] = float(_wt)
+        # EBU-style LRA estimate: 3 s short-term windows, 1 s hop, p95 - p10
+        _win, _hop = int(3 * sr), sr
+        _st = []
+        for _i in range(0, len(y) - _win, _hop):
+            _bl = _wt_meter.integrated_loudness(y[_i:_i + _win])
+            if not np.isnan(_bl) and _bl > -70:  # gate silence
+                _st.append(_bl)
+        if len(_st) > 3:
+            features['lra_whole_track'] = float(np.percentile(_st, 95) - np.percentile(_st, 10))
+    except Exception:
+        pass  # display-only — never fail the scan over it
+
     # Emotion detection
     emo = _emotion_detector.detect(features, genre_hint)
     top = emo['emotions']
