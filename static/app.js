@@ -712,15 +712,14 @@ function renderResults(data) {
   const stats = [
     { value: (f.bpm || 0).toFixed(0), label: 'BPM' },
     { value: `${f.key || '?'} ${f.scale || ''}`, label: 'KEY' },
-    // Real mastering-meter loudness (BS.1770 Integrated). Uploads: measured on
-    // the whole file. Spotify scans: estimated from the capture via the
-    // structural +3.5 dB mono-fold offset — approximate but real-world units.
+    // Uploads: real measured BS.1770 Integrated (matches Insight/Pro-L).
+    // Spotify scans: only a 4s loudest-section capture exists — show it RAW
+    // and honestly labeled. No flat-offset estimate: it overshoots on loud
+    // wide masters (a released -9ish master displayed as "-4.5 est.").
     f.lufs_whole_track != null
       ? { value: f.lufs_whole_track.toFixed(1), label: 'LUFS',
           subtitle: 'Integrated' + (f.lra_whole_track != null ? ` · LRA ${f.lra_whole_track.toFixed(1)}` : '') }
-      : { value: (typeof f.lufs_integrated === 'number' && f.lufs_integrated !== 0)
-            ? '≈ ' + (f.lufs_integrated + 3.5).toFixed(1) : '—',
-          label: 'LUFS', subtitle: 'Integrated (est.)' },
+      : { value: (f.lufs_integrated || 0).toFixed(1), label: 'LUFS', subtitle: 'Loudest Section' },
     { value: energyLabel(f.energy || 0), label: 'ENERGY' },
     { value: compressionLabel(f.compression_amount || 0), label: 'COMPRESSION' },
     { value: danceabilityLabel(f.danceability || 0), label: 'DANCEABILITY' },
@@ -1728,15 +1727,15 @@ function renderRecRanges(ranges) {
   const wrap = $('#rec-ranges');
   if (!wrap) return;
 
-  // Loudness renders in REAL mastering-meter units (BS.1770 Integrated — what
-  // Insight/Pro-L show). The peer comparison happens in chunk units underneath
-  // (the only method all 243k universe tracks share), then the whole row —
-  // You, zone, percentiles — is shifted into real terms: measured offset on
-  // uploads, structural +3.5 dB mono-fold estimate on Spotify scans. The
-  // recommended dB move is a difference, so it's identical in both currencies.
+  // Loudness row currency: uploads shift You/zone/percentiles into REAL
+  // mastering-meter units via the file's MEASURED chunk→whole-track offset
+  // (matches Insight/Pro-L). Spotify scans have no measured offset — a flat
+  // estimate overshoots on loud masters — so they stay in raw loudest-section
+  // units, the same currency as all 243k peers. The recommended dB move is a
+  // difference, so it's identical either way.
   const displayRanges = ranges.map(r => {
-    if (r.feature !== 'lufs_integrated' || !r.percentiles) return r;
-    const d = recLufsDelta != null ? recLufsDelta : 3.5;
+    if (r.feature !== 'lufs_integrated' || !r.percentiles || recLufsDelta == null) return r;
+    const d = recLufsDelta;
     const p = r.percentiles;
     return Object.assign({}, r, {
       you: r.you + d,
