@@ -2349,14 +2349,8 @@ async def analyze(
 
         # Find matches — get extra so we can filter by tier
         user_monthly = lead.get('monthly_listeners')
-        # CM lookup can provide more accurate listener count. The form-provided
-        # track artist (Priority 1) wins: when scanning a client's track, the
-        # tier — and everything downstream of it (tier-filtered matches,
-        # trajectory targets, pitch comparables, peer pools) — must be THEIR
-        # tier, not the account's.
-        if track_artist_cm and float(track_artist_cm.get('listeners') or 0) > 0:
-            user_monthly = float(track_artist_cm['listeners'])
-        elif cm_data and cm_data['listeners'] > 0:
+        # CM lookup can provide more accurate listener count
+        if cm_data and cm_data['listeners'] > 0:
             user_monthly = cm_data['listeners']
         user_tier = _listeners_to_tier(user_monthly) if user_monthly else 'micro'  # Default to lowest tier
         fetch_n = 20000  # Good coverage without excessive processing
