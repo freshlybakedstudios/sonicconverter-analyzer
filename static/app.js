@@ -1743,6 +1743,22 @@ function renderRecRanges(ranges) {
   });
 
   let html = '';
+  // THE mastering number — one unmissable target in mastering-meter units
+  // (BS.1770 Integrated, what Insight/Pro-L show). Uploads translate the peer
+  // zone with the file's measured chunk->whole-track offset (exact); Spotify
+  // scans use the structural +3.5 dB mono-fold estimate (approximate).
+  const lufsRow = ranges.find(r => r.feature === 'lufs_integrated');
+  if (lufsRow && lufsRow.percentiles) {
+    const measured = recLufsDelta != null;
+    const d = measured ? recLufsDelta : 3.5;
+    const lo = lufsRow.percentiles.p25 + d, hi = lufsRow.percentiles.p75 + d;
+    html += `<div class="master-target">` +
+      `<div class="master-target-label">MASTER TO</div>` +
+      `<div class="master-target-value">${measured ? '' : '≈ '}${lo.toFixed(1)} to ${hi.toFixed(1)} LUFS <span>Integrated</span></div>` +
+      `<div class="master-target-sub">The number on your mastering meter (Insight / Pro-L 2, full-song playthrough). ` +
+      `${measured ? "Translated from your peers' zone using this file's measured offset." : "Estimated from your peers' zone (+3.5 dB mono-fold); upload the file for an exact target."}</div>` +
+      `</div>`;
+  }
   if (adjust.length) {
     html += `<div class="rec-group-label">Adjustments to make</div>` + adjust.join('');
   }
