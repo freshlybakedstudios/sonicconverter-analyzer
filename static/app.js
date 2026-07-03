@@ -1554,6 +1554,12 @@ function renderResults(data) {
   // signature edge). Falls back to the legacy string list if the backend
   // didn't send structured ranges.
   const recRanges = data.recommendation_ranges || [];
+  // Per-track chunk→whole-track loudness offset (uploads only). The loudness
+  // comparison stays chunk-vs-chunk (same method as all peers), but this Δ
+  // lets the loudness row also speak in mastering-meter (BS.1770 stereo)
+  // terms: Δ ≈ +3 dB mono-fold pan law + width loss + section landing.
+  recLufsDelta = (f.lufs_whole_track != null && typeof f.lufs_integrated === 'number' && f.lufs_integrated !== 0)
+    ? f.lufs_whole_track - f.lufs_integrated : null;
   const recRangesWrap = $('#rec-ranges');
   const recList = $('#rec-list');
   const exportBtn = $('#export-targets-btn');
@@ -1669,6 +1675,9 @@ function recBand(r) {
   return { p5, p25, p50, p75, p95, inZone };
 }
 
+// Chunk→whole-track LUFS offset for the current upload (null on Spotify scans).
+let recLufsDelta = null;
+
 // One meter row. The bar is anchored to the peer band (p5–p95); if You falls
 // outside it, the dot clamps to the edge with an arrow pointing into the zone —
 // so a big move reads as "head this way," not "stranded off the chart." The
@@ -1706,6 +1715,16 @@ function recRangeRow(r, band) {
         `<span class="rrl zone">Target zone <b>${fmtRange(kind, p25, p75)}</b></span>` +
         `<span class="rrl agree">${r.agree[0]}/${r.agree[1]} agree</span>` +
       `</div>` +
+      // Loudness only, uploads only: the comparison above is loudest-section
+      // vs peers' loudest sections (mono fold) — translate it into the number
+      // a mastering meter shows using this track's own measured offset.
+      (r.feature === 'lufs_integrated' && recLufsDelta != null
+        ? `<div class="rec-range-legend">` +
+            `<span class="rrl you">On your mastering meter (whole track): You <b>${fmtFeatVal(kind, you + recLufsDelta)}</b></span>` +
+            `<span class="rrl zone">zone <b>${fmtRange(kind, p25 + recLufsDelta, p75 + recLufsDelta)}</b></span>` +
+            `<span class="rrl agree">this song reads ${recLufsDelta >= 0 ? '+' : ''}${recLufsDelta.toFixed(1)} dB vs its loudest section</span>` +
+          `</div>`
+        : '') +
     `</div>`
   );
 }
