@@ -2880,8 +2880,22 @@ async def analyze(
         if user_profile:
             result['user_profile'] = user_profile
 
-        # Include source info for artist card (from CM lookup or GEMS cache)
-        if cm_data:
+        # Include source info for artist card. The form-provided track artist
+        # (Priority 1) OWNS the card when present — its CM lookup already
+        # drives the lane genres and the user_profile numbers, so the card
+        # must show the same artist (name, genres, tier), not the account.
+        if track_artist_cm:
+            _ta_genres = (track_artist_cm.get('genres') or '').strip()
+            if _ta_genres.lower() in ('others', 'unknown'):
+                _ta_genres = ''  # CM's untagged placeholder — show nothing, not junk
+            result['source'] = {
+                'type': 'file_upload',
+                'artist_name': track_artist_cm.get('name', ''),
+                'artist_genres': _ta_genres,
+                'artist_tier': track_artist_cm.get('tier', '') or user_tier or '',
+                'artist_listeners': float(track_artist_cm.get('listeners', 0) or 0),
+            }
+        elif cm_data:
             result['source'] = {
                 'type': 'file_upload',
                 'artist_name': cm_data.get('name', ''),
