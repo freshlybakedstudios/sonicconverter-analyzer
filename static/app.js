@@ -712,13 +712,15 @@ function renderResults(data) {
   const stats = [
     { value: (f.bpm || 0).toFixed(0), label: 'BPM' },
     { value: `${f.key || '?'} ${f.scale || ''}`, label: 'KEY' },
-    // Whole-track BS.1770 (matches Pro Tools/Insight) when available (file
-    // uploads); Spotify scans only capture short samples, so those show the
-    // loudest-section reading — labeled honestly either way.
+    // Real mastering-meter loudness (BS.1770 Integrated). Uploads: measured on
+    // the whole file. Spotify scans: estimated from the capture via the
+    // structural +3.5 dB mono-fold offset — approximate but real-world units.
     f.lufs_whole_track != null
       ? { value: f.lufs_whole_track.toFixed(1), label: 'LUFS',
-          subtitle: 'Whole Track' + (f.lra_whole_track != null ? ` · LRA ${f.lra_whole_track.toFixed(1)}` : '') }
-      : { value: (f.lufs_integrated || 0).toFixed(1), label: 'LUFS', subtitle: 'Loudest Section' },
+          subtitle: 'Integrated' + (f.lra_whole_track != null ? ` · LRA ${f.lra_whole_track.toFixed(1)}` : '') }
+      : { value: (typeof f.lufs_integrated === 'number' && f.lufs_integrated !== 0)
+            ? '≈ ' + (f.lufs_integrated + 3.5).toFixed(1) : '—',
+          label: 'LUFS', subtitle: 'Integrated (est.)' },
     { value: energyLabel(f.energy || 0), label: 'ENERGY' },
     { value: compressionLabel(f.compression_amount || 0), label: 'COMPRESSION' },
     { value: danceabilityLabel(f.danceability || 0), label: 'DANCEABILITY' },
@@ -1715,16 +1717,6 @@ function recRangeRow(r, band) {
         `<span class="rrl zone">Target zone <b>${fmtRange(kind, p25, p75)}</b></span>` +
         `<span class="rrl agree">${r.agree[0]}/${r.agree[1]} agree</span>` +
       `</div>` +
-      // Loudness only, uploads only: the comparison above is loudest-section
-      // vs peers' loudest sections (mono fold) — translate it into the number
-      // a mastering meter shows using this track's own measured offset.
-      (r.feature === 'lufs_integrated' && recLufsDelta != null
-        ? `<div class="rec-range-legend">` +
-            `<span class="rrl you">On your mastering meter (whole track): You <b>${fmtFeatVal(kind, you + recLufsDelta)}</b></span>` +
-            `<span class="rrl zone">zone <b>${fmtRange(kind, p25 + recLufsDelta, p75 + recLufsDelta)}</b></span>` +
-            `<span class="rrl agree">this song reads ${recLufsDelta >= 0 ? '+' : ''}${recLufsDelta.toFixed(1)} dB vs its loudest section</span>` +
-          `</div>`
-        : '') +
     `</div>`
   );
 }
@@ -1736,29 +1728,31 @@ function renderRecRanges(ranges) {
   const wrap = $('#rec-ranges');
   if (!wrap) return;
 
+  // Loudness renders in REAL mastering-meter units (BS.1770 Integrated — what
+  // Insight/Pro-L show). The peer comparison happens in chunk units underneath
+  // (the only method all 243k universe tracks share), then the whole row —
+  // You, zone, percentiles — is shifted into real terms: measured offset on
+  // uploads, structural +3.5 dB mono-fold estimate on Spotify scans. The
+  // recommended dB move is a difference, so it's identical in both currencies.
+  const displayRanges = ranges.map(r => {
+    if (r.feature !== 'lufs_integrated' || !r.percentiles) return r;
+    const d = recLufsDelta != null ? recLufsDelta : 3.5;
+    const p = r.percentiles;
+    return Object.assign({}, r, {
+      you: r.you + d,
+      percentiles: { p5: p.p5 + d, p25: p.p25 + d, p50: p.p50 + d, p75: p.p75 + d, p95: p.p95 + d },
+      target_cohort: r.target_cohort != null ? r.target_cohort + d : r.target_cohort,
+      target_signature: r.target_signature != null ? r.target_signature + d : r.target_signature,
+    });
+  });
+
   const adjust = [], strengths = [];
-  ranges.forEach(r => {
+  displayRanges.forEach(r => {
     const band = recBand(r);
     (band.inZone ? strengths : adjust).push(recRangeRow(r, band));
   });
 
   let html = '';
-  // THE mastering number — one unmissable target in mastering-meter units
-  // (BS.1770 Integrated, what Insight/Pro-L show). Uploads translate the peer
-  // zone with the file's measured chunk->whole-track offset (exact); Spotify
-  // scans use the structural +3.5 dB mono-fold estimate (approximate).
-  const lufsRow = ranges.find(r => r.feature === 'lufs_integrated');
-  if (lufsRow && lufsRow.percentiles) {
-    const measured = recLufsDelta != null;
-    const d = measured ? recLufsDelta : 3.5;
-    const lo = lufsRow.percentiles.p25 + d, hi = lufsRow.percentiles.p75 + d;
-    html += `<div class="master-target">` +
-      `<div class="master-target-label">MASTER TO</div>` +
-      `<div class="master-target-value">${measured ? '' : '≈ '}${lo.toFixed(1)} to ${hi.toFixed(1)} LUFS <span>Integrated</span></div>` +
-      `<div class="master-target-sub">The number on your mastering meter (Insight / Pro-L 2, full-song playthrough). ` +
-      `${measured ? "Translated from your peers' zone using this file's measured offset." : "Estimated from your peers' zone (+3.5 dB mono-fold); upload the file for an exact target."}</div>` +
-      `</div>`;
-  }
   if (adjust.length) {
     html += `<div class="rec-group-label">Adjustments to make</div>` + adjust.join('');
   }
