@@ -2429,21 +2429,40 @@ async def analyze(
         in_lane = match_in_lane
 
         pre_filter_count = len(all_matches)
-        all_matches = [m for m in all_matches if in_lane(m, user_families)]
-        print(f"  Family filter (upload, new gate): {pre_filter_count} → {len(all_matches)} matches")
+        lane_filtered = [m for m in all_matches if in_lane(m, user_families)]
+        print(f"  Family filter (upload, new gate): {pre_filter_count} → {len(lane_filtered)} matches")
 
-        # Country boost: same-region artists get a small boost
+        # Safety valve (parity with the URL path's track∪artist relax): if the
+        # dropdown lane starves the pool, widen to dropdown ∪ artist families.
+        # Widen-only — cannot change results when the lane is healthy.
+        MIN_AFTER_LANE_FILTER = 25
+        _av_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
+        artist_families = _genre_families(*_av_parts) if _av_parts else set()
+        if len(lane_filtered) < MIN_AFTER_LANE_FILTER and (artist_families - user_families):
+            relaxed = user_families | artist_families
+            lane_filtered = [m for m in all_matches if in_lane(m, relaxed)]
+            print(f"  Upload lane relax: dropdown lane starved (<{MIN_AFTER_LANE_FILTER}); "
+                  f"relaxed to dropdown∪artist → {len(lane_filtered)}")
+        all_matches = lane_filtered
+
+        # Country boost: same-region artists get a small boost. Targets the
+        # SCANNED artist's market when a form artist URL was provided (client
+        # scans), falling back to the account's country.
         COUNTRY_BOOST = 0.02
-        if user_code2:
+        boost_code2 = None
+        if track_artist_cm:
+            boost_code2 = (track_artist_cm.get('_meta') or {}).get('code2')
+        boost_code2 = boost_code2 or user_code2
+        if boost_code2:
             boosted_count = 0
             for m in all_matches:
                 match_code2 = m.get('code2', '')
-                if match_code2 and match_code2 == user_code2:
+                if match_code2 and match_code2 == boost_code2:
                     m['similarity'] = m.get('similarity', 0) + COUNTRY_BOOST
                     boosted_count += 1
             if boosted_count > 0:
                 all_matches.sort(key=lambda x: x.get('similarity', 0), reverse=True)
-                print(f"  Country boost: {boosted_count} matches from {user_code2} boosted +{COUNTRY_BOOST*100:.0f}%")
+                print(f"  Country boost: {boosted_count} matches from {boost_code2} boosted +{COUNTRY_BOOST*100:.0f}%")
 
         # Debug: show top 40 matches with genre families
         print(f"  Top 40 matches (before tier filter):")
