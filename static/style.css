@@ -2264,33 +2264,3 @@ body {
   }
 }
 
-/* Mastering target callout — THE number to master to, top of Production Recs */
-.master-target {
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  background: var(--accent-glow);
-  padding: 14px 18px;
-  margin: 4px 0 18px;
-}
-.master-target-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  color: var(--accent-light);
-  margin-bottom: 2px;
-}
-.master-target-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text, #fff);
-}
-.master-target-value span {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--accent-light);
-}
-.master-target-sub {
-  font-size: 0.8rem;
-  color: var(--text-dim, #9aa);
-  margin-top: 4px;
-}
