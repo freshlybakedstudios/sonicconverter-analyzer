@@ -2246,8 +2246,8 @@ async def analyze(
     # Validate file type
     filename = file.filename or ''
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
-    if ext not in ('mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac'):
-        raise HTTPException(400, f"Unsupported file type: .{ext}. Please upload mp3 or wav.")
+    if ext not in ('mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'aiff', 'aif'):
+        raise HTTPException(400, f"Unsupported file type: .{ext}. Please upload mp3, wav, or aiff.")
 
     # Save to temp file
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}')

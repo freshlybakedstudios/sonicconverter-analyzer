@@ -295,9 +295,9 @@ fileInput.addEventListener('change', () => {
 
 function handleFile(file) {
   const ext = file.name.split('.').pop().toLowerCase();
-  const allowed = ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac'];
+  const allowed = ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'aiff', 'aif'];
   if (!allowed.includes(ext)) {
-    alert('Please upload an audio file (MP3, WAV, FLAC, OGG, M4A, AAC)');
+    alert('Please upload an audio file (MP3, WAV, AIFF, FLAC, OGG, M4A, AAC)');
     return;
   }
   if (file.size > 100 * 1024 * 1024) {
