@@ -1736,9 +1736,18 @@ function renderRecRanges(ranges) {
   // the row stays in raw loudest-section units — consistent, never mixed.
   const displayRanges = ranges.map(r => {
     if (r.feature !== 'lufs_integrated' || recYouIntegrated == null || !r.percentiles_est) return r;
+    // Re-aim the action text in the display currency: r.action/r.direction came
+    // from the chunk comparison and can point the wrong way after the swap.
+    const p = r.percentiles_est;
+    let action = r.action;
+    if (r.actions_integrated) {
+      if (recYouIntegrated < p.p25 && r.actions_integrated.higher) action = r.actions_integrated.higher;
+      else if (recYouIntegrated > p.p75 && r.actions_integrated.lower) action = r.actions_integrated.lower;
+    }
     return Object.assign({}, r, {
       you: recYouIntegrated,
-      percentiles: r.percentiles_est,
+      percentiles: p,
+      action: action,
       target_cohort: null,
       target_signature: null,
     });

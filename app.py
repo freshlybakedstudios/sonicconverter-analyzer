@@ -1862,6 +1862,14 @@ def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -
                     p: round(float(np.percentile(est_vals, q)), 2)
                     for p, q in (('p5', 5), ('p25', 25), ('p50', 50), ('p75', 75), ('p95', 95))
                 }
+                # Both direction texts: `action`/`direction` above came from the
+                # CHUNK comparison, which can point the wrong way once the row
+                # renders in Integrated currency (user's chunk↔integrated offset
+                # differs from peers'). The frontend re-picks by zone side.
+                row_entry['actions_integrated'] = {
+                    'higher': desc.get('higher', ''),
+                    'lower': desc.get('lower', ''),
+                }
         ranges.append(row_entry)
         domain_count[domain] = domain_count.get(domain, 0) + 1
 

@@ -112,6 +112,26 @@ def poll_retryable_jobs():
     return None
 
 
+def claim_job(job_id: str) -> bool:
+    """Atomically claim a pending job before processing it.
+
+    The status filter makes the UPDATE a compare-and-swap: if another worker
+    instance already flipped the job off pending_features, PostgREST matches
+    0 rows and we back off instead of double-driving the one Spotify player.
+    """
+    try:
+        resp = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/analysis_jobs?id=eq.{job_id}&status=eq.pending_features",
+            json={'status': 'capturing'},
+            headers=_supabase_headers(),
+            timeout=10,
+        )
+        return resp.status_code == 200 and bool(resp.json())
+    except Exception as e:
+        print(f"Claim error: {e}")
+        return False
+
+
 def update_job(job_id: str, status: str, features: dict = None):
     """Update job status and features in Supabase."""
     payload = {'status': status}
@@ -978,6 +998,10 @@ def main():
             except Exception as e:
                 print(f"Retry poll exception: {e}")
                 job = None
+
+        if job and not claim_job(job['id']):
+            print(f"[{job['id'][:8]}] Claimed by another worker instance — skipping")
+            job = None
 
         if job:
             # Re-validate loopback device before every job
