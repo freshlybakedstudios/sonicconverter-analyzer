@@ -1747,6 +1747,46 @@ def _rec_unit_kind(feat: str, unit: str) -> str:
     return 'raw'
 
 
+# Chunk→whole-track Integrated model (Model C), fitted on 73 full tracks
+# simulated through the GEMS 10s-window pipeline (the universe's basis).
+# LOO-validated: MAE 0.72 dB, ~90% within ±1.5 dB. Missing predictors impute
+# universe medians. Display-only ("est.") — NEVER feeds matching or storage.
+_INT_EST_COEF = {'lufs': 0.959, 'corr': -3.771, 'crest': -0.050, 'dr': -0.004, 'lra': 0.035, 'const': 5.621}
+_INT_EST_MEDIANS = {'corr': 0.828, 'crest': 10.62, 'dr': 19.78, 'lra': 2.84}
+
+
+def _est_integrated_from_gems_row(row: dict):
+    """Estimate a peer track's true whole-track Integrated LUFS from its
+    stored chunk features. Returns None when the row can't support it."""
+    try:
+        lufs = row.get('lufs_integrated')
+        if lufs is None:
+            return None
+        lufs = float(lufs)
+        if not (-60.0 < lufs < 0.0):
+            return None
+
+        def _p(key, med, lo, hi):
+            v = row.get(key)
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                return med
+            return v if (np.isfinite(v) and lo <= v <= hi) else med
+
+        c = _INT_EST_COEF
+        m = _INT_EST_MEDIANS
+        est = (c['lufs'] * lufs
+               + c['corr'] * _p('stereo_correlation', m['corr'], -1.0, 1.0)
+               + c['crest'] * _p('crest_factor', m['crest'], 0.0, 40.0)
+               + c['dr'] * _p('dynamic_range', m['dr'], 0.0, 60.0)
+               + c['lra'] * _p('loudness_range', m['lra'], 0.0, 30.0)
+               + c['const'])
+        return float(min(max(est, -40.0), -2.0))
+    except Exception:
+        return None
+
+
 def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -> list:
     """Amalgamate the two production-rec cohorts into per-feature TARGET RANGES.
 
@@ -1798,7 +1838,7 @@ def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -
 
         sig_target = _feature_avg(features, signature_peers, feat) if signature_peers else None
 
-        ranges.append({
+        row_entry = {
             'feature': feat,
             'domain': domain,
             'action': action,
@@ -1811,7 +1851,18 @@ def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -
             'percentiles': _feature_percentiles(features, high_converter_gems, feat),
             'agree': [c['count'], c['total']],
             'direction': direction,
-        })
+        }
+        # Loudness only: peer zone converted to whole-track Integrated (est.)
+        # via Model C, so the frontend can render the row in mastering-meter
+        # units when the user side has an Integrated value (measured or est.).
+        if feat == 'lufs_integrated':
+            est_vals = [v for v in (_est_integrated_from_gems_row(g) for g in high_converter_gems) if v is not None]
+            if len(est_vals) >= 8:
+                row_entry['percentiles_est'] = {
+                    p: round(float(np.percentile(est_vals, q)), 2)
+                    for p, q in (('p5', 5), ('p25', 25), ('p50', 50), ('p75', 75), ('p95', 95))
+                }
+        ranges.append(row_entry)
         domain_count[domain] = domain_count.get(domain, 0) + 1
 
     return ranges
@@ -4640,6 +4691,9 @@ async def analyze_url(
             'key': features.get('key', '?'),
             'scale': features.get('scale', ''),
             'lufs_integrated': features.get('lufs_integrated', 0),
+            # Whole-track Integrated ESTIMATE from the worker's 3 stereo probes
+            # (gated power-mean; backtested MAE ~0.5 dB). Absent on old jobs.
+            'lufs_integrated_est': features.get('lufs_integrated_est'),
             'energy': features.get('energy', 0),
             'dynamic_range': features.get('dynamic_range', 0),
             'compression_amount': features.get('compression_amount', 0),

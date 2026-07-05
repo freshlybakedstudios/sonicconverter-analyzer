@@ -797,6 +797,28 @@ def process_job(job: dict, loopback_device: int):
     audio_stereo = stereo_samples[best_idx]
     print(f"[{job_id[:8]}] Using sample {best_idx + 1} (energy={energy_levels[best_idx]:.4f})")
 
+    # Whole-track Integrated ESTIMATE from all 3 stereo probes: per-sample
+    # BS.1770 loudness combined as a gated power mean. Backtested on 73 full
+    # tracks: MAE ~0.5 dB vs true integrated (flat offsets fail: 1.4+ dB).
+    lufs_integrated_est = None
+    try:
+        import pyloudnorm as pyln
+        _m = pyln.Meter(SAMPLE_RATE)
+        _ls = []
+        for _sb in stereo_samples:
+            if _sb is None:
+                continue
+            _li = _m.integrated_loudness(_sb)
+            if np.isfinite(_li):
+                _ls.append(_li)
+        if _ls:
+            _mx = max(_ls)
+            _gated = [l for l in _ls if l >= _mx - 10]  # relative gate
+            lufs_integrated_est = float(10 * np.log10(np.mean([10 ** (l / 10) for l in _gated])))
+            print(f"[{job_id[:8]}] Integrated est (3-sample): {lufs_integrated_est:.1f} LUFS")
+    except Exception as e:
+        print(f"[{job_id[:8]}] Integrated est failed (non-fatal): {e}")
+
     # Extract features
     try:
         features = extract_features_from_audio(audio, audio_stereo=audio_stereo)
@@ -816,6 +838,8 @@ def process_job(job: dict, loopback_device: int):
         return
 
     # Success
+    if lufs_integrated_est is not None:
+        features['lufs_integrated_est'] = lufs_integrated_est
     update_job(job_id, 'features_ready', features)
     print(f"[{job_id[:8]}] Features extracted — BPM={features.get('bpm', 0):.0f}, "
           f"key={features.get('key', '?')} {features.get('scale', '')}, "

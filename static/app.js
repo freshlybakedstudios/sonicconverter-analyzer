@@ -713,13 +713,15 @@ function renderResults(data) {
     { value: (f.bpm || 0).toFixed(0), label: 'BPM' },
     { value: `${f.key || '?'} ${f.scale || ''}`, label: 'KEY' },
     // Uploads: real measured BS.1770 Integrated (matches Insight/Pro-L).
-    // Spotify scans: only a 4s loudest-section capture exists — show it RAW
-    // and honestly labeled. No flat-offset estimate: it overshoots on loud
-    // wide masters (a released -9ish master displayed as "-4.5 est.").
+    // Spotify scans: 3-probe Integrated ESTIMATE from the worker (gated
+    // power-mean of the stereo samples, backtested MAE ~0.5 dB). Old jobs
+    // without the estimate fall back to the raw loudest-section reading.
     f.lufs_whole_track != null
       ? { value: f.lufs_whole_track.toFixed(1), label: 'LUFS',
           subtitle: 'Integrated' + (f.lra_whole_track != null ? ` · LRA ${f.lra_whole_track.toFixed(1)}` : '') }
-      : { value: (f.lufs_integrated || 0).toFixed(1), label: 'LUFS', subtitle: 'Loudest Section' },
+      : f.lufs_integrated_est != null
+        ? { value: '≈ ' + f.lufs_integrated_est.toFixed(1), label: 'LUFS', subtitle: 'Integrated (est.)' }
+        : { value: (f.lufs_integrated || 0).toFixed(1), label: 'LUFS', subtitle: 'Loudest Section' },
     { value: energyLabel(f.energy || 0), label: 'ENERGY' },
     { value: compressionLabel(f.compression_amount || 0), label: 'COMPRESSION' },
     { value: danceabilityLabel(f.danceability || 0), label: 'DANCEABILITY' },
@@ -1555,12 +1557,12 @@ function renderResults(data) {
   // signature edge). Falls back to the legacy string list if the backend
   // didn't send structured ranges.
   const recRanges = data.recommendation_ranges || [];
-  // Per-track chunk→whole-track loudness offset (uploads only). The loudness
-  // comparison stays chunk-vs-chunk (same method as all peers), but this Δ
-  // lets the loudness row also speak in mastering-meter (BS.1770 stereo)
-  // terms: Δ ≈ +3 dB mono-fold pan law + width loss + section landing.
-  recLufsDelta = (f.lufs_whole_track != null && typeof f.lufs_integrated === 'number' && f.lufs_integrated !== 0)
-    ? f.lufs_whole_track - f.lufs_integrated : null;
+  // User-side whole-track Integrated for the loudness row: measured on
+  // uploads, 3-probe estimate on Spotify scans, null on old jobs. Pairs with
+  // the backend's Model-C-converted peer zone (percentiles_est) so both sides
+  // of the row render in mastering-meter units, each honestly derived.
+  recYouIntegrated = f.lufs_whole_track != null ? f.lufs_whole_track
+    : (f.lufs_integrated_est != null ? f.lufs_integrated_est : null);
   const recRangesWrap = $('#rec-ranges');
   const recList = $('#rec-list');
   const exportBtn = $('#export-targets-btn');
@@ -1677,7 +1679,7 @@ function recBand(r) {
 }
 
 // Chunk→whole-track LUFS offset for the current upload (null on Spotify scans).
-let recLufsDelta = null;
+let recYouIntegrated = null;
 
 // One meter row. The bar is anchored to the peer band (p5–p95); if You falls
 // outside it, the dot clamps to the edge with an arrow pointing into the zone —
@@ -1727,21 +1729,18 @@ function renderRecRanges(ranges) {
   const wrap = $('#rec-ranges');
   if (!wrap) return;
 
-  // Loudness row currency: uploads shift You/zone/percentiles into REAL
-  // mastering-meter units via the file's MEASURED chunk→whole-track offset
-  // (matches Insight/Pro-L). Spotify scans have no measured offset — a flat
-  // estimate overshoots on loud masters — so they stay in raw loudest-section
-  // units, the same currency as all 243k peers. The recommended dB move is a
-  // difference, so it's identical either way.
+  // Loudness row currency: rendered in whole-track Integrated when BOTH sides
+  // have it — You from measurement (uploads) or the 3-probe estimate (URL
+  // scans); the peer zone from the backend's per-peer Model C conversion
+  // (percentiles_est). If either side is missing (old jobs / tiny cohorts),
+  // the row stays in raw loudest-section units — consistent, never mixed.
   const displayRanges = ranges.map(r => {
-    if (r.feature !== 'lufs_integrated' || !r.percentiles || recLufsDelta == null) return r;
-    const d = recLufsDelta;
-    const p = r.percentiles;
+    if (r.feature !== 'lufs_integrated' || recYouIntegrated == null || !r.percentiles_est) return r;
     return Object.assign({}, r, {
-      you: r.you + d,
-      percentiles: { p5: p.p5 + d, p25: p.p25 + d, p50: p.p50 + d, p75: p.p75 + d, p95: p.p95 + d },
-      target_cohort: r.target_cohort != null ? r.target_cohort + d : r.target_cohort,
-      target_signature: r.target_signature != null ? r.target_signature + d : r.target_signature,
+      you: recYouIntegrated,
+      percentiles: r.percentiles_est,
+      target_cohort: null,
+      target_signature: null,
     });
   });
 
