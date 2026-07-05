@@ -524,9 +524,12 @@ def extract_features(file_path: str, genre_hint: str = '') -> Dict:
     # artist sees the same number their mastering meter shows.
     try:
         _wt_meter = pyln.Meter(sr)
-        _wt_audio = y_stereo_full if y_stereo_full is not None else y
+        # Mono files measure as dual-mono: a DAW meters a mono file on a stereo
+        # bus with both channels fed (+3.01 dB vs single-channel), and the
+        # Loopback capture path sees the same track as 2 channels too.
+        _wt_audio = y_stereo_full if y_stereo_full is not None else np.column_stack((y, y))
         _wt = _wt_meter.integrated_loudness(_wt_audio)
-        if not np.isnan(_wt):
+        if np.isfinite(_wt):  # pyloudnorm returns -inf (not NaN) on all-gated audio
             features['lufs_whole_track'] = float(_wt)
         # EBU-style LRA estimate: 3 s short-term windows, 1 s hop, p95 - p10
         _win, _hop = int(3 * sr), sr
