@@ -16,6 +16,7 @@ import requests
 import secrets
 import tempfile
 import threading
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -4791,6 +4792,82 @@ async def analyze_url(
 # Deal Calculator: artist lookup endpoint
 # ---------------------------------------------------------------------------
 
+# Serve deal lookups from Supabase when the snapshot is at most this old.
+DEAL_CACHE_MAX_AGE_DAYS = 30
+# On a cache hit older than this, fire a background Chartmetric refresh so the
+# data self-heals for the next visitor without ever blocking this one.
+DEAL_CACHE_REFRESH_AGE_DAYS = 2
+
+
+def _cached_artist_lookup(spotify_url: str) -> dict | None:
+    """Supabase read-through for the deal calculator's artist lookup.
+
+    The discovery crawler and every prior lookup already upsert artists +
+    daily snapshots into Supabase, but /api/deal/lookup paid ~14s of serial
+    Chartmetric calls on every request anyway. GA4 (Jun 28–Jul 4) showed 94%
+    of calculator users abandoning between lookup and analysis — that wait
+    was the funnel's biggest leak. Known artists now serve from the cache in
+    <1s; only truly unknown artists take the live Chartmetric path.
+
+    Returns an artist_data dict shaped like lookup_artist_by_spotify's
+    result (top_track=None → the existing cache-first sonic fallback and
+    Supabase history/no-recs paths all apply), or None to fall back to live.
+    """
+    if not supabase:
+        return None
+    m = re.search(r'artist/([A-Za-z0-9]{22})', spotify_url)
+    if not m:
+        return None
+    sid = m.group(1)
+    try:
+        res = supabase.table('artists') \
+            .select('id,name,genres,career_status_stage,image_url') \
+            .ilike('spotify_url', f'%{sid}%').limit(1).execute()
+        if not res.data:
+            return None
+        row = res.data[0]
+        try:
+            cm_id = int(row['id'])
+        except (TypeError, ValueError):
+            return None
+        snap = supabase.table('artists_history') \
+            .select('snapshot_date,sp_monthly_listeners,sp_followers') \
+            .eq('artist_id', str(row['id'])) \
+            .order('snapshot_date', desc=True).limit(1).execute()
+        if not snap.data:
+            return None
+        s = snap.data[0]
+        snap_date = (s.get('snapshot_date') or '')[:10]
+        try:
+            age_days = (datetime.now() - datetime.strptime(snap_date, '%Y-%m-%d')).days
+        except ValueError:
+            return None
+        listeners = float(s.get('sp_monthly_listeners') or 0)
+        followers = float(s.get('sp_followers') or 0)
+        if age_days > DEAL_CACHE_MAX_AGE_DAYS or listeners <= 0:
+            return None
+        conversion_rate = None
+        if listeners > 0 and followers > 0:
+            conversion_rate = round((followers * 0.1) / (listeners * 4.3) * 100, 2)
+        return {
+            'cm_id': cm_id,
+            'name': row.get('name') or '',
+            'genres': row.get('genres') or '',
+            'career_stage': row.get('career_status_stage') or '',
+            'listeners': listeners,
+            'followers': followers,
+            'tier': _listeners_to_tier(listeners),
+            'conversion_rate': conversion_rate,
+            'catalog_size': 20,
+            'top_track': None,
+            '_meta': {'image_url': row.get('image_url')},
+            '_cache_age_days': age_days,
+        }
+    except Exception as e:
+        print(f"Deal lookup: cache read failed ({e}) — falling back to live")
+        return None
+
+
 @app.post("/api/deal/lookup")
 async def deal_lookup(
     spotify_url: str = Form(...),
@@ -4802,10 +4879,23 @@ async def deal_lookup(
     if not spotify_url or 'spotify.com' not in spotify_url:
         raise HTTPException(400, "Valid Spotify URL required")
 
-    # 1. Look up artist via existing function (upserts fire automatically)
+    # 1. Cache-first artist lookup: Supabase read-through, live CM fallback.
+    #    (Live path upserts back into the cache automatically.)
     _t0 = time.time()
-    artist_data = lookup_artist_by_spotify(spotify_url)
-    print(f"[TIMING] artist fetch (chartmetric): {time.time()-_t0:.1f}s")
+    lookup_source = 'cache'
+    artist_data = _cached_artist_lookup(spotify_url)
+    if artist_data:
+        _cache_age = artist_data.pop('_cache_age_days', 999)
+        print(f"[TIMING] artist fetch (supabase cache, {_cache_age}d old): {time.time()-_t0:.1f}s")
+        if _cache_age >= DEAL_CACHE_REFRESH_AGE_DAYS:
+            threading.Thread(
+                target=lookup_artist_by_spotify, args=(spotify_url,), daemon=True,
+            ).start()
+            print("Deal lookup: background CM refresh started")
+    else:
+        lookup_source = 'live'
+        artist_data = lookup_artist_by_spotify(spotify_url)
+        print(f"[TIMING] artist fetch (chartmetric live): {time.time()-_t0:.1f}s")
     if not artist_data:
         raise HTTPException(404, "Artist not found on Spotify/Chartmetric")
 
@@ -5288,6 +5378,7 @@ async def deal_lookup(
         'platform_history': platform_history,
         'platform_multiplier': round(platform_multiplier, 2),
         'upcoming_events': upcoming_events,
+        'lookup_source': lookup_source,
         'image_url': image_url,
     }
 
