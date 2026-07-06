@@ -4899,6 +4899,31 @@ async def deal_lookup(
     if not artist_data:
         raise HTTPException(404, "Artist not found on Spotify/Chartmetric")
 
+    # Kick off the touring-events fetch NOW, in parallel with the peer/sonic/
+    # history work below. Chartmetric's events endpoint is the slowest single
+    # call on this route (3-8s); run serially it dominated response time. The
+    # bounded join at the events section means it can never hold the response
+    # hostage.
+    _events_holder: dict = {}
+
+    def _prefetch_events(cm_id_=artist_data.get('cm_id')):
+        try:
+            if not cm_id_:
+                return
+            rt = os.getenv('REFRESH_TOKEN')
+            if not rt:
+                return
+            tok = get_cm_token(rt)
+            if not tok:
+                return
+            _events_holder['raw_events'] = fetch_artist_events(
+                tok, cm_id_, lookback_days=730, lookahead_days=365)
+        except Exception as e:
+            print(f"Deal lookup: events prefetch failed: {e}")
+
+    _events_thread = threading.Thread(target=_prefetch_events, daemon=True)
+    _events_thread.start()
+
     listeners = artist_data.get('listeners', 0) or 0
     followers = artist_data.get('followers', 0) or 0
     tier = artist_data.get('tier') or _listeners_to_tier(int(listeners))
@@ -5272,19 +5297,16 @@ async def deal_lookup(
 
     # Fetch past + future events from Chartmetric to estimate annual touring activity
     upcoming_events = None
-    # Ensure we have a CM token for events (may not be set if Supabase had listener data)
-    if cm_id and not token:
+    if cm_id:
         try:
-            refresh_token = os.getenv('REFRESH_TOKEN')
-            if refresh_token:
-                token = get_cm_token(refresh_token)
-        except Exception:
-            pass
-    if cm_id and token:
-        try:
-            print(f"Deal lookup: fetching events for cm_id={cm_id} ({artist_data.get('name')})")
-            raw_events = fetch_artist_events(token, cm_id, lookback_days=730, lookahead_days=365)
-            print(f"Deal lookup: got {len(raw_events)} raw events for cm_id={cm_id}")
+            # Events were prefetched in parallel since the top of the request.
+            # Bounded join: touring data is a nice-to-have, never worth
+            # holding the whole response for.
+            _events_thread.join(timeout=4.0)
+            raw_events = _events_holder.get('raw_events') or []
+            if _events_thread.is_alive():
+                print("Deal lookup: events prefetch >4s — responding without touring data")
+            print(f"Deal lookup: got {len(raw_events)} raw events for cm_id={cm_id} (parallel)")
             if raw_events:
                 from datetime import timedelta
                 now = datetime.now()
