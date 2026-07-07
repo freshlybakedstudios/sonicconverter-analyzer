@@ -322,15 +322,29 @@ PRODUCTION_FEATURES = [
 ]
 
 # Hidden from the production-recs DISPLAY surface only (still used for
-# matching, originality, and the plugin's full_target_ranges export). These
-# are raw unitless internals a producer can't act on ("key_strength 0.708",
-# "spectral_flux 819.841") — plus attack_time, whose stored value is the
-# loudest onset's POSITION inside the sampled window, not an attack speed,
-# so its "target zone" is meaningless.
-REC_DISPLAY_EXCLUDED = {
-    'attack_time', 'key_strength', 'spectral_flux', 'beat_strength',
-    'danceability', 'dissonance', 'zcr',
+# matching, originality, and the plugin's full_target_ranges export):
+# attack_time's stored value is the loudest onset's POSITION inside the
+# sampled window, not an attack speed, so its "target zone" is meaningless;
+# zcr duplicates what the brightness card already says in real Hz.
+REC_DISPLAY_EXCLUDED = {'attack_time', 'zcr'}
+
+# Abstract internals rendered as NAMED LEVELS instead of raw numbers
+# ("You 819.841" → "You: Evolving"). Bounds are universe terciles computed
+# from the gems cache 2026-07-07 — each label literally means bottom/middle/
+# top third of all ~243k tracks. Bar geometry stays numeric; only the
+# displayed values are humanized.
+REC_LEVEL_SCALES = {
+    'spectral_flux': {'bounds': [951.0, 1440.0],   'labels': ['Static', 'Some movement', 'Evolving']},
+    'key_strength':  {'bounds': [0.301, 0.472],    'labels': ['Ambiguous', 'Loosely anchored', 'Focused']},
+    'beat_strength': {'bounds': [1.129, 1.330],    'labels': ['Soft', 'Moderate', 'Driving']},
+    'danceability':  {'bounds': [1.057, 1.263],    'labels': ['Loose / human', 'Balanced', 'Locked-in']},
+    'dissonance':    {'bounds': [0.0451, 0.0756],  'labels': ['Smooth', 'Mild tension', 'Tense']},
 }
+
+
+def _rec_level_label(scale: dict, v: float) -> str:
+    b = scale['bounds']
+    return scale['labels'][0 if v < b[0] else 1 if v < b[1] else 2]
 
 FEATURE_DESCRIPTIONS = {
     'sub_ratio': {
@@ -624,7 +638,13 @@ def _format_rec(feat: str, consensus: dict) -> str:
     # Format values + compute dB delta where applicable
     delta_str = ''
 
-    if feat in RATIO_FEATURES:
+    if feat in REC_LEVEL_SCALES:
+        _lv = REC_LEVEL_SCALES[feat]
+        user_str = _rec_level_label(_lv, user_val)
+        peer_str = _rec_level_label(_lv, peer_val)
+        if user_str == peer_str:
+            return None  # same named level — nothing actionable to say
+    elif feat in RATIO_FEATURES:
         user_str = f"{user_val * 100:.1f}%"
         peer_str = f"{peer_val * 100:.1f}%"
         if user_val > 0 and peer_val > 0:
@@ -1871,6 +1891,9 @@ def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -
             'agree': [c['count'], c['total']],
             'direction': direction,
         }
+        if feat in REC_LEVEL_SCALES:
+            row_entry['unit_kind'] = 'level'
+            row_entry['levels'] = REC_LEVEL_SCALES[feat]
         # Loudness only: peer zone converted to whole-track Integrated (est.)
         # via Model C, so the frontend can render the row in mastering-meter
         # units when the user side has an Integrated value (measured or est.).
