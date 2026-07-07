@@ -1657,6 +1657,14 @@ function recMoveNegligible(kind, you, edge) {
   }
 }
 
+// Map a raw value to its named level ("Static" / "Some movement" / "Evolving")
+// via the backend's universe-tercile bounds. Only present on 'level' rows.
+function levelLabel(levels, v) {
+  if (!levels || v == null || isNaN(v)) return '–';
+  const b = levels.bounds;
+  return levels.labels[v < b[0] ? 0 : v < b[1] ? 1 : 2];
+}
+
 function recBand(r) {
   const you = r.you;
   let p5, p25, p50, p75, p95;
@@ -1673,7 +1681,12 @@ function recBand(r) {
   // into the zone so it shows "✓ in the zone" and lands under "already nailing".
   if (!inZone) {
     const edge = you < p25 ? p25 : p75;
-    if (recMoveNegligible(r.unit_kind, you, edge)) inZone = true;
+    if (r.unit_kind === 'level') {
+      // Coarse named scale: same label as the zone edge = effectively there.
+      if (levelLabel(r.levels, you) === levelLabel(r.levels, edge)) inZone = true;
+    } else if (recMoveNegligible(r.unit_kind, you, edge)) {
+      inZone = true;
+    }
   }
   return { p5, p25, p50, p75, p95, inZone };
 }
@@ -1699,7 +1712,20 @@ function recRangeRow(r, band) {
   const dotPos = Math.max(2, Math.min(98, pos(you)));
   const dotCls = offLow ? ' off-low' : offHigh ? ' off-high' : '';
   const edge = you < p25 ? p25 : p75;
-  const moveStr = inZone ? '✓ in the zone' : fmtMove(kind, you, edge) + ' to land in';
+  // 'level' rows read in named levels, not raw numbers: "You: Static ·
+  // Target zone: Evolving · aim for Evolving". Bar geometry stays numeric.
+  const isLevel = kind === 'level';
+  const youStr = isLevel ? levelLabel(r.levels, you) : fmtFeatVal(kind, you);
+  let zoneStr;
+  if (isLevel) {
+    const lo = levelLabel(r.levels, p25), hi = levelLabel(r.levels, p75);
+    zoneStr = lo === hi ? lo : lo + ' – ' + hi;
+  } else {
+    zoneStr = fmtRange(kind, p25, p75);
+  }
+  const moveStr = inZone ? '✓ in the zone'
+    : isLevel ? 'aim for ' + levelLabel(r.levels, edge)
+    : fmtMove(kind, you, edge) + ' to land in';
 
   return (
     `<div class="rec-range">` +
@@ -1714,8 +1740,8 @@ function recRangeRow(r, band) {
         `<div class="rec-range-dot${dotCls}" style="left:${dotPos}%"></div>` +
       `</div>` +
       `<div class="rec-range-legend">` +
-        `<span class="rrl you">You <b>${fmtFeatVal(kind, you)}</b></span>` +
-        `<span class="rrl zone">Target zone <b>${fmtRange(kind, p25, p75)}</b></span>` +
+        `<span class="rrl you">You <b>${youStr}</b></span>` +
+        `<span class="rrl zone">Target zone <b>${zoneStr}</b></span>` +
         `<span class="rrl agree">${r.agree[0]}/${r.agree[1]} agree</span>` +
       `</div>` +
     `</div>`
