@@ -5409,6 +5409,44 @@ async def deal_lookup(
 # Deal Calculator: lead capture
 # ---------------------------------------------------------------------------
 
+META_PIXEL_ID = '1328298298518253'
+
+
+def _send_meta_capi_lead(email: str):
+    """Server-side Meta Lead via the Conversions API.
+
+    The browser pixel's Lead event dies to ad blockers and iOS privacy;
+    this fires from the backend at the exact lead-capture moment, so Meta
+    gets the signal every time. Dedupes with the pixel through a shared
+    deterministic event_id (lead-<normalized email>) — Meta drops the
+    duplicate within its 48h window. No-op until META_CAPI_TOKEN is set
+    in the environment (generate in Events Manager > pixel > Settings >
+    Conversions API).
+    """
+    import hashlib
+    token = os.getenv('META_CAPI_TOKEN')
+    if not token:
+        return
+    try:
+        norm = email.strip().lower()
+        payload = {
+            'data': [{
+                'event_name': 'Lead',
+                'event_time': int(time.time()),
+                'action_source': 'website',
+                'event_source_url': 'https://freshlybakedstudios.com/rates',
+                'event_id': f'lead-{norm}',
+                'user_data': {'em': [hashlib.sha256(norm.encode()).hexdigest()]},
+            }],
+        }
+        resp = requests.post(
+            f'https://graph.facebook.com/v21.0/{META_PIXEL_ID}/events',
+            params={'access_token': token}, json=payload, timeout=10)
+        print(f"Meta CAPI Lead: {resp.status_code} {resp.text[:150]}")
+    except Exception as e:
+        print(f"Meta CAPI Lead failed: {e}")
+
+
 @app.post("/api/deal/lead")
 async def deal_lead_capture(data: dict):
     """
@@ -5421,6 +5459,12 @@ async def deal_lead_capture(data: dict):
 
     if not email:
         raise HTTPException(400, "Email required")
+
+    # Server-side Meta Lead (Conversions API) at the true lead moment.
+    if step == 'contact':
+        threading.Thread(
+            target=_send_meta_capi_lead, args=(email,), daemon=True,
+        ).start()
 
     # Save to Supabase
     if supabase:
