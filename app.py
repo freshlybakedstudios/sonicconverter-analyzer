@@ -321,6 +321,17 @@ PRODUCTION_FEATURES = [
     'stereo_correlation', 'true_peak_dbfs',
 ]
 
+# Hidden from the production-recs DISPLAY surface only (still used for
+# matching, originality, and the plugin's full_target_ranges export). These
+# are raw unitless internals a producer can't act on ("key_strength 0.708",
+# "spectral_flux 819.841") — plus attack_time, whose stored value is the
+# loudest onset's POSITION inside the sampled window, not an attack speed,
+# so its "target zone" is meaningless.
+REC_DISPLAY_EXCLUDED = {
+    'attack_time', 'key_strength', 'spectral_flux', 'beat_strength',
+    'danceability', 'dissonance', 'zcr',
+}
+
 FEATURE_DESCRIPTIONS = {
     'sub_ratio': {
         'higher': 'Strengthen sub-bass foundation — adding presence in the 20-60 Hz range for depth that\'s felt, not heard',
@@ -583,6 +594,8 @@ DB_FEATURES = {'lufs_integrated', 'dynamic_range', 'loudness_range', 'crest_fact
 
 def _format_rec(feat: str, consensus: dict) -> str:
     """Format a single consensus recommendation into a human-readable string."""
+    if feat in REC_DISPLAY_EXCLUDED:
+        return None
     desc = FEATURE_DESCRIPTIONS.get(feat)
     if not desc:
         return None
@@ -1753,7 +1766,10 @@ def _rec_unit_kind(feat: str, unit: str) -> str:
 # LOO-validated: MAE 0.72 dB, ~90% within ±1.5 dB. Missing predictors impute
 # universe medians. Display-only ("est.") — NEVER feeds matching or storage.
 _INT_EST_COEF = {'lufs': 0.959, 'corr': -3.771, 'crest': -0.050, 'dr': -0.004, 'lra': 0.035, 'const': 5.621}
-_INT_EST_MEDIANS = {'corr': 0.828, 'crest': 10.62, 'dr': 19.78, 'lra': 2.84}
+# dr median updated 2026-07-07 after the dynamic_range linear→dB migration
+# (201k v3-era rows converted; universe median moved 19.78 → 25.6, now
+# matching the dB units the model was trained on).
+_INT_EST_MEDIANS = {'corr': 0.828, 'crest': 10.62, 'dr': 25.6, 'lra': 2.84}
 
 
 def _est_integrated_from_gems_row(row: dict):
@@ -1818,6 +1834,8 @@ def _generate_recommendation_ranges(features: dict, high_converter_gems: list) -
         if len(ranges) >= 12:
             break
         feat = c['feature']
+        if feat in REC_DISPLAY_EXCLUDED:
+            continue
         desc = FEATURE_DESCRIPTIONS.get(feat)
         if not desc:
             continue
@@ -2288,6 +2306,38 @@ async def register(
     return {"token": token, "name": name}
 
 
+def _spotify_track_to_artist_url(track_url: str) -> str:
+    """Resolve a pasted Spotify TRACK link to its primary artist's URL.
+    The upload form asks for an artist link but users paste track links;
+    CM's artist search returns nothing for those."""
+    m = re.search(r'/track/([A-Za-z0-9]+)', track_url)
+    if not m:
+        return ''
+    try:
+        auth_resp = requests.post(
+            'https://accounts.spotify.com/api/token',
+            data={'grant_type': 'client_credentials'},
+            auth=(os.getenv('SPOTIFY_CLIENT_ID', ''), os.getenv('SPOTIFY_CLIENT_SECRET', '')),
+            timeout=10,
+        )
+        if auth_resp.status_code != 200:
+            return ''
+        resp = requests.get(
+            f"https://api.spotify.com/v1/tracks/{m.group(1)}",
+            headers={'Authorization': f"Bearer {auth_resp.json()['access_token']}"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return ''
+        artists = resp.json().get('artists', [])
+        if not artists:
+            return ''
+        return (artists[0].get('external_urls') or {}).get('spotify', '')
+    except Exception as e:
+        print(f"  Track→artist resolve failed: {e}")
+        return ''
+
+
 @app.post("/api/analyze")
 async def analyze(
     file: UploadFile = File(...),
@@ -2349,6 +2399,17 @@ async def analyze(
         # the user's registered account).
         provided_artist_url = (artist_spotify_url or '').split('?')[0].rstrip('/')
         track_artist_cm = None
+        if provided_artist_url and '/track/' in provided_artist_url:
+            # Users paste TRACK links where the form asks for an artist link;
+            # CM's artist search can't resolve those. Ask Spotify for the
+            # track's primary artist and continue with that URL.
+            _resolved = _spotify_track_to_artist_url(provided_artist_url)
+            if _resolved:
+                print(f"  Upload: form URL is a TRACK link — resolved artist = {_resolved}")
+                provided_artist_url = _resolved
+            else:
+                print(f"  Upload: form URL is a TRACK link, artist resolve failed — ignoring it")
+                provided_artist_url = ''
         if provided_artist_url:
             print(f"  Upload: form-provided artist URL = {provided_artist_url}")
             t_cm = time.time()
