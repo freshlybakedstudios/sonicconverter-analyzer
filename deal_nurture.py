@@ -48,11 +48,15 @@ SUPPRESS_DOMAINS = {
     "artist.com",
     "test.com",
 }
+# Specific internal/test addresses (owner's own inboxes on public providers).
+SUPPRESS_EMAILS = {OWNER_EMAIL.strip().lower(), "freshlybakedstudios@gmail.com"}
 
 
 def _is_suppressed_email(email: str) -> bool:
     e = (email or "").strip().lower()
     if "@" not in e:
+        return True
+    if e in SUPPRESS_EMAILS:
         return True
     return e.split("@")[-1] in SUPPRESS_DOMAINS
 
@@ -98,7 +102,7 @@ def _lead_view(lead: dict) -> dict:
     if labels:
         svc = labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " + " + labels[-1]
     else:
-        svc = "your project"
+        svc = ""  # no services stored (e.g. legacy leads) — sentence adapts
     val = meta.get("deal_value")
     # Greeting: use a name if we have a distinct one, else something warm.
     greet = name if name else (artist or "there")
@@ -122,11 +126,15 @@ def build_touch(lead: dict, touch: int):
     rates = f"{FRONTEND_URL}/rates"
     for_artist = f" for {v['artist']}" if v["artist"] else ""
     price = f" — ${v['value']:,}" if isinstance(v["value"], (int, float)) and v["value"] else ""
+    svc = v["service_str"]
+    # Adapt the sentence whether or not we know the specific services.
+    project_phrase = f"a <strong>{svc}</strong> project" if svc else "a project"
+    project_phrase2 = f"your {svc} project" if svc else "your project"
 
     if touch == 1:
         subject = "Your Freshly Baked quote's still warm"
         lead_line = (
-            f"You started pricing out a <strong>{v['service_str']}</strong> project"
+            f"You started pricing out {project_phrase}"
             f"{for_artist}{price} with us — just wanted to make sure you got what you needed."
         )
         body = f"""
@@ -150,7 +158,7 @@ def build_touch(lead: dict, touch: int):
              quite hitting, I'm happy to give it a quick listen and tell you exactly what I'd do with
              it — no charge, no strings. Sometimes it's one thing holding a record back.</p>
           <p style="color:#ccc">Just reply with a link and I'll take a pass. Or if you're ready to
-             lock in your {v['service_str']} project{for_artist}, your quote's still here:</p>
+             lock in {project_phrase2}{for_artist}, your quote's still here:</p>
           <p style="text-align:center;margin:28px 0">
             <a href="{rates}" style="background:#D8E166;color:#222020;text-decoration:none;
                font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
