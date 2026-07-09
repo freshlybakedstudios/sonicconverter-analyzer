@@ -5558,6 +5558,12 @@ async def deal_lead_capture(data: dict):
                 'email': email,
                 'step': step,
                 'artist_name': data.get('artist_name'),
+                # Everything the follow-up nurture needs, captured at lead time.
+                'metadata': {
+                    'services': data.get('services') or [],
+                    'track_count': data.get('track_count'),
+                    'deal_value': data.get('deal_value'),
+                },
                 'created_at': datetime.utcnow().isoformat(),
             }
             supabase.table('deal_leads').insert(row).execute()
@@ -5736,6 +5742,27 @@ async def deal_checkout_status(session_id: str):
             else:
                 print(f"Skipping contract email: email={customer_email} supabase={bool(supabase)}")
 
+            # Mark this email as booked so the lead-nurture suppresses it.
+            if customer_email and supabase:
+                try:
+                    exists = supabase.table('deal_leads').select('id').eq(
+                        'step', 'paid'
+                    ).contains('metadata', {'session_id': session_id}).limit(1).execute()
+                    if not exists.data:
+                        supabase.table('deal_leads').insert({
+                            'name': customer_name or '',
+                            'email': customer_email,
+                            'step': 'paid',
+                            'artist_name': session.metadata.get('artist_name'),
+                            'metadata': {
+                                'session_id': session_id,
+                                'amount_total': session.amount_total,
+                            },
+                            'created_at': datetime.utcnow().isoformat(),
+                        }).execute()
+                except Exception as e:
+                    print(f"Paid marker error: {e}")
+
         return {
             "status": session.status,
             "customer_email": session.customer_details.email if session.customer_details else '',
@@ -5798,6 +5825,52 @@ def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
     except Exception as e:
         print(f"Contract email send failed: {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# Deal Calculator: lead nurture (recover quote-builders who didn't book)
+# ---------------------------------------------------------------------------
+import deal_nurture
+
+
+@app.post("/api/deal/nurture/run")
+async def deal_nurture_run(token: str = "", dry: int = 0):
+    """Cron-triggered lead follow-up. Guarded by NURTURE_CRON_TOKEN.
+    Ships in preview mode (owner-only) until NURTURE_ENABLED=true. Pass dry=1
+    to force a preview regardless."""
+    expected = os.getenv('NURTURE_CRON_TOKEN', '')
+    if not expected or token != expected:
+        raise HTTPException(403, "forbidden")
+    if not supabase:
+        raise HTTPException(500, "database unavailable")
+    dry_run = True if dry == 1 else None  # None => auto (respects NURTURE_ENABLED)
+    return deal_nurture.run_nurture(supabase, dry_run=dry_run)
+
+
+@app.get("/api/deal/nurture/unsubscribe")
+async def deal_nurture_unsub(e: str = "", t: str = ""):
+    """One-click unsubscribe from the email footer link."""
+    from fastapi.responses import HTMLResponse
+    if not deal_nurture.verify_unsub(e, t):
+        return HTMLResponse("<h3>Invalid unsubscribe link.</h3>", status_code=400)
+    if supabase:
+        try:
+            rows = supabase.table('deal_leads').select('id,metadata').eq(
+                'email', e
+            ).eq('step', 'contact').execute().data or []
+            for r in rows:
+                meta = r.get('metadata') or {}
+                nur = meta.get('nurture') or {}
+                nur['unsubscribed'] = True
+                meta['nurture'] = nur
+                supabase.table('deal_leads').update({'metadata': meta}).eq('id', r['id']).execute()
+        except Exception as ex:
+            print(f"Unsub error: {ex}")
+    return HTMLResponse(
+        "<div style='font-family:sans-serif;text-align:center;padding:48px;color:#333'>"
+        "<h3>You're unsubscribed.</h3>"
+        "<p>You won't get any more follow-ups. Thanks!</p></div>"
+    )
 
 
 # ---------------------------------------------------------------------------
