@@ -5873,6 +5873,34 @@ async def deal_nurture_unsub(e: str = "", t: str = ""):
     )
 
 
+import asyncio
+
+_NURTURE_POLL_SECONDS = 600  # every 10 min; touch-1 due 30 min after abandon → fires ~30-40 min after
+
+
+@app.on_event("startup")
+async def _start_nurture_scheduler():
+    """In-app poller so follow-ups fire ~30 min after a lead leaves the site,
+    without an external cron. Single uvicorn worker => no duplicate sends.
+    Only sends when NURTURE_ENABLED=true (read fresh each loop)."""
+    async def _loop():
+        while True:
+            try:
+                await asyncio.sleep(_NURTURE_POLL_SECONDS)
+                if os.getenv('NURTURE_ENABLED', 'false').lower() == 'true' and supabase:
+                    loop = asyncio.get_event_loop()
+                    res = await loop.run_in_executor(
+                        None, deal_nurture.run_nurture, supabase, False
+                    )
+                    if res and res.get('sent'):
+                        print(f"[nurture] auto-sent {res['sent']} "
+                              f"(t1={res['touch1_due']} t2={res['touch2_due']})")
+            except Exception as e:
+                print(f"[nurture] scheduler error: {e}")
+    asyncio.create_task(_loop())
+    print(f"[nurture] scheduler started (poll {_NURTURE_POLL_SECONDS}s, touch1 ~30min after abandon)")
+
+
 # ---------------------------------------------------------------------------
 # Chat widget — visitor <-> owner-via-Telegram bridge
 # ---------------------------------------------------------------------------

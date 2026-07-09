@@ -30,7 +30,8 @@ NURTURE_ENABLED = os.getenv("NURTURE_ENABLED", "false").lower() == "true"
 _UNSUB_SECRET = os.getenv("NURTURE_UNSUB_SECRET", "fbs-nurture-unsub")
 
 # Wait this long after a lead abandons before touch 1, and after touch 1 before touch 2.
-TOUCH1_DELAY = timedelta(days=1)
+# Touch 1 fires ~30 min after they leave the site — timely cart-abandonment nudge.
+TOUCH1_DELAY = timedelta(minutes=30)
 TOUCH2_DELAY = timedelta(days=4)
 LOOKBACK = timedelta(days=30)  # don't chase leads older than this
 
