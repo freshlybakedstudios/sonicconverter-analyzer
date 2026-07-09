@@ -41,6 +41,21 @@ SERVICE_LABELS = {
     "dolbyAtmos": "Dolby Atmos",
 }
 
+# Never nurture internal / test addresses (owner's own domain, placeholder domains).
+SUPPRESS_DOMAINS = {
+    "freshlybakedstudios.com",
+    "example.com",
+    "artist.com",
+    "test.com",
+}
+
+
+def _is_suppressed_email(email: str) -> bool:
+    e = (email or "").strip().lower()
+    if "@" not in e:
+        return True
+    return e.split("@")[-1] in SUPPRESS_DOMAINS
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -226,7 +241,7 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
 
     t1, t2 = [], []
     for email, r in by_email.items():
-        if email in booked:
+        if email in booked or _is_suppressed_email(email):
             continue
         nur = (r.get("metadata") or {}).get("nurture") or {}
         if nur.get("unsubscribed"):
