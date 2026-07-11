@@ -5958,6 +5958,75 @@ async def _nurture_loop():
 
 
 # ---------------------------------------------------------------------------
+# Muso.AI honest career stats — feeds the live counter on /music.
+# Key stays server-side; totals subtract owner-confirmed wrong credits.
+# ---------------------------------------------------------------------------
+_MUSO_BASE = "https://api.developer.muso.ai/v4a"
+_MUSO_PROFILE_ID = "54bd5f97-31c7-9c8c-766a-40f7457d206e"
+_MUSO_EXCLUDED_TRACKS = {  # owner-confirmed NOT his credits (2026-07-11)
+    "3243a996-518a-46fb-91da-2f3b05187a92",  # Dance Monkey — Tones And I
+    "6f7a2426-e120-4c54-8d05-50af09bead61",  # Pour Some Sugar On Me — 2017 remaster
+}
+_MUSO_CACHE_TTL = 6 * 3600
+_muso_cache = {"data": None, "at": 0.0}
+
+
+@app.get("/api/muso/stats")
+async def muso_stats():
+    """Honest Muso.AI career totals (streams/views/credits/collaborators),
+    cached 6h. The music page fetches this so the numbers stay current
+    between site deploys."""
+    import time as _time
+    key = os.getenv("MUSO_API_KEY")
+    if not key:
+        raise HTTPException(503, "muso not configured")
+    now = _time.time()
+    if _muso_cache["data"] and now - _muso_cache["at"] < _MUSO_CACHE_TTL:
+        return _muso_cache["data"]
+
+    headers = {"workspace-api-key": key, "User-Agent": "Mozilla/5.0"}
+
+    def _get(path):
+        r = requests.get(f"{_MUSO_BASE}{path}", headers=headers, timeout=15)
+        r.raise_for_status()
+        return r.json()
+
+    try:
+        analytics = _get(f"/analytics/profile/{_MUSO_PROFILE_ID}")
+        profile = _get(f"/profile/{_MUSO_PROFILE_ID}")
+        tracks = _get(
+            f"/analytics/profile/{_MUSO_PROFILE_ID}/tracks"
+            f"?sortKey=streams&sortDirection=DESC&limit=50&offset=0"
+        )
+        summary = analytics["data"]["summary"]
+        streams = summary.get("streams") or 0
+        views = summary.get("views") or 0
+        excluded = 0
+        # The excluded credits are the largest on the profile, so the top of
+        # the streams-sorted list always contains them (until they're removed
+        # on muso.ai itself, at which point nothing is subtracted).
+        for t in tracks["data"]["items"]:
+            if t.get("id") in _MUSO_EXCLUDED_TRACKS:
+                streams -= t.get("streams") or 0
+                views -= t.get("views") or 0
+                excluded += 1
+        data = {
+            "streams": max(streams, 0),
+            "views": max(views, 0),
+            "creditCount": max((profile["data"].get("creditCount") or 0) - excluded, 0),
+            "collaboratorsCount": profile["data"].get("collaboratorsCount") or 0,
+            "updatedAt": datetime.utcnow().isoformat(),
+        }
+        _muso_cache["data"] = data
+        _muso_cache["at"] = now
+        return data
+    except Exception as e:
+        if _muso_cache["data"]:
+            return _muso_cache["data"]
+        raise HTTPException(502, f"muso fetch failed: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Chat widget — visitor <-> owner-via-Telegram bridge
 # ---------------------------------------------------------------------------
 def _telegram_api(method: str, payload: dict):
