@@ -295,6 +295,128 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
     return summary
 
 
+# ---------------------------------------------------------------------------
+# Daily owner digest — every new lead from the last 24h with enough context to
+# send one personal line each. Automation warms; a human email closes.
+# ---------------------------------------------------------------------------
+DIGEST_HOUR_ET = 9  # send once daily, after 9am New York time
+
+
+def _now_et():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York"))
+    except Exception:
+        return datetime.now(timezone.utc) - timedelta(hours=4)
+
+
+def run_daily_digest(supabase) -> dict:
+    """Email the owner a digest of the last 24h of deal-calc leads, once per
+    day after DIGEST_HOUR_ET. Independent of NURTURE_ENABLED — it never
+    contacts a lead. Once-per-day guard = a step='digest_sent' marker row."""
+    now_et = _now_et()
+    if now_et.hour < DIGEST_HOUR_ET:
+        return {"skipped": "before send hour"}
+    today = now_et.strftime("%Y-%m-%d")
+
+    marker = (
+        supabase.table("deal_leads").select("id").eq("step", "digest_sent")
+        .contains("metadata", {"date": today}).limit(1).execute()
+    )
+    if marker.data:
+        return {"skipped": "already sent today"}
+
+    since = (_now() - timedelta(hours=24)).isoformat()
+    rows = (
+        supabase.table("deal_leads").select("*").gte("created_at", since)
+        .order("created_at").execute().data or []
+    )
+
+    paid, leads_by_email = [], {}
+    for r in rows:
+        email = (r.get("email") or "").lower()
+        if not email or _is_suppressed_email(email):
+            continue
+        if r.get("step") == "paid":
+            paid.append(r)
+        elif r.get("step") in ("contact", "checkout_started"):
+            # keep the most advanced row per email (checkout beats contact)
+            prev = leads_by_email.get(email)
+            if not prev or r.get("step") == "checkout_started":
+                leads_by_email[email] = r
+
+    # Drop leads who also paid in the window — they're in the wins section
+    paid_emails = {(p.get("email") or "").lower() for p in paid}
+    leads = [r for e, r in leads_by_email.items() if e not in paid_emails]
+
+    if not leads and not paid:
+        # still stamp the marker so we don't re-query all day
+        supabase.table("deal_leads").insert({
+            "name": "", "email": "digest@internal", "step": "digest_sent",
+            "metadata": {"date": today, "leads": 0},
+            "created_at": _now().isoformat(),
+        }).execute()
+        return {"skipped": "no leads in window"}
+
+    def lead_block(r):
+        v = _lead_view(r)
+        meta = r.get("metadata") or {}
+        val = f"${v['value']:,}" if isinstance(v["value"], (int, float)) and v["value"] else "value unknown"
+        hot = r.get("step") == "checkout_started"
+        nur = meta.get("nurture") or {}
+        touches = ("t1" if nur.get("t1_sent_at") else "") + ("+t2" if nur.get("t2_sent_at") else "")
+        opener_about = v["service_str"].lower() if v["service_str"] else "a project"
+        who = v["artist"] or v["greet"]
+        opener = (
+            f"Hey {v['greet']} — saw you priced out {opener_about}"
+            f"{' for ' + v['artist'] if v['artist'] else ''}. "
+            f"Send me your latest track and I'll take a quick listen — "
+            f"I'll tell you exactly what I'd do with it."
+        )
+        return f"""
+        <div style="border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:12px{';border-color:#c00' if hot else ''}">
+          <b>{who}</b> &lt;{v['email']}&gt;
+          {'<span style="color:#c00;font-weight:bold"> · STARTED CHECKOUT — hottest</span>' if hot else ''}<br>
+          {v['service_str'] or 'services unknown'} · {val}
+          {f' · nurture sent: {touches}' if touches else ' · no nurture sent yet'}<br>
+          <span style="color:#555;font-size:13px">Suggested opener (personalize + send from your inbox):</span><br>
+          <em style="color:#333">{opener}</em>
+        </div>"""
+
+    def paid_block(p):
+        meta = p.get("metadata") or {}
+        amount = meta.get("amount_total")
+        amt = f"${amount/100:,.0f}" if isinstance(amount, (int, float)) else "?"
+        note = ""
+        if meta.get("payment_kind") == "reserve":
+            note = (f" — <b style='color:#c00'>slot reservation: balance of "
+                    f"${meta.get('deal_total') or '?'} still due, send a Stripe payment link before delivery</b>")
+        return f"<li><b>{p.get('name') or p.get('email')}</b> paid {amt}{note}</li>"
+
+    wins_html = f"<h3>💰 Paid ({len(paid)})</h3><ul>{''.join(paid_block(p) for p in paid)}</ul>" if paid else ""
+    leads_html = "".join(lead_block(r) for r in leads) or "<p>(none)</p>"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:640px;margin:0 auto;color:#222">
+      <h2>Deal-calc leads — last 24h</h2>
+      {wins_html}
+      <h3>🔥 Leads to personally follow up ({len(leads)})</h3>
+      <p style="color:#555;font-size:13px">The automated nurture already ran or will —
+      these are worth one personal line from you. Reply from your own inbox, not SendGrid.</p>
+      {leads_html}
+    </div>"""
+
+    n_leads = len(leads)
+    subject = f"☀️ {n_leads} lead{'s' if n_leads != 1 else ''} to follow up" + (f" · {len(paid)} paid 💰" if paid else "")
+    sent = _send_email(OWNER_EMAIL, subject, html)
+    if sent:
+        supabase.table("deal_leads").insert({
+            "name": "", "email": "digest@internal", "step": "digest_sent",
+            "metadata": {"date": today, "leads": n_leads, "paid": len(paid)},
+            "created_at": _now().isoformat(),
+        }).execute()
+    return {"sent": sent, "leads": n_leads, "paid": len(paid)}
+
+
 def _send_owner_preview(t1, t2):
     lines = []
     for n, group in ((1, t1), (2, t2)):
