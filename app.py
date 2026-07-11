@@ -5638,7 +5638,16 @@ async def deal_checkout(data: dict):
     if split_percent > 0:
         description += f" | {split_percent}% backend"
 
-    is_deposit = deposit_amount < total
+    # 'full' | 'deposit' | 'reserve' (flat slot reservation, counts toward
+    # the total). Older clients don't send it — fall back to the amount check.
+    payment_kind = data.get('payment_kind') or (
+        'deposit' if deposit_amount < total else 'full')
+    kind_labels = {
+        'full': 'Full Payment',
+        'deposit': '50% Deposit',
+        'reserve': 'Slot Reservation (applies to total)',
+    }
+    kind_label = kind_labels.get(payment_kind, '50% Deposit')
 
     try:
         session = stripe_lib.checkout.Session.create(
@@ -5649,7 +5658,7 @@ async def deal_checkout(data: dict):
                 'price_data': {
                     'currency': 'usd',
                     'product_data': {
-                        'name': f"{'50% Deposit' if is_deposit else 'Full Payment'} — Freshly Baked Studios",
+                        'name': f"{kind_label} — Freshly Baked Studios",
                         'description': description,
                     },
                     'unit_amount': deposit_amount * 100,  # Stripe uses cents
@@ -5663,6 +5672,7 @@ async def deal_checkout(data: dict):
                 'track_count': str(track_count),
                 'total': str(total),
                 'deposit': str(deposit_amount),
+                'payment_kind': payment_kind,
                 'split_percent': str(split_percent),
                 'contract_agreed': 'true',
             },
@@ -5681,6 +5691,7 @@ async def deal_checkout(data: dict):
                     'metadata': {
                         'session_id': session.id,
                         'deposit_amount': deposit_amount,
+                        'payment_kind': payment_kind,
                         'total': total,
                         'services': service_names,
                         'contract_agreed': True,
@@ -5695,7 +5706,7 @@ async def deal_checkout(data: dict):
         # Push notification
         send_pushover_notification(
             "Deal Checkout Started!",
-            f"{name} ({artist_name})\n${deposit_amount:,} of ${total:,}\n{service_names}"
+            f"{name} ({artist_name})\n{kind_label}: ${deposit_amount:,} of ${total:,}\n{service_names}"
         )
 
         return {"url": session.url, "session_id": session.id}
@@ -5723,11 +5734,16 @@ async def deal_checkout_status(session_id: str):
             print(f"Payment complete: email={customer_email} name={customer_name}")
 
             try:
+                kind = session.metadata.get('payment_kind') or ''
+                kind_note = ''
+                if kind == 'reserve':
+                    deal_total = session.metadata.get('total') or '?'
+                    kind_note = f"\nSLOT RESERVED — balance of deal (${deal_total}) still due; send payment link before delivery"
                 send_pushover_notification(
                     "PAYMENT RECEIVED!",
                     f"{session.customer_details.name or customer_email}\n"
                     f"${session.amount_total / 100:,.0f}\n"
-                    f"Session: {session_id[:8]}..."
+                    f"Session: {session_id[:8]}...{kind_note}"
                 )
             except Exception as e:
                 print(f"Deal payment notification error: {e}")
@@ -5773,6 +5789,8 @@ async def deal_checkout_status(session_id: str):
                             'metadata': {
                                 'session_id': session_id,
                                 'amount_total': session.amount_total,
+                                'payment_kind': session.metadata.get('payment_kind'),
+                                'deal_total': session.metadata.get('total'),
                             },
                             'created_at': datetime.utcnow().isoformat(),
                         }).execute()
@@ -5863,6 +5881,18 @@ async def deal_nurture_run(token: str = "", dry: int = 0):
     return deal_nurture.run_nurture(supabase, dry_run=dry_run)
 
 
+@app.post("/api/deal/nurture/digest")
+async def deal_nurture_digest(token: str = ""):
+    """Manually trigger the daily owner lead digest (same guard as /run).
+    The once-per-day marker still applies."""
+    expected = os.getenv('NURTURE_CRON_TOKEN', '')
+    if not expected or token != expected:
+        raise HTTPException(403, "forbidden")
+    if not supabase:
+        raise HTTPException(500, "database unavailable")
+    return deal_nurture.run_daily_digest(supabase)
+
+
 @app.get("/api/deal/nurture/unsubscribe")
 async def deal_nurture_unsub(e: str = "", t: str = ""):
     """One-click unsubscribe from the email footer link."""
@@ -5907,6 +5937,16 @@ async def _nurture_loop():
                 if res and res.get('sent'):
                     print(f"[nurture] auto-sent {res['sent']} "
                           f"(t1={res['touch1_due']} t2={res['touch2_due']})", flush=True)
+            # Owner-facing daily lead digest — independent of NURTURE_ENABLED
+            # (never emails a lead); its own once-per-day guard is inside.
+            if supabase:
+                loop = asyncio.get_event_loop()
+                dres = await loop.run_in_executor(
+                    None, deal_nurture.run_daily_digest, supabase
+                )
+                if dres.get('sent'):
+                    print(f"[digest] sent: {dres['leads']} leads, "
+                          f"{dres['paid']} paid", flush=True)
         except Exception as e:
             print(f"[nurture] scheduler error: {e}", flush=True)
 
