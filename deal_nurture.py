@@ -362,14 +362,22 @@ def run_daily_digest(supabase) -> dict:
         v = _lead_view(r)
         meta = r.get("metadata") or {}
         val = f"${v['value']:,}" if isinstance(v["value"], (int, float)) and v["value"] else "value unknown"
+        tracks = meta.get("track_count")
+        # deal_value already includes bulk discounts — show the track count so
+        # the total is legible ($1,890 = 2 tracks, not a wrong single-track price)
+        track_str = f" · {tracks} track{'s' if tracks != 1 else ''}" if tracks else ""
         hot = r.get("step") == "checkout_started"
         nur = meta.get("nurture") or {}
         touches = ("t1" if nur.get("t1_sent_at") else "") + ("+t2" if nur.get("t2_sent_at") else "")
         opener_about = v["service_str"].lower() if v["service_str"] else "a project"
-        who = v["artist"] or v["greet"]
+        # Display name: artist, then real name, then the email's local part —
+        # never the "there" greeting fallback
+        who = v["artist"] or (v["greet"] if v["greet"] != "there" else v["email"].split("@")[0])
+        # Only add "for <artist>" when it isn't just repeating the greeting
+        for_artist = f" for {v['artist']}" if v["artist"] and v["artist"] != v["greet"] else ""
         opener = (
             f"Hey {v['greet']} — saw you priced out {opener_about}"
-            f"{' for ' + v['artist'] if v['artist'] else ''}. "
+            f"{for_artist}. "
             f"Send me your latest track and I'll take a quick listen — "
             f"I'll tell you exactly what I'd do with it."
         )
@@ -377,7 +385,7 @@ def run_daily_digest(supabase) -> dict:
         <div style="border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:12px{';border-color:#c00' if hot else ''}">
           <b>{who}</b> &lt;{v['email']}&gt;
           {'<span style="color:#c00;font-weight:bold"> · STARTED CHECKOUT — hottest</span>' if hot else ''}<br>
-          {v['service_str'] or 'services unknown'} · {val}
+          {v['service_str'] or 'services unknown'} · {val}{track_str}
           {f' · nurture sent: {touches}' if touches else ' · no nurture sent yet'}<br>
           <span style="color:#555;font-size:13px">Suggested opener (personalize + send from your inbox):</span><br>
           <em style="color:#333">{opener}</em>
