@@ -2870,9 +2870,16 @@ async def analyze(
             additional_revenue = 0
             peer_top_25 = conv_comparison.get('peer_top_25', 0)
             if peer_top_25 > 0 and u_listeners > 0:
-                top25_followers_target = int(round((peer_top_25 / 100) * u_listeners * 4.3 / 0.1))
-                current_followers = u_followers if u_followers > 0 else 0
-                additional_fans = max(int(round(top25_followers_target - current_followers)), 0)
+                # Additional active fans/yr = annual unique audience (monthly
+                # listeners × 4.3) converting at the top-25% rate instead of the
+                # current one. The old formula inverted the 0.1 active-follower
+                # factor, benchmarking a raw follower count of ~3.35× listeners
+                # and inflating the gap ~10× (a 3.8K-listener artist was told
+                # "+9,355 fans"). This version can never promise more fans than
+                # the audience the artist actually reaches.
+                current_conv = u_conversion or 0.0
+                additional_fans = max(int(round(
+                    (peer_top_25 - current_conv) / 100.0 * u_listeners * 4.3)), 0)
                 additional_revenue = additional_fans * REVENUE_PER_FAN_PER_YEAR
 
             # Estimated save rate range from follower conversion (proxy)
@@ -4670,9 +4677,11 @@ async def analyze_url(
         if u_conversion is not None and u_conversion >= peer_top_25 and peer_p99 > u_conversion:
             target_rate = peer_p99
         if target_rate > 0 and u_listeners > 0:
-            target_followers = int(round((target_rate / 100) * u_listeners * 4.3 / 0.1))
-            current_followers = u_followers if u_followers > 0 else 0
-            additional_fans = max(int(round(target_followers - current_followers)), 0)
+            # Audience-based fan gap (see comment at the scan-path site): annual
+            # uniques × rate delta, not the old follower-ratio inversion (~10× high).
+            current_conv = u_conversion or 0.0
+            additional_fans = max(int(round(
+                (target_rate - current_conv) / 100.0 * u_listeners * 4.3)), 0)
             additional_revenue = additional_fans * REVENUE_PER_FAN_PER_YEAR
 
         # Estimated save rate range from follower conversion (proxy)
@@ -5214,9 +5223,10 @@ async def deal_lookup(
                         target_cr = 0
 
                     if target_cr > conversion_rate:
-                        target_followers = int(round((target_cr / 100) * listeners * 4.3 / 0.1))
-                        current_followers = int(followers) if followers > 0 else 0
-                        additional_fans = max(int(round(target_followers - current_followers)), 0)
+                        # Audience-based fan gap (see scan-path comment): annual
+                        # uniques × rate delta, not the follower-ratio inversion.
+                        additional_fans = max(int(round(
+                            (target_cr - conversion_rate) / 100.0 * listeners * 4.3)), 0)
                         additional_revenue = additional_fans * REVENUE_PER_FAN_PER_YEAR
 
                         conversion_opportunity = {
@@ -5245,9 +5255,10 @@ async def deal_lookup(
             target_cr = 0  # above p99 with peer data — no fake numbers
 
         if target_cr > conversion_rate:
-            current_followers_equiv = conversion_rate * listeners * 4.3 / (0.1 * 100)
-            target_followers_equiv = target_cr * listeners * 4.3 / (0.1 * 100)
-            additional_fans = max(int(target_followers_equiv - current_followers_equiv), 0)
+            # Audience-based fan gap (see scan-path comment): annual uniques ×
+            # rate delta, not the follower-ratio inversion (~10× optimistic).
+            additional_fans = max(int(round(
+                (target_cr - conversion_rate) / 100.0 * listeners * 4.3)), 0)
             additional_revenue = additional_fans * REVENUE_PER_FAN_PER_YEAR
             conversion_opportunity = {
                 'additional_fans': additional_fans,
