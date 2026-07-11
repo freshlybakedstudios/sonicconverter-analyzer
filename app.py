@@ -5642,6 +5642,9 @@ async def deal_checkout(data: dict):
     # the total). Older clients don't send it — fall back to the amount check.
     payment_kind = data.get('payment_kind') or (
         'deposit' if deposit_amount < total else 'full')
+    # Reviewer names shown on the payment step (randomized pair) — stored so
+    # paid sessions can be ranked by which testimonials actually convert.
+    testimonials = ', '.join(str(t) for t in (data.get('testimonials') or []))[:450]
     kind_labels = {
         'full': 'Full Payment',
         'deposit': '50% Deposit',
@@ -5673,6 +5676,7 @@ async def deal_checkout(data: dict):
                 'total': str(total),
                 'deposit': str(deposit_amount),
                 'payment_kind': payment_kind,
+                'testimonials_shown': testimonials,
                 'split_percent': str(split_percent),
                 'contract_agreed': 'true',
             },
@@ -5692,6 +5696,7 @@ async def deal_checkout(data: dict):
                         'session_id': session.id,
                         'deposit_amount': deposit_amount,
                         'payment_kind': payment_kind,
+                        'testimonials_shown': testimonials,
                         'total': total,
                         'services': service_names,
                         'contract_agreed': True,
@@ -5790,6 +5795,7 @@ async def deal_checkout_status(session_id: str):
                                 'session_id': session_id,
                                 'amount_total': session.amount_total,
                                 'payment_kind': session.metadata.get('payment_kind'),
+                                'testimonials_shown': session.metadata.get('testimonials_shown'),
                                 'deal_total': session.metadata.get('total'),
                             },
                             'created_at': datetime.utcnow().isoformat(),

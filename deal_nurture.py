@@ -391,6 +391,9 @@ def run_daily_digest(supabase) -> dict:
         if meta.get("payment_kind") == "reserve":
             note = (f" — <b style='color:#c00'>slot reservation: balance of "
                     f"${meta.get('deal_total') or '?'} still due, send a Stripe payment link before delivery</b>")
+        shown = meta.get("testimonials_shown")
+        if shown:
+            note += f" <span style='color:#777;font-size:12px'>(reviews shown: {shown})</span>"
         return f"<li><b>{p.get('name') or p.get('email')}</b> paid {amt}{note}</li>"
 
     wins_html = f"<h3>💰 Paid ({len(paid)})</h3><ul>{''.join(paid_block(p) for p in paid)}</ul>" if paid else ""
