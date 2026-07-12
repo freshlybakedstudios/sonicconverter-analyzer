@@ -42,6 +42,47 @@ SERVICE_LABELS = {
     "dolbyAtmos": "Dolby Atmos",
 }
 
+# Mirrors the frontend's SERVICE_RATES / bulk tiers (constants.ts) so the
+# owner digest can show the same math the lead saw. Standard tier only —
+# premium (>1M listener) deals won't reconcile and fall back to value-only.
+SERVICE_RATES = {
+    "fullProduction": 3500,
+    "mixing": 800,
+    "mastering": 250,
+    "dolbyAtmos": 800,  # 500 when bundled with mixing
+}
+ATMOS_BUNDLE_RATE = 500
+BULK_TIERS = [(7, 0.20), (4, 0.15), (2, 0.10)]  # min tracks -> discount
+
+
+def price_breakdown(service_keys, track_count):
+    """Recompute the quote the same way preCalculateDeal does. Returns
+    (total, human-readable breakdown string) or (None, None) if the
+    services are unknown."""
+    if not service_keys or not track_count:
+        return None, None
+    discount = next((d for m, d in BULK_TIERS if track_count >= m), 0)
+    has_mixing = "mixing" in service_keys
+    parts, per_track = [], 0
+    for k in service_keys:
+        rate = SERVICE_RATES.get(k)
+        if rate is None:
+            return None, None
+        if k == "dolbyAtmos" and has_mixing:
+            rate = ATMOS_BUNDLE_RATE
+        # floor(x+0.5) = JS Math.round (Python's round() is banker's rounding
+        # and turns $212.50 into $212, breaking parity with the site's quote)
+        discounted = int(rate * (1 - discount) + 0.5)
+        per_track += discounted
+        parts.append(f"{SERVICE_LABELS.get(k, k)} ${discounted:,}")
+    total = per_track * track_count
+    disc_str = f", {int(discount * 100)}% bulk discount" if discount else ""
+    breakdown = (
+        f"{track_count} track{'s' if track_count != 1 else ''} × "
+        f"${per_track:,}/track ({' + '.join(parts)}{disc_str}) = ${total:,}"
+    )
+    return total, breakdown
+
 # Never nurture internal / test addresses (owner's own domain, placeholder domains).
 SUPPRESS_DOMAINS = {
     "freshlybakedstudios.com",
@@ -363,9 +404,16 @@ def run_daily_digest(supabase) -> dict:
         meta = r.get("metadata") or {}
         val = f"${v['value']:,}" if isinstance(v["value"], (int, float)) and v["value"] else "value unknown"
         tracks = meta.get("track_count")
-        # deal_value already includes bulk discounts — show the track count so
-        # the total is legible ($1,890 = 2 tracks, not a wrong single-track price)
-        track_str = f" · {tracks} track{'s' if tracks != 1 else ''}" if tracks else ""
+        # Show the full price math so the total explains itself
+        # ("2 tracks × $945/track (Mixing $720 + Mastering $225, 10% bulk
+        # discount) = $1,890" instead of a bare $1,890).
+        calc_total, breakdown = price_breakdown(meta.get("services"), tracks)
+        if breakdown and calc_total == v["value"]:
+            price_line = breakdown
+        else:
+            # premium tier / legacy rows / rate changes — show what we know
+            track_str = f" · {tracks} track{'s' if tracks != 1 else ''}" if tracks else ""
+            price_line = f"{val}{track_str}"
         hot = r.get("step") == "checkout_started"
         nur = meta.get("nurture") or {}
         touches = ("t1" if nur.get("t1_sent_at") else "") + ("+t2" if nur.get("t2_sent_at") else "")
@@ -385,7 +433,7 @@ def run_daily_digest(supabase) -> dict:
         <div style="border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:12px{';border-color:#c00' if hot else ''}">
           <b>{who}</b> &lt;{v['email']}&gt;
           {'<span style="color:#c00;font-weight:bold"> · STARTED CHECKOUT — hottest</span>' if hot else ''}<br>
-          {v['service_str'] or 'services unknown'} · {val}{track_str}
+          {v['service_str'] or 'services unknown'} · {price_line}
           {f' · nurture sent: {touches}' if touches else ' · no nurture sent yet'}<br>
           <span style="color:#555;font-size:13px">Suggested opener (personalize + send from your inbox):</span><br>
           <em style="color:#333">{opener}</em>
