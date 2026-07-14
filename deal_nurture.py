@@ -26,6 +26,9 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://freshlybakedstudios.com")
 PUBLIC_API_BASE = os.getenv("PUBLIC_API_BASE", "https://analyze.freshlybakedstudios.com")
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "freshlybakedstudios@gmail.com")
 NURTURE_FROM = os.getenv("NURTURE_FROM", "deals@freshlybakedstudios.com")
+# BCC every nurture send into the studio mailbox so outbound auto-replies are
+# visible in Gmail (SendGrid API sends otherwise never touch the mailbox).
+NURTURE_BCC = os.getenv("NURTURE_BCC", "almgren@freshlybakedstudios.com")
 NURTURE_ENABLED = os.getenv("NURTURE_ENABLED", "false").lower() == "true"
 _UNSUB_SECRET = os.getenv("NURTURE_UNSUB_SECRET", "fbs-nurture-unsub")
 
@@ -233,7 +236,7 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
         print("[nurture] SENDGRID_API_KEY not set — cannot send")
         return False
     from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail, HtmlContent
+    from sendgrid.helpers.mail import Bcc, Mail, HtmlContent
 
     msg = Mail(
         from_email=NURTURE_FROM,
@@ -241,6 +244,8 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
         subject=subject,
         html_content=HtmlContent(html),
     )
+    if NURTURE_BCC and NURTURE_BCC.lower() != to_email.lower():
+        msg.add_bcc(Bcc(NURTURE_BCC))
     try:
         resp = SendGridAPIClient(api_key).send(msg)
         return resp.status_code in (200, 201, 202)
