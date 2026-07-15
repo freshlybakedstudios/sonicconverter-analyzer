@@ -246,6 +246,9 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
     )
     if NURTURE_BCC and NURTURE_BCC.lower() != to_email.lower():
         msg.add_bcc(Bcc(NURTURE_BCC))
+    # Transactional/nurture stream rides its own dedicated IP (pool2) so cold
+    # outreach (pool1) can never taint it.
+    msg.ip_pool_name = "production_pool2"
     try:
         resp = SendGridAPIClient(api_key).send(msg)
         return resp.status_code in (200, 201, 202)

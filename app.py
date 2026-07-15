@@ -2074,6 +2074,7 @@ def _send_reset_email(email: str, reset_token: str) -> bool:
         subject='Reset your Sonic Analyzer password',
         html_content=HtmlContent(html),
     )
+    message.ip_pool_name = 'production_pool2'
     try:
         sg = SendGridAPIClient(api_key)
         response = sg.send(message)
@@ -5856,6 +5857,7 @@ def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
         subject=f'{name}, your production agreement — Freshly Baked Studios',
         html_content=HtmlContent(html),
     )
+    message.ip_pool_name = 'production_pool2'
 
     try:
         sg = SendGridAPIClient(api_key)
