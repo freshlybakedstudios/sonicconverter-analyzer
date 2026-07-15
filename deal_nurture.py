@@ -301,6 +301,10 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
         nur = (r.get("metadata") or {}).get("nurture") or {}
         if nur.get("unsubscribed"):
             continue
+        # replied_at is set by nurture-reply-sync.js on the studio Mac when the
+        # lead answers by email — a human conversation has started, stop the robot.
+        if nur.get("replied_at"):
+            continue
         created = _parse(r.get("created_at"))
         if not created:
             continue
