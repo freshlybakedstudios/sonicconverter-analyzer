@@ -2067,14 +2067,14 @@ def _send_reset_email(email: str, reset_token: str) -> bool:
     """
 
     from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail, HtmlContent
+    from sendgrid.helpers.mail import IpPoolName, Mail, HtmlContent
     message = Mail(
         from_email='noreply@freshlybakedstudios.com',
         to_emails=email,
         subject='Reset your Sonic Analyzer password',
         html_content=HtmlContent(html),
     )
-    message.ip_pool_name = 'production_pool2'
+    message.ip_pool_name = IpPoolName('production_pool2')
     try:
         sg = SendGridAPIClient(api_key)
         response = sg.send(message)
@@ -5849,7 +5849,7 @@ def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
     """
 
     from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail, HtmlContent
+    from sendgrid.helpers.mail import IpPoolName, Mail, HtmlContent
 
     message = Mail(
         from_email='deals@freshlybakedstudios.com',
@@ -5857,7 +5857,7 @@ def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
         subject=f'{name}, your production agreement — Freshly Baked Studios',
         html_content=HtmlContent(html),
     )
-    message.ip_pool_name = 'production_pool2'
+    message.ip_pool_name = IpPoolName('production_pool2')
 
     try:
         sg = SendGridAPIClient(api_key)
