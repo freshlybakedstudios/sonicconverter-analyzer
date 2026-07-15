@@ -236,7 +236,7 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
         print("[nurture] SENDGRID_API_KEY not set — cannot send")
         return False
     from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Bcc, Mail, HtmlContent
+    from sendgrid.helpers.mail import Bcc, IpPoolName, Mail, HtmlContent
 
     msg = Mail(
         from_email=NURTURE_FROM,
@@ -248,7 +248,7 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
         msg.add_bcc(Bcc(NURTURE_BCC))
     # Transactional/nurture stream rides its own dedicated IP (pool2) so cold
     # outreach (pool1) can never taint it.
-    msg.ip_pool_name = "production_pool2"
+    msg.ip_pool_name = IpPoolName("production_pool2")
     try:
         resp = SendGridAPIClient(api_key).send(msg)
         return resp.status_code in (200, 201, 202)
