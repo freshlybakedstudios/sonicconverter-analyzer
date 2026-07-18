@@ -532,17 +532,27 @@ def _send_owner_preview(t1, t2, t3=()):
     listing = "\n".join(lines) or "  (no leads due today)"
     first = next(((r, n) for n, group in ((1, t1), (2, t2), (3, t3)) for r in group), None)
     sample_subject, sample_html = build_touch(*first) if first else ("(none)", "<p>No leads due.</p>")
+    # This preview fires on any dry run. Only claim "sending is OFF" when the
+    # live flag really is off — a manual dry-run while live reads differently.
+    if NURTURE_ENABLED:
+        heading = "Lead nurture — DRY RUN (live sending is ON)"
+        note = "This was a manual dry-run check. The scheduler is live and sends automatically; nothing was sent by this run."
+        subject = "Lead nurture dry-run — live sending is ON"
+    else:
+        heading = "Lead nurture — PREVIEW (sending is OFF)"
+        note = "Set <code>NURTURE_ENABLED=true</code> to start sending these for real."
+        subject = "Lead nurture preview — sending is OFF"
     html = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-      <h2>Lead nurture — PREVIEW (sending is OFF)</h2>
-      <p>Set <code>NURTURE_ENABLED=true</code> to start sending these for real.</p>
+      <h2>{heading}</h2>
+      <p>{note}</p>
       <p><b>{len(t1)}</b> due for touch 1, <b>{len(t2)}</b> for touch 2, <b>{len(t3)}</b> for touch 3:</p>
       <pre style="background:#f4f4f4;padding:12px;border-radius:6px">{listing}</pre>
       <h3>Sample ({sample_subject}):</h3>
       {sample_html}
     </div>
     """
-    _send_email(OWNER_EMAIL, "Lead nurture preview — sending is OFF", html)
+    _send_email(OWNER_EMAIL, subject, html)
 
 
 # ---------------------------------------------------------------------------
@@ -838,10 +848,18 @@ def _send_booking_preview(precall, noshow):
     if noshow:
         s, h = build_noshow_email(noshow[0])
         samples += f"<h3>Sample no-show rebook ({s}):</h3>{h}"
+    if BOOKING_NURTURE_ENABLED:
+        b_heading = "Booking touches — DRY RUN (live sending is ON)"
+        b_note = "This was a manual dry-run check. The scheduler is live and sends automatically; nothing was sent by this run."
+        b_subject = "Booking touches dry-run — live sending is ON"
+    else:
+        b_heading = "Booking touches — PREVIEW (sending is OFF)"
+        b_note = "Set <code>BOOKING_NURTURE_ENABLED=true</code> to send these for real."
+        b_subject = "Booking touches preview — sending is OFF"
     html = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-      <h2>Booking touches — PREVIEW (sending is OFF)</h2>
-      <p>Set <code>BOOKING_NURTURE_ENABLED=true</code> to send these for real.</p>
+      <h2>{b_heading}</h2>
+      <p>{b_note}</p>
       <p><b>{len(precall)}</b> pre-call reminder(s) due, <b>{len(noshow)}</b> no-show rebook(s) due:</p>
       <pre style="background:#f4f4f4;padding:12px;border-radius:6px">{chr(10).join(lines)}</pre>
       <p style="color:#a00;font-size:13px"><b>No-show caveat:</b> "no-show" here means the call time
@@ -851,4 +869,4 @@ def _send_booking_preview(precall, noshow):
       {samples}
     </div>
     """
-    _send_email(OWNER_EMAIL, "Booking touches preview — sending is OFF", html)
+    _send_email(OWNER_EMAIL, b_subject, html)
