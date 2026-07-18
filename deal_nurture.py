@@ -717,10 +717,12 @@ def build_noshow_email(b):
     email = b["email"]
     unsub = f"{PUBLIC_API_BASE}/api/deal/nurture/unsubscribe?e={email}&t={unsub_token(email)}"
     greet = b["name"].split()[0] if b["name"] else "there"
+    # "yesterday" only when it actually was — backlog catches can be up to 72h old
+    ago = "yesterday" if (_now() - b["start"]) < timedelta(hours=36) else "the other day"
     subject = "We missed each other — let's find a new time"
     body = f"""
       <p style="color:#ccc">Hey {greet},</p>
-      <p style="color:#ccc">Looks like our call yesterday didn't happen — totally fine,
+      <p style="color:#ccc">Looks like our call {ago} didn't happen — totally fine,
          calendars do what calendars do.</p>
       <p style="color:#ccc">Still happy to talk through your record whenever works.
          Grab any slot that fits:</p>
