@@ -5901,6 +5901,19 @@ async def deal_nurture_digest(token: str = ""):
     return deal_nurture.run_daily_digest(supabase)
 
 
+@app.post("/api/deal/nurture/bookings")
+async def deal_nurture_bookings(token: str = "", dry: int = 0):
+    """Manually trigger the booking touches (pre-call reminder + no-show
+    recovery). Same guard as /run; preview-only until BOOKING_NURTURE_ENABLED=true."""
+    expected = os.getenv('NURTURE_CRON_TOKEN', '')
+    if not expected or token != expected:
+        raise HTTPException(403, "forbidden")
+    if not supabase:
+        raise HTTPException(500, "database unavailable")
+    dry_run = True if dry == 1 else None  # None => auto (respects BOOKING_NURTURE_ENABLED)
+    return deal_nurture.run_booking_nurture(supabase, dry_run=dry_run)
+
+
 @app.get("/api/deal/nurture/unsubscribe")
 async def deal_nurture_unsub(e: str = "", t: str = ""):
     """One-click unsubscribe from the email footer link."""
@@ -5955,6 +5968,20 @@ async def _nurture_loop():
                 if dres.get('sent'):
                     print(f"[digest] sent: {dres['leads']} leads, "
                           f"{dres['paid']} paid", flush=True)
+            # Booking touches (pre-call reminder + no-show recovery). Runs in
+            # both modes: preview stamps once-per-booking markers, so the
+            # owner isn't re-emailed every poll.
+            if supabase:
+                loop = asyncio.get_event_loop()
+                bres = await loop.run_in_executor(
+                    None, deal_nurture.run_booking_nurture, supabase
+                )
+                if bres.get('error'):
+                    print(f"[booking-nurture] {bres['error']}", flush=True)
+                elif bres.get('sent') or bres.get('targets'):
+                    print(f"[booking-nurture] mode={'preview' if bres.get('dry_run') else 'live'} "
+                          f"precall={bres.get('precall_due')} noshow={bres.get('noshow_due')} "
+                          f"sent={bres.get('sent')}", flush=True)
         except Exception as e:
             print(f"[nurture] scheduler error: {e}", flush=True)
 
@@ -5965,6 +5992,10 @@ async def _nurture_loop():
 # ---------------------------------------------------------------------------
 _MUSO_BASE = "https://api.developer.muso.ai/v4a"
 _MUSO_PROFILE_ID = "54bd5f97-31c7-9c8c-766a-40f7457d206e"
+# 2026-07-18: Dance Monkey removed by Muso (entry now a no-op); remaster
+# re-link pending — when Muso lands it, both entries self-retire and totals
+# rise automatically. DO NOT delete early; they are the honesty filter while
+# any mislinked credit remains on the profile.
 _MUSO_EXCLUDED_TRACKS = {  # owner-confirmed NOT his credits (2026-07-11)
     "3243a996-518a-46fb-91da-2f3b05187a92",  # Dance Monkey — Tones And I
     "6f7a2426-e120-4c54-8d05-50af09bead61",  # Pour Some Sugar On Me — 2017 remaster

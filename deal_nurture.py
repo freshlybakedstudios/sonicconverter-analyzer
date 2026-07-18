@@ -11,7 +11,12 @@ the OWNER a preview digest (who *would* be contacted + a sample) and never
 touches a real lead. Flip NURTURE_ENABLED=true once the copy/targeting look good.
 
 State lives in each lead's deal_leads.metadata.nurture jsonb:
-    { "t1_sent_at": iso, "t2_sent_at": iso, "unsubscribed": bool }
+    { "t1_sent_at": iso, "t2_sent_at": iso, "t3_sent_at": iso, "unsubscribed": bool }
+
+Booking touches (pre-call reminder + no-show recovery) read the Cal.com
+Postgres (CAL_DATABASE_URL) and use marker rows in deal_leads
+(step='booking_touch', metadata={booking_uid, kind, mode}) for idempotency —
+see run_booking_nurture().
 
 Suppression: any email with a step='paid' row (booked) is skipped. Cart
 abandoners (checkout_started but never paid) are intentionally KEPT — they're
@@ -36,6 +41,8 @@ _UNSUB_SECRET = os.getenv("NURTURE_UNSUB_SECRET", "fbs-nurture-unsub")
 # Touch 1 fires ~30 min after they leave the site — timely cart-abandonment nudge.
 TOUCH1_DELAY = timedelta(minutes=30)
 TOUCH2_DELAY = timedelta(days=4)
+# Touch 3 = long-tail re-engage: 8 days after touch 2 ≈ day 12 of the sequence.
+TOUCH3_DELAY = timedelta(days=8)
 LOOKBACK = timedelta(days=30)  # don't chase leads older than this
 
 SERVICE_LABELS = {
@@ -164,7 +171,7 @@ def _lead_view(lead: dict) -> dict:
 # Email content (approved copy)
 # ---------------------------------------------------------------------------
 def build_touch(lead: dict, touch: int):
-    """Return (subject, html) for touch 1 or 2."""
+    """Return (subject, html) for touch 1, 2 or 3."""
     v = _lead_view(lead)
     email = v["email"]
     unsub = f"{PUBLIC_API_BASE}/api/deal/nurture/unsubscribe?e={email}&t={unsub_token(email)}"
@@ -193,6 +200,30 @@ def build_touch(lead: dict, touch: int):
           </p>
           <p style="color:#ccc">And if something's holding you back — budget, timeline, a question
              about the deal — just hit reply. I read these myself.</p>
+          <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
+        """
+    elif touch == 3:
+        # Long-tail re-engage — social proof + easy door back in. NOTE: the
+        # streams figure must stay "3.3B+" to match the site (the 12.3B Muso
+        # number is disputed mislinks — never cite it).
+        subject = "Before I close your file"
+        body = f"""
+          <p style="color:#ccc">Hey {v['greet']},</p>
+          <p style="color:#ccc">Last note from me, promise. I know timing is everything with a record,
+             so no pressure — just two things worth knowing before you decide who touches
+             {project_phrase2}{for_artist}:</p>
+          <p style="color:#ccc">Eight artists booked calls with the studio in the last 90 days, so the
+             calendar does move. And the credits behind the desk sit at
+             <strong>3.3B+ streams</strong> across projects I've worked on — your record
+             would be in experienced hands.</p>
+          <p style="color:#ccc">Your numbers are still saved if you want to pick things back up:</p>
+          <p style="text-align:center;margin:28px 0">
+            <a href="{rates}" style="background:#D8E166;color:#222020;text-decoration:none;
+               font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
+               Revisit my quote</a>
+          </p>
+          <p style="color:#ccc">And if it's easier to just talk it through, reply here — I read these
+             myself.</p>
           <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
         """
     else:
@@ -297,7 +328,7 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
     for r in contacts:
         by_email.setdefault(r["email"].lower(), r)
 
-    t1, t2 = [], []
+    t1, t2, t3 = [], [], []
     for email, r in by_email.items():
         if email in booked or _is_suppressed_email(email):
             continue
@@ -318,32 +349,36 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
             t1_at = _parse(nur.get("t1_sent_at"))
             if t1_at and now - t1_at >= TOUCH2_DELAY:
                 t2.append(r)
+        elif not nur.get("t3_sent_at"):
+            t2_at = _parse(nur.get("t2_sent_at"))
+            if t2_at and now - t2_at >= TOUCH3_DELAY:
+                t3.append(r)
 
     summary = {
         "dry_run": dry_run,
         "enabled": NURTURE_ENABLED,
         "touch1_due": len(t1),
         "touch2_due": len(t2),
+        "touch3_due": len(t3),
         "sent": 0,
         "targets": [],
     }
 
     if dry_run:
         # Preview only — email the owner the digest, touch nothing.
-        _send_owner_preview(t1, t2)
+        _send_owner_preview(t1, t2, t3)
         summary["targets"] = [
             {"email": r["email"], "touch": n}
-            for n, group in ((1, t1), (2, t2))
+            for n, group in ((1, t1), (2, t2), (3, t3))
             for r in group
         ]
         return summary
 
-    for touch, group in ((1, t1), (2, t2)):
+    for touch, group in ((1, t1), (2, t2), (3, t3)):
         for r in group:
             subject, html = build_touch(r, touch)
             if _send_email(r["email"], subject, html):
-                key = "t1_sent_at" if touch == 1 else "t2_sent_at"
-                _set_nurture_state(supabase, r["id"], {key: now.isoformat()})
+                _set_nurture_state(supabase, r["id"], {f"t{touch}_sent_at": now.isoformat()})
                 summary["sent"] += 1
     return summary
 
@@ -488,22 +523,330 @@ def run_daily_digest(supabase) -> dict:
     return {"sent": sent, "leads": n_leads, "paid": len(paid)}
 
 
-def _send_owner_preview(t1, t2):
+def _send_owner_preview(t1, t2, t3=()):
     lines = []
-    for n, group in ((1, t1), (2, t2)):
+    for n, group in ((1, t1), (2, t2), (3, t3)):
         for r in group:
             v = _lead_view(r)
             lines.append(f"  • Touch {n}: {v['email']} ({v['artist'] or 'no artist'}, {v['service_str']})")
     listing = "\n".join(lines) or "  (no leads due today)"
-    sample_subject, sample_html = (build_touch(t1[0], 1) if t1 else build_touch(t2[0], 2) if t2 else ("(none)", "<p>No leads due.</p>"))
+    first = next(((r, n) for n, group in ((1, t1), (2, t2), (3, t3)) for r in group), None)
+    sample_subject, sample_html = build_touch(*first) if first else ("(none)", "<p>No leads due.</p>")
     html = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
       <h2>Lead nurture — PREVIEW (sending is OFF)</h2>
       <p>Set <code>NURTURE_ENABLED=true</code> to start sending these for real.</p>
-      <p><b>{len(t1)}</b> due for touch 1, <b>{len(t2)}</b> for touch 2:</p>
+      <p><b>{len(t1)}</b> due for touch 1, <b>{len(t2)}</b> for touch 2, <b>{len(t3)}</b> for touch 3:</p>
       <pre style="background:#f4f4f4;padding:12px;border-radius:6px">{listing}</pre>
       <h3>Sample ({sample_subject}):</h3>
       {sample_html}
     </div>
     """
     _send_email(OWNER_EMAIL, "Lead nurture preview — sending is OFF", html)
+
+
+# ---------------------------------------------------------------------------
+# Booking touches — pre-call reminder + no-show recovery.
+#
+# Bookings live in the Cal.com Postgres (CAL_DATABASE_URL). We never write to
+# Cal's DB; idempotency markers are rows in OUR deal_leads table:
+#     step='booking_touch', metadata={booking_uid, kind: precall|noshow, mode}
+# Ships DISABLED: with BOOKING_NURTURE_ENABLED != 'true' the owner gets a
+# one-time preview per due booking (stamped mode='preview') and no lead is
+# emailed. Flip BOOKING_NURTURE_ENABLED=true to go live.
+# ---------------------------------------------------------------------------
+CAL_DATABASE_URL = os.getenv("CAL_DATABASE_URL", "")
+BOOKING_NURTURE_ENABLED = os.getenv("BOOKING_NURTURE_ENABLED", "false").lower() == "true"
+CAL_BOOKING_LINK = "https://cal.freshlybakedstudios.com/freshlybakedstudios/30min"
+
+PRECALL_WINDOW = timedelta(hours=3)   # remind once the call is <= 3h out
+# Skip the reminder when the slot was booked last-minute — Cal's own
+# confirmation email is minutes old and a second email looks robotic.
+PRECALL_MIN_NOTICE = timedelta(hours=3, minutes=30)
+NOSHOW_AFTER = timedelta(hours=20)    # "next day" — rebook email fires 20h+ after the slot
+NOSHOW_WINDOW = timedelta(hours=72)   # never chase calls older than 3 days (bounds first-deploy backlog)
+
+
+def _cal_fetch_bookings():
+    """Accepted bookings (one row per attendee) from 72h back to 30d ahead.
+    The far-future rows exist only so no-show detection can see reschedules."""
+    import psycopg2
+    now = _now()
+    lo = (now - NOSHOW_WINDOW).replace(tzinfo=None)
+    hi = (now + timedelta(days=30)).replace(tzinfo=None)
+    conn = psycopg2.connect(CAL_DATABASE_URL, connect_timeout=10)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                '''SELECT b.uid, b."startTime", b."createdAt", b.rescheduled,
+                          b.metadata->>'videoCallUrl',
+                          a.email, a.name, a."timeZone"
+                     FROM "Booking" b
+                     JOIN "Attendee" a ON a."bookingId" = b.id
+                    WHERE b.status = 'accepted'
+                      AND b."startTime" BETWEEN %s AND %s''',
+                (lo, hi),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    out = []
+    for uid, start, created, resched, video, email, name, tz in rows:
+        out.append({
+            "uid": uid,
+            # Cal stores naive UTC timestamps
+            "start": start.replace(tzinfo=timezone.utc),
+            "created": created.replace(tzinfo=timezone.utc) if created else None,
+            "rescheduled": bool(resched),
+            "video_url": video,
+            "email": (email or "").strip().lower(),
+            "name": (name or "").strip(),
+            "tz": tz or "America/New_York",
+        })
+    return out
+
+
+def _booking_markers(supabase):
+    """Set of (booking_uid, kind, mode) already handled."""
+    since = (_now() - timedelta(days=14)).isoformat()
+    rows = (
+        supabase.table("deal_leads").select("metadata")
+        .eq("step", "booking_touch").gte("created_at", since).execute().data or []
+    )
+    out = set()
+    for r in rows:
+        m = r.get("metadata") or {}
+        out.add((m.get("booking_uid"), m.get("kind"), m.get("mode")))
+    return out
+
+
+def _stamp_booking(supabase, b, kind, mode):
+    supabase.table("deal_leads").insert({
+        "name": b["name"], "email": b["email"], "step": "booking_touch",
+        "metadata": {"booking_uid": b["uid"], "kind": kind, "mode": mode},
+        "created_at": _now().isoformat(),
+    }).execute()
+
+
+def _lead_unsubscribed(supabase, email):
+    try:
+        rows = (
+            supabase.table("deal_leads").select("metadata")
+            .ilike("email", email).eq("step", "contact").execute().data or []
+        )
+        return any(
+            ((r.get("metadata") or {}).get("nurture") or {}).get("unsubscribed")
+            for r in rows
+        )
+    except Exception:
+        return False
+
+
+def _lead_paid_since(supabase, email, since_dt):
+    """They paid after the call slot — the call clearly happened, skip recovery."""
+    try:
+        rows = (
+            supabase.table("deal_leads").select("id").ilike("email", email)
+            .eq("step", "paid").gte("created_at", since_dt.isoformat())
+            .limit(1).execute().data
+        )
+        return bool(rows)
+    except Exception:
+        return False
+
+
+def _fmt_local(dt_utc, tzname):
+    """'4:30 PM (Chicago time)' in the attendee's own timezone."""
+    try:
+        from zoneinfo import ZoneInfo
+        local = dt_utc.astimezone(ZoneInfo(tzname))
+        city = tzname.split("/")[-1].replace("_", " ")
+        return local.strftime("%I:%M %p").lstrip("0") + f" ({city} time)"
+    except Exception:
+        return dt_utc.strftime("%I:%M %p").lstrip("0") + " (UTC)"
+
+
+def _booking_shell(body):
+    return f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                max-width:560px;margin:0 auto;background:#141213;color:#eee;padding:32px;border-radius:12px">
+      <div style="text-align:center;margin-bottom:8px">
+        <img src="https://storage.googleapis.com/fbs-static-assets/axd-logo.png"
+             alt="Freshly Baked Studios" style="width:140px;height:auto;margin-bottom:8px">
+      </div>
+      {body}
+    </div>
+    """
+
+
+def build_precall_email(b):
+    """Reminder ~3h before the call: meet link + what to have ready.
+    Transactional (tied to a booking they made) — no unsubscribe gate."""
+    when = _fmt_local(b["start"], b["tz"])
+    link = b["video_url"] or f"https://cal.freshlybakedstudios.com/booking/{b['uid']}"
+    greet = b["name"].split()[0] if b["name"] else "there"
+    subject = f"Talk soon — we're on at {when}"
+    body = f"""
+      <p style="color:#ccc">Hey {greet},</p>
+      <p style="color:#ccc">Quick heads-up: our call is coming up at <strong>{when}</strong>.
+         Here's your link when it's time:</p>
+      <p style="text-align:center;margin:28px 0">
+        <a href="{link}" style="background:#D8E166;color:#222020;text-decoration:none;
+           font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
+           Join the call</a>
+      </p>
+      <p style="color:#ccc">To get the most out of it, have handy:</p>
+      <ul style="color:#ccc">
+        <li>The track(s) you're working on — rough mixes, demos, or stems all work</li>
+        <li>1–2 reference tracks (records whose sound you're chasing)</li>
+        <li>A sense of where you want this record to land</li>
+      </ul>
+      <p style="color:#ccc">If the time stopped working, no stress — reply here or grab a
+         new slot and we'll make it happen.</p>
+      <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
+      <p style="color:#555;font-size:11px;text-align:center;margin-top:28px;border-top:1px solid #2a2626;padding-top:16px">
+        Freshly Baked Studios · Brooklyn, NY<br>
+        You're getting this because you booked a call with us.
+      </p>
+    """
+    return subject, _booking_shell(body)
+
+
+def build_noshow_email(b):
+    """Next-day friendly rebook after a missed call."""
+    email = b["email"]
+    unsub = f"{PUBLIC_API_BASE}/api/deal/nurture/unsubscribe?e={email}&t={unsub_token(email)}"
+    greet = b["name"].split()[0] if b["name"] else "there"
+    subject = "We missed each other — let's find a new time"
+    body = f"""
+      <p style="color:#ccc">Hey {greet},</p>
+      <p style="color:#ccc">Looks like our call yesterday didn't happen — totally fine,
+         calendars do what calendars do.</p>
+      <p style="color:#ccc">Still happy to talk through your record whenever works.
+         Grab any slot that fits:</p>
+      <p style="text-align:center;margin:28px 0">
+        <a href="{CAL_BOOKING_LINK}" style="background:#D8E166;color:#222020;text-decoration:none;
+           font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
+           Pick a new time</a>
+      </p>
+      <p style="color:#ccc">Or if email's easier, just reply here — I read these myself.</p>
+      <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
+      <p style="color:#555;font-size:11px;text-align:center;margin-top:28px;border-top:1px solid #2a2626;padding-top:16px">
+        Freshly Baked Studios · Brooklyn, NY<br>
+        You got this because you booked a call with us.
+        <a href="{unsub}" style="color:#777">Unsubscribe</a>
+      </p>
+    """
+    return subject, _booking_shell(body)
+
+
+def run_booking_nurture(supabase, dry_run: bool = None) -> dict:
+    """Send (or preview) pre-call reminders and no-show recovery emails.
+
+    Preview mode stamps mode='preview' markers so the owner sees each due
+    booking exactly once, not on every 10-min poll. Live mode only checks
+    mode='live' markers, so flipping the flag later still sends for
+    already-previewed bookings that remain due.
+    """
+    if dry_run is None:
+        dry_run = not BOOKING_NURTURE_ENABLED
+    if not CAL_DATABASE_URL:
+        return {"skipped": "CAL_DATABASE_URL not set"}
+    now = _now()
+    try:
+        bookings = _cal_fetch_bookings()
+    except Exception as e:
+        return {"error": f"cal db unavailable: {e}"}
+
+    mode = "preview" if dry_run else "live"
+    markers = _booking_markers(supabase)
+    starts_by_email = {}
+    for b in bookings:
+        starts_by_email.setdefault(b["email"], []).append(b["start"])
+
+    precall, noshow = [], []
+    for b in bookings:
+        if _is_suppressed_email(b["email"]):
+            continue
+
+        def _handled(kind):
+            return (b["uid"], kind, "live") in markers or (b["uid"], kind, mode) in markers
+
+        delta = b["start"] - now
+        if timedelta(0) < delta <= PRECALL_WINDOW:
+            if _handled("precall"):
+                continue
+            if b["created"] and (b["start"] - b["created"]) < PRECALL_MIN_NOTICE:
+                continue
+            precall.append(b)
+        elif NOSHOW_AFTER <= -delta <= NOSHOW_WINDOW:
+            if _handled("noshow") or b["rescheduled"]:
+                continue
+            # A later accepted booking by the same email = they rebooked already.
+            if any(s > b["start"] for s in starts_by_email.get(b["email"], [])):
+                continue
+            if _lead_unsubscribed(supabase, b["email"]):
+                continue
+            if _lead_paid_since(supabase, b["email"], b["start"]):
+                continue
+            noshow.append(b)
+
+    summary = {
+        "dry_run": dry_run,
+        "enabled": BOOKING_NURTURE_ENABLED,
+        "precall_due": len(precall),
+        "noshow_due": len(noshow),
+        "sent": 0,
+        "targets": [
+            {"email": b["email"], "kind": k, "booking": b["uid"]}
+            for k, group in (("precall", precall), ("noshow", noshow))
+            for b in group
+        ],
+    }
+
+    if dry_run:
+        if precall or noshow:
+            _send_booking_preview(precall, noshow)
+            for kind, group in (("precall", precall), ("noshow", noshow)):
+                for b in group:
+                    _stamp_booking(supabase, b, kind, "preview")
+        return summary
+
+    for kind, build, group in (
+        ("precall", build_precall_email, precall),
+        ("noshow", build_noshow_email, noshow),
+    ):
+        for b in group:
+            subject, html = build(b)
+            if _send_email(b["email"], subject, html):
+                _stamp_booking(supabase, b, kind, "live")
+                summary["sent"] += 1
+    return summary
+
+
+def _send_booking_preview(precall, noshow):
+    def line(b, kind):
+        when = b["start"].strftime("%a %b %d %H:%M UTC")
+        return f"  • {kind}: {b['name'] or '?'} &lt;{b['email']}&gt; — call {when}"
+    lines = [line(b, "pre-call reminder") for b in precall] + [line(b, "no-show rebook") for b in noshow]
+    samples = ""
+    if precall:
+        s, h = build_precall_email(precall[0])
+        samples += f"<h3>Sample pre-call ({s}):</h3>{h}"
+    if noshow:
+        s, h = build_noshow_email(noshow[0])
+        samples += f"<h3>Sample no-show rebook ({s}):</h3>{h}"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <h2>Booking touches — PREVIEW (sending is OFF)</h2>
+      <p>Set <code>BOOKING_NURTURE_ENABLED=true</code> to send these for real.</p>
+      <p><b>{len(precall)}</b> pre-call reminder(s) due, <b>{len(noshow)}</b> no-show rebook(s) due:</p>
+      <pre style="background:#f4f4f4;padding:12px;border-radius:6px">{chr(10).join(lines)}</pre>
+      <p style="color:#a00;font-size:13px"><b>No-show caveat:</b> "no-show" here means the call time
+      passed, the booking is still 'accepted', and they haven't rebooked. Cal.com doesn't know who
+      actually showed up — if someone below DID attend, cancel or mark their booking in Cal so the
+      rebook email stays suppressed once this goes live.</p>
+      {samples}
+    </div>
+    """
+    _send_email(OWNER_EMAIL, "Booking touches preview — sending is OFF", html)
