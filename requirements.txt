@@ -8,5 +8,6 @@ python-dotenv
 requests
 supabase
 sendgrid
+psycopg2-binary
 stripe
 bcrypt
