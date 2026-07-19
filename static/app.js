@@ -360,6 +360,72 @@ function setInputMode(mode) {
   updateAnalyzeButton();
 }
 
+// -------------------------------------------------------
+// Paid fresh-capture gate: chooser + Stripe upgrade flow
+// -------------------------------------------------------
+function showFreshCaptureChooser(message) {
+  let overlay = $('#fresh-capture-chooser');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'fresh-capture-chooser';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML =
+      '<div style="background:#1c1a1b;border:1px solid #3a3536;border-radius:14px;max-width:460px;padding:28px;text-align:center">' +
+        '<h3 style="margin:0 0 10px;color:#fff">This track needs a fresh scan</h3>' +
+        '<p id="fcc-msg" style="color:#bbb;font-size:14px;line-height:1.5;margin:0 0 20px"></p>' +
+        '<button id="fcc-upload" class="btn btn-primary" style="width:100%;margin-bottom:10px">Upload your audio file — free &amp; instant</button>' +
+        '<button id="fcc-upgrade" class="btn" style="width:100%;margin-bottom:10px">Unlock studio-grade fresh scans (Pro)</button>' +
+        '<button id="fcc-close" style="background:none;border:none;color:#777;cursor:pointer;font-size:13px">Never mind</button>' +
+      '</div>';
+    document.body.appendChild(overlay);
+    $('#fcc-upload').addEventListener('click', () => {
+      overlay.remove();
+      setInputMode('file');
+      const zone = $('#upload-zone');
+      if (zone) zone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    $('#fcc-upgrade').addEventListener('click', startAnalyzerUpgrade);
+    $('#fcc-close').addEventListener('click', () => overlay.remove());
+  }
+  const msgEl = $('#fcc-msg');
+  if (msgEl) msgEl.textContent = message || 'Upload your file for a free scan, or go Pro to scan any Spotify track.';
+  overlay.style.display = 'flex';
+}
+
+async function startAnalyzerUpgrade() {
+  try {
+    const form = new FormData();
+    form.append('token', accessToken);
+    const res = await fetch(`${API_URL}/api/analyzer/upgrade`, { method: 'POST', body: form });
+    const data = await res.json();
+    if (res.ok && data.checkout_url) {
+      window.location.href = data.checkout_url;
+    } else {
+      alert((data && data.detail) || 'Could not start checkout — please try again.');
+    }
+  } catch (e) {
+    alert('Could not start checkout — please try again.');
+  }
+}
+
+// Handle the return from Stripe (?upgrade_session=...) — verify + flip flags.
+document.addEventListener('DOMContentLoaded', async () => {
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('upgrade_session');
+  if (!sessionId || !accessToken) return;
+  try {
+    const res = await fetch(`${API_URL}/api/analyzer/upgrade/status?session_id=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(accessToken)}`);
+    const data = await res.json();
+    if (res.ok && data.status === 'complete') {
+      alert('🔓 Pro unlocked — studio-grade fresh scans and full pitch lists are now enabled. Run your scan again.');
+    }
+  } catch (e) { /* silent — user can re-trigger by rescanning */ }
+  // Clean the URL either way
+  params.delete('upgrade_session');
+  const qs = params.toString();
+  window.history.replaceState({}, '', window.location.pathname + (qs ? '?' + qs : ''));
+});
+
 // Wire up mode toggles (if elements exist)
 document.addEventListener('DOMContentLoaded', () => {
   const modeFile = $('#mode-file');
@@ -450,7 +516,16 @@ async function analyzeTrack() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Analysis failed');
+      // Paid gate: track not in the universe cache and user hasn't unlocked
+      // fresh capture — offer the free upload path or the Pro checkout.
+      if (res.status === 402 && err.detail && err.detail.code === 'fresh_capture_required') {
+        clearInterval(statusInterval);
+        if (queueInterval) clearInterval(queueInterval);
+        hide($('#loading-section'));
+        showFreshCaptureChooser(err.detail.message);
+        return;
+      }
+      throw new Error((typeof err.detail === 'string' && err.detail) || 'Analysis failed');
     }
 
     const data = await res.json();
@@ -604,6 +679,22 @@ function renderResults(data) {
   // without recomputing anything (campaign forecast is stashed separately
   // when its SSE event arrives — see startSSE).
   window._lastAnalysisResult = data;
+
+  // Provenance badge: cached universe features vs fresh capture
+  (() => {
+    const head = document.querySelector('#results-section h3');
+    if (!head) return;
+    let badge = $('#feat-source-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.id = 'feat-source-badge';
+      badge.style.cssText = 'display:inline-block;margin-left:10px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;vertical-align:middle;background:rgba(176,201,54,.15);color:#cede6a;border:1px solid rgba(176,201,54,.4)';
+      head.appendChild(badge);
+    }
+    badge.textContent = data.features_source === 'universe_cache'
+      ? '⚡ matched from our 274k-track analysis'
+      : '🎚 studio-grade fresh capture';
+  })();
   const pdfBtn = $('#pdf-download-btn');
   if (pdfBtn) pdfBtn.classList.remove('hidden');
 
