@@ -104,10 +104,16 @@ _event_loop = None  # Set when the server starts
 _enrichment_gate = threading.Event()
 _enrichment_gate.set()  # Start open (enrichment can run)
 
+_enrichment_paused_at = 0.0  # when the gate last closed (leak-safety timer)
+_ENRICHMENT_MAX_PAUSE = 120  # force-reopen after this many seconds
+
+
 def _pause_enrichment():
     """Pause background enrichment so user-facing CM calls get priority."""
+    global _enrichment_paused_at
     if _enrichment_gate.is_set():
         print("  ⏸️  Pausing enrichment for user-facing CM calls")
+    _enrichment_paused_at = time.time()
     _enrichment_gate.clear()
 
 def _resume_enrichment():
@@ -3122,9 +3128,13 @@ async def analyze(
         enrichment_matches = enrichment_matches[:200]  # Cap total
         # Resume enrichment gate — user-facing CM calls are done
         _resume_enrichment()
+        # Tier: paid (full_enrichment) or legacy/owner sessions get the full
+        # 200-match pass with curator contacts; free accounts get 25, no curators.
+        _full = bool(lead.get('full_enrichment')) or not lead.get('id')
         enrichment_pool.submit(
             _run_background_enrichment,
             job_id, enrichment_matches, user_cm_id,
+            200 if _full else 25, _full,
         )
 
         _use_scan(lead)
@@ -3360,14 +3370,21 @@ def _compute_playlist_score(sonic_similarity: float, followers: int,
 # ---------------------------------------------------------------------------
 # Background enrichment
 # ---------------------------------------------------------------------------
-def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = None):
+def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = None,
+                               max_matches: int = 200, include_curators: bool = True):
     """
     Runs in a thread. Enriches matches with:
     1. CM Related Artists (fast, 1 API call) → confidence signal
     2. Playlists per match (slow, 2-3 calls each) → streamed via SSE
     3. Track credits → piggybacks on playlist resolution
     4. Curator emails → runs after playlists
+
+    Tiering (Chartmetric cost control): free users get max_matches≈25 and NO
+    curator resolution (contacts are the paid asset and the heaviest CM +
+    scraping cost); users.full_enrichment=true (or legacy/owner sessions) get
+    the full 200 + curators.
     """
+    matches = (matches or [])[:max_matches]
     global _last_api_activity
     try:
         refresh_token = os.getenv('REFRESH_TOKEN')
@@ -3455,10 +3472,16 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             # Keep activity alive so resource-switcher doesn't resume GEMS mid-enrichment
             _last_api_activity = time.time()
 
-            # Brief pause if user-facing CM calls need priority (2s max to prevent blocking)
-            if not _enrichment_gate.wait(timeout=2):
-                _enrichment_gate.set()  # Force open — never block enrichment
-                _enrichment_gate.set()
+            # Yield to user-facing scans: HOLD while the gate is closed (owner
+            # constraint: a user's scan must never wait on another user's
+            # enrichment). Leak-safety: if a crashed request never resumed the
+            # gate, force-reopen after _ENRICHMENT_MAX_PAUSE so enrichment can't
+            # starve forever.
+            while not _enrichment_gate.wait(timeout=2):
+                if time.time() - _enrichment_paused_at > _ENRICHMENT_MAX_PAUSE:
+                    print(f"Enrichment [{job_id[:8]}]: gate held >{_ENRICHMENT_MAX_PAUSE}s — assuming leaked pause, resuming")
+                    _enrichment_gate.set()
+                    break
             # Refresh CM token each batch — prevents 401s when token expires mid-enrichment
             token = get_cm_token(refresh_token)
             if not token:
@@ -3607,6 +3630,10 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     'sonic_match_pct': pl.get('sonic_similarity', 0.80),
                 })
 
+            if not include_curators and batch_curators:
+                # Free tier: curator contacts are paid-only — never resolve or scrape.
+                print(f"Enrichment [{job_id[:8]}]: skipping {len(batch_curators)} curators (free tier)")
+                batch_curators = []
             if batch_curators:
                 print(f"Enrichment [{job_id[:8]}]: Batch {batch_start//BATCH_SIZE+1} — resolving {len(batch_curators)} curators...")
 
@@ -4355,9 +4382,33 @@ async def analyze_url(
         genre = ', '.join(tags) if tags else (artist_parts[0] if artist_parts else '')
     print(f"  URL analysis: match genre='{genre}' | track='{track_genre}' | artist='{artist_genre}' | dropdown='{dropdown_genre}'")
 
-    # Always scan fresh via Mac worker — Spotify desktop playback through Loopback
-    # No cached GEMS features, no preview URLs — full quality capture only
+    # Cache-first: tracks already in the GEMS universe serve canonical chunk
+    # features instantly — the same currency the matcher runs on, so results are
+    # MORE consistent than a fresh noisy capture. Fresh Mac-rig capture (Spotify
+    # desktop through Loopback) is a PAID feature (users.fresh_capture flag);
+    # free users whose track isn't cached are steered to file upload or upgrade.
     features = None
+    features_source = None
+    if track_isrc:
+        try:
+            cached_feats = _lookup_gems_features(track_isrc)
+        except Exception as e:
+            print(f"  URL analysis: universe-cache lookup failed ({e}) — continuing")
+            cached_feats = None
+        if cached_feats:
+            features = cached_feats
+            features_source = 'universe_cache'
+            print(f"  URL analysis: features from universe cache (ISRC {track_isrc}) — no capture needed")
+
+    # Paid gate for the capture lane. Legacy tokens (no user id — owner/test
+    # sessions) stay ungated, mirroring _check_scan_cap.
+    if not features and lead.get('id') and not lead.get('fresh_capture'):
+        raise HTTPException(402, {
+            'code': 'fresh_capture_required',
+            'message': "This track isn't in our 274k-track analysis library yet. "
+                       "Upload your audio file for a free instant scan, or unlock "
+                       "studio-grade fresh capture to scan any Spotify track.",
+        })
 
     # Create job for Mac worker — insert directly as pending_features with spotify_url
     if not features:
@@ -4449,8 +4500,11 @@ async def analyze_url(
             "It may be busy or briefly restarting. Try again in a minute, or upload the audio file instead."
         )
 
-    # We have features — now run the normal matching pipeline
-    job_mgr.update_job(job_id, status='matching', features=features)
+    # We have features — now run the normal matching pipeline.
+    # (job_id is None on the universe-cache path — no capture job was created;
+    # the real result job is created further down and drives SSE enrichment.)
+    if job_id:
+        job_mgr.update_job(job_id, status='matching', features=features)
 
     # Run emotion detection on features (same as file upload path)
     from audio_analyzer import _emotion_detector
@@ -4872,6 +4926,7 @@ async def analyze_url(
             'artist_tier': track_artist_cm_data.get('tier', '') if track_artist_cm_data else '',
             'artist_listeners': track_artist_cm_data.get('listeners', 0) if track_artist_cm_data else 0,
             'preview_used': features is not None and preview_url is not None,
+            'features_source': features_source or 'fresh_capture',
         },
         'timing': {},
     }
@@ -4902,9 +4957,13 @@ async def analyze_url(
     enrichment_matches = enrichment_matches[:200]  # Cap total
     # Resume enrichment gate — user-facing CM calls are done
     _resume_enrichment()
+    # Tier: paid (full_enrichment) or legacy/owner sessions get the full
+    # 200-match pass with curator contacts; free accounts get 25, no curators.
+    _full = bool(lead.get('full_enrichment')) or not lead.get('id')
     enrichment_pool.submit(
         _run_background_enrichment,
         new_job_id, enrichment_matches, user_cm_id,
+        200 if _full else 25, _full,
     )
 
     _use_scan(lead)
@@ -5836,6 +5895,98 @@ async def deal_checkout_status(session_id: str):
 
     except stripe_lib.error.StripeError as e:
         raise HTTPException(400, str(e))
+
+
+# ---------------------------------------------------------------------------
+# Analyzer paid tier — Stripe checkout that flips users.fresh_capture /
+# users.full_enrichment. Subscription mode when STRIPE_ANALYZER_PRICE_ID (a
+# recurring Price created in the Stripe dashboard) is set; otherwise a one-time
+# unlock at ANALYZER_FRESH_PRICE_USD (default $29) so the gate works day one.
+ANALYZER_URL = os.getenv('ANALYZER_URL', 'https://analyze.freshlybakedstudios.com')
+
+
+@app.post("/api/analyzer/upgrade")
+async def analyzer_upgrade(token: str = Form(...)):
+    """Create a Stripe Checkout Session for the analyzer Pro unlock."""
+    lead = _validate_session(token)
+    if not lead.get('id'):
+        raise HTTPException(400, "Log in with an account to upgrade")
+    if not stripe_lib.api_key:
+        raise HTTPException(500, "Payment system not configured")
+    meta = {'product': 'analyzer_fresh', 'analyzer_user_id': str(lead['id'])}
+    try:
+        price_id = os.getenv('STRIPE_ANALYZER_PRICE_ID')
+        common = dict(
+            customer_email=lead.get('email') or None,
+            metadata=meta,
+            success_url=f"{ANALYZER_URL}/?upgrade_session={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{ANALYZER_URL}/",
+        )
+        if price_id:
+            session = stripe_lib.checkout.Session.create(
+                mode='subscription',
+                line_items=[{'price': price_id, 'quantity': 1}],
+                subscription_data={'metadata': meta},
+                **common,
+            )
+        else:
+            amount = int(os.getenv('ANALYZER_FRESH_PRICE_USD', '29'))
+            session = stripe_lib.checkout.Session.create(
+                mode='payment',
+                line_items=[{
+                    'price_data': {
+                        'currency': 'usd',
+                        'product_data': {
+                            'name': 'Sonic Analyzer Pro',
+                            'description': 'Studio-grade fresh audio capture for any Spotify track + full pitch-list enrichment with curator contacts',
+                        },
+                        'unit_amount': amount * 100,
+                    },
+                    'quantity': 1,
+                }],
+                **common,
+            )
+        return {'checkout_url': session.url}
+    except stripe_lib.error.StripeError as e:
+        print(f"Analyzer upgrade: Stripe error: {e}")
+        raise HTTPException(400, "Could not start checkout. Please try again.")
+
+
+@app.get("/api/analyzer/upgrade/status")
+async def analyzer_upgrade_status(session_id: str, token: str):
+    """Verify the upgrade checkout and flip the user's paid flags."""
+    lead = _validate_session(token)
+    if not stripe_lib.api_key:
+        raise HTTPException(500, "Payment system not configured")
+    try:
+        session = stripe_lib.checkout.Session.retrieve(session_id)
+    except stripe_lib.error.StripeError as e:
+        raise HTTPException(400, str(e))
+    meta = session.metadata or {}
+    if meta.get('product') != 'analyzer_fresh' or meta.get('analyzer_user_id') != str(lead.get('id')):
+        raise HTTPException(403, "Session does not belong to this account")
+    if session.status == 'complete' and session.payment_status in ('paid', 'no_payment_required'):
+        if supabase and not lead.get('fresh_capture'):
+            try:
+                supabase.table('users').update({
+                    'fresh_capture': True,
+                    'full_enrichment': True,
+                    'max_scans': int(lead.get('max_scans') or 3) + 25,
+                }).eq('id', lead['id']).execute()
+                print(f"Analyzer upgrade: user {lead['id']} unlocked (session {session_id[:12]})")
+                try:
+                    send_pushover_notification(
+                        "ANALYZER PRO UNLOCK 🔓",
+                        f"{lead.get('email') or lead.get('name') or lead['id']}\n"
+                        f"${(session.amount_total or 0) / 100:,.0f}",
+                    )
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"Analyzer upgrade: flag update failed: {e}")
+                raise HTTPException(500, "Payment received but unlock failed — contact support")
+        return {'status': 'complete', 'fresh_capture': True}
+    return {'status': session.status or 'open'}
 
 
 def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
