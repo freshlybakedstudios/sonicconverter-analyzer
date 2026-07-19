@@ -4938,6 +4938,8 @@ async def analyze_url(
             'preview_used': features is not None and preview_url is not None,
             'features_source': features_source or 'fresh_capture',
         },
+        # Also top-level: the provenance badge + integrations read it here
+        'features_source': features_source or 'fresh_capture',
         'timing': {},
     }
 
