@@ -691,7 +691,8 @@ function renderResults(data) {
       badge.style.cssText = 'display:inline-block;margin-left:10px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;vertical-align:middle;background:rgba(176,201,54,.15);color:#cede6a;border:1px solid rgba(176,201,54,.4)';
       head.appendChild(badge);
     }
-    badge.textContent = data.features_source === 'universe_cache'
+    const src = data.features_source || (data.source && data.source.features_source);
+    badge.textContent = src === 'universe_cache'
       ? '⚡ matched from our 274k-track analysis'
       : '🎚 studio-grade fresh capture';
   })();
