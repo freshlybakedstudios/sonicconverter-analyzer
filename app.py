@@ -4399,6 +4399,9 @@ async def analyze_url(
             features = cached_feats
             features_source = 'universe_cache'
             print(f"  URL analysis: features from universe cache (ISRC {track_isrc}) — no capture needed")
+        else:
+            print(f"  URL analysis: ISRC {track_isrc!r} not in universe cache "
+                  f"(in-memory index says {'PRESENT' if (track_isrc and matcher._gems_by_isrc.get(track_isrc)) else 'absent'})")
 
     # Paid gate for the capture lane. Legacy tokens (no user id — owner/test
     # sessions) stay ungated, mirroring _check_scan_cap.
