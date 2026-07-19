@@ -414,8 +414,17 @@ def _find_loopback_device(retry_coreaudio=True) -> int | None:
     return None
 
 
+# CoreAudio device handles go stale after long uptimes (PaErrorCode -9986 /
+# kAudioUnitErr_InvalidPropertyValue on every open). Track consecutive
+# stream-open failures so the job loop can exit and let pm2 restart us with a
+# freshly enumerated device list. Silent captures do NOT count — silence
+# usually means Spotify wasn't playing, which a restart can't fix.
+_stream_errors = 0
+
+
 def _record_sample(device_idx: int, duration: float = SAMPLE_DURATION) -> tuple:
     """Record audio from loopback device, return (mono float32 array, stereo buffer) or (None, None)."""
+    global _stream_errors
     try:
         buf = sd.rec(
             int(duration * SAMPLE_RATE),
@@ -424,6 +433,7 @@ def _record_sample(device_idx: int, duration: float = SAMPLE_DURATION) -> tuple:
             device=device_idx,
             blocking=True,
         )
+        _stream_errors = 0
         mono = buf.mean(axis=1).astype(np.float32)
         # Validate not silent
         if np.max(np.abs(mono)) < 0.001:
@@ -431,6 +441,7 @@ def _record_sample(device_idx: int, duration: float = SAMPLE_DURATION) -> tuple:
         return mono, buf
     except Exception as e:
         print(f"Record error: {e}")
+        _stream_errors += 1
         return None, None
 
 
@@ -809,6 +820,9 @@ def process_job(job: dict, loopback_device: int):
     if not audio_samples:
         print(f"[{job_id[:8]}] All samples failed — no audio captured")
         update_job(job_id, 'capture_failed')
+        if _stream_errors >= 3:
+            print("Audio input stream is wedged (stale CoreAudio device) — exiting so pm2 restarts us with fresh devices")
+            sys.exit(1)
         return
 
     # Use highest-energy sample
