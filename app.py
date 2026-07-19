@@ -4162,6 +4162,22 @@ async def analyze_url(
         except Exception as e:
             print(f"Spotify API failed: {e}")
 
+    # Track-momentum prefetch: if the scanned track isn't in the universe cache,
+    # its momentum needs 1 Spotify + ~3 CM calls (~3-5s). Kick that off NOW in a
+    # thread so the (much longer) capture wait absorbs it instead of paying it
+    # serially after features arrive. Joined with a timeout where it's consumed.
+    momentum_future = None
+    if track_isrc and track_id and not matcher._tracks.get(track_isrc):
+        def _prefetch_momentum(tid=track_id, isrc=track_isrc):
+            try:
+                cm_refresh = os.getenv('REFRESH_TOKEN')
+                cm_tok = get_cm_token(cm_refresh) if cm_refresh else None
+                return fetch_track_momentum(cm_tok, tid, isrc) if cm_tok else None
+            except Exception as e:
+                print(f"  Track momentum: prefetch failed for {isrc}: {e}")
+                return None
+        momentum_future = enrichment_pool.submit(_prefetch_momentum)
+
     # Look up track's artist in Chartmetric for genres + related artists
     # NOTE: Use track's artist for genre/CM ID, but keep user's own tier from registration
     # Pause enrichment so user-facing CM calls get priority
@@ -4171,7 +4187,13 @@ async def analyze_url(
     artist_genre = ''                       # artist-level CM genres (back-catalog union)
     if artist_spotify_url:
         print(f"  URL analysis: looking up track artist {artist_name} via CM...")
-        track_artist_cm_data = lookup_artist_by_spotify(artist_spotify_url)
+        # Cache-first (same 30d Supabase read-through the deal calculator uses,
+        # ~4-5s saved per scan on known artists); live Chartmetric only on miss.
+        track_artist_cm_data = _cached_artist_lookup(artist_spotify_url)
+        if track_artist_cm_data:
+            print(f"  URL analysis: artist served from cache ({track_artist_cm_data.get('_cache_age_days')}d old)")
+        else:
+            track_artist_cm_data = lookup_artist_by_spotify(artist_spotify_url)
         if track_artist_cm_data:
             user_cm_id = track_artist_cm_data.get('cm_id')
             cm_genres = track_artist_cm_data.get('genres', '')
@@ -4374,8 +4396,9 @@ async def analyze_url(
         _last_api_activity = time.time()
         _notify_local_pipeline('user_active')
 
-        # Longer timeout if there's a queue (150s base + 90s per job ahead)
-        timeout = 150 + (queue_ahead * 90)
+        # Longer timeout if there's a queue (150s base + ~50s per job ahead —
+        # measured worker time per job is ~35-50s, 90s was over-budgeting)
+        timeout = 150 + (queue_ahead * 50)
         print(f"  URL analysis: waiting for Mac worker (up to {timeout}s, {queue_ahead} ahead)...")
         deadline = time.time() + timeout
 
@@ -4723,18 +4746,17 @@ async def analyze_url(
         # so the panel works for tracks not yet in our universe.
         track_momentum = None
         scanned_track_row = matcher._tracks.get(track_isrc) if track_isrc else None
-        if not scanned_track_row and track_isrc and track_id:
-            # On-demand fetch — 1 Spotify call + ~3 CM calls, ~3-5s added latency.
-            # Result is used for this scan only (not cached back to universe yet).
+        if not scanned_track_row and momentum_future is not None:
+            # Prefetched in a thread when the scan started — the capture wait has
+            # been absorbing the latency. Bounded join so a hung fetch can't stall
+            # the response (result used for this scan only, not cached back).
             try:
-                cm_refresh = os.getenv('REFRESH_TOKEN')
-                cm_tok = get_cm_token(cm_refresh) if cm_refresh else None
-                fetched = fetch_track_momentum(cm_tok, track_id, track_isrc) if cm_tok else None
+                fetched = momentum_future.result(timeout=8)
                 if fetched:
                     scanned_track_row = fetched
-                    print(f"  Track momentum: live-fetched for {track_isrc} (not in universe cache)")
+                    print(f"  Track momentum: prefetched for {track_isrc} (not in universe cache)")
             except Exception as e:
-                print(f"  Track momentum: live fetch failed for {track_isrc}: {e}")
+                print(f"  Track momentum: prefetch unavailable for {track_isrc}: {e}")
         if scanned_track_row and all_found:
             track_momentum = _build_track_momentum(scanned_track_row, all_found, u_listeners)
 

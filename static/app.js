@@ -419,7 +419,9 @@ async function analyzeTrack() {
           const qd = await qr.json();
           const el = $('#loader-status');
           if (qd.queue_length > 1 && el) {
-            el.textContent = `You're #${qd.queue_length} in queue — another scan is in progress`;
+            // ~50s measured per capture job — give a real ETA, not just a position
+            const mins = Math.max(1, Math.ceil(((qd.queue_length - 1) * 50) / 60));
+            el.textContent = `You're #${qd.queue_length} in queue — about ${mins} min wait`;
           }
         }
       } catch {}
@@ -1709,7 +1711,11 @@ function recRangeRow(r, band) {
 
   const zoneL = pos(p25), zoneW = Math.max(pos(p75) - zoneL, 1.5);
   const offLow = you < p5, offHigh = you > p95;
-  const dotPos = Math.max(2, Math.min(98, pos(you)));
+  let dotPos = Math.max(2, Math.min(98, pos(you)));
+  // The in-zone verdict can come from the bucket/negligible-move fold-in in
+  // recBand while pos(you) sits numerically outside p25–p75 — never draw the
+  // dot outside a band we're telling the user they're inside.
+  if (inZone) dotPos = Math.max(zoneL, Math.min(zoneL + zoneW, dotPos));
   const dotCls = offLow ? ' off-low' : offHigh ? ' off-high' : '';
   const edge = you < p25 ? p25 : p75;
   // 'level' rows read in named levels, not raw numbers: "You: Static ·
