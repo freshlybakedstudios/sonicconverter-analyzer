@@ -4088,7 +4088,9 @@ async def analyze_url(
 ):
     """
     Analyze a Spotify track by URL.
-    Tries: 1) Mac worker pickup (30s), 2) Spotify preview fallback.
+    Always full-quality capture via the Mac worker (Spotify desktop playback
+    through Loopback). Spotify Web API is metadata-only — preview URLs are
+    never used for analysis.
     """
     lead = _validate_session(token)
     _check_scan_cap(lead)
@@ -4420,8 +4422,8 @@ async def analyze_url(
             job_mgr.update_job(job_id, status='error')
         raise HTTPException(
             503,
-            "Could not analyze this track. Spotify preview is not available for this track "
-            "and the local audio worker is offline. Try uploading the audio file instead."
+            "Could not analyze this track — the studio's capture rig didn't respond in time. "
+            "It may be busy or briefly restarting. Try again in a minute, or upload the audio file instead."
         )
 
     # We have features — now run the normal matching pipeline
