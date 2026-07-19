@@ -4178,7 +4178,9 @@ async def analyze_url(
                     track_data = track_resp.json()
                     preview_url = track_data.get('preview_url')
                     track_name = track_data.get('name', '')
-                    track_isrc = (track_data.get('external_ids') or {}).get('isrc', '')
+                    # ISRCs are canonically uppercase; Spotify sometimes reports
+                    # lowercase, which missed our universe cache + in-memory index.
+                    track_isrc = ((track_data.get('external_ids') or {}).get('isrc', '') or '').strip().upper()
                     artists = track_data.get('artists', [])
                     artist_name = ', '.join(a['name'] for a in artists)
                     # Get primary artist's Spotify URL for CM lookup
@@ -4188,6 +4190,38 @@ async def analyze_url(
                     break
         except Exception as e:
             print(f"Spotify API failed: {e}")
+
+    # Cache-first: tracks already in the GEMS universe serve canonical chunk
+    # features instantly — the same currency the matcher runs on, so results are
+    # MORE consistent than a fresh noisy capture. Fresh Mac-rig capture (Spotify
+    # desktop through Loopback) is a PAID feature (users.fresh_capture flag);
+    # free users whose track isn't cached are steered to file upload or upgrade.
+    # Runs BEFORE the CM artist/genre lookups so gated scans answer in ~2s.
+    features = None
+    features_source = None
+    if track_isrc:
+        try:
+            cached_feats = _lookup_gems_features(track_isrc)
+        except Exception as e:
+            print(f"  URL analysis: universe-cache lookup failed ({e}) — continuing")
+            cached_feats = None
+        if cached_feats:
+            features = cached_feats
+            features_source = 'universe_cache'
+            print(f"  URL analysis: features from universe cache (ISRC {track_isrc}) — no capture needed")
+        else:
+            print(f"  URL analysis: ISRC {track_isrc!r} not in universe cache "
+                  f"(in-memory index says {'PRESENT' if (track_isrc and matcher._gems_by_isrc.get(track_isrc)) else 'absent'})")
+
+    # Paid gate for the capture lane. Legacy tokens (no user id — owner/test
+    # sessions) stay ungated, mirroring _check_scan_cap.
+    if not features and lead.get('id') and not lead.get('fresh_capture'):
+        raise HTTPException(402, {
+            'code': 'fresh_capture_required',
+            'message': "This track isn't in our 274k-track analysis library yet. "
+                       "Upload your audio file for a free instant scan, or unlock "
+                       "studio-grade fresh capture to scan any Spotify track.",
+        })
 
     # Track-momentum prefetch: if the scanned track isn't in the universe cache,
     # its momentum needs 1 Spotify + ~3 CM calls (~3-5s). Kick that off NOW in a
@@ -4382,36 +4416,9 @@ async def analyze_url(
         genre = ', '.join(tags) if tags else (artist_parts[0] if artist_parts else '')
     print(f"  URL analysis: match genre='{genre}' | track='{track_genre}' | artist='{artist_genre}' | dropdown='{dropdown_genre}'")
 
-    # Cache-first: tracks already in the GEMS universe serve canonical chunk
-    # features instantly — the same currency the matcher runs on, so results are
-    # MORE consistent than a fresh noisy capture. Fresh Mac-rig capture (Spotify
-    # desktop through Loopback) is a PAID feature (users.fresh_capture flag);
-    # free users whose track isn't cached are steered to file upload or upgrade.
-    features = None
-    features_source = None
-    if track_isrc:
-        try:
-            cached_feats = _lookup_gems_features(track_isrc)
-        except Exception as e:
-            print(f"  URL analysis: universe-cache lookup failed ({e}) — continuing")
-            cached_feats = None
-        if cached_feats:
-            features = cached_feats
-            features_source = 'universe_cache'
-            print(f"  URL analysis: features from universe cache (ISRC {track_isrc}) — no capture needed")
-        else:
-            print(f"  URL analysis: ISRC {track_isrc!r} not in universe cache "
-                  f"(in-memory index says {'PRESENT' if (track_isrc and matcher._gems_by_isrc.get(track_isrc)) else 'absent'})")
-
-    # Paid gate for the capture lane. Legacy tokens (no user id — owner/test
-    # sessions) stay ungated, mirroring _check_scan_cap.
-    if not features and lead.get('id') and not lead.get('fresh_capture'):
-        raise HTTPException(402, {
-            'code': 'fresh_capture_required',
-            'message': "This track isn't in our 274k-track analysis library yet. "
-                       "Upload your audio file for a free instant scan, or unlock "
-                       "studio-grade fresh capture to scan any Spotify track.",
-        })
+    # (features/features_source resolved right after Spotify metadata — cache
+    # lookup + paid gate run BEFORE the slow CM lookups so free users on
+    # uncached tracks get their 402 in ~2s instead of riding artist resolution.)
 
     # Create job for Mac worker — insert directly as pending_features with spotify_url
     if not features:
