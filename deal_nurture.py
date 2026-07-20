@@ -145,6 +145,56 @@ def verify_unsub(email: str, token: str) -> bool:
     return hmac.compare_digest(unsub_token(email), (token or ""))
 
 
+
+# ~350 common first names — the allowlist that gates email-derived greetings.
+# We only personalize on a CONFIDENT match; gibberish/artist handles stay "there".
+_COMMON_NAMES = set("""aaron adam alan albert alex alexander alexis alice amanda amber amy andrea andrew andy angel
+angela anita ann anna anne anthony antonio april arthur ashley austin barbara barry ben benjamin beth betty beverly
+bill billy bob bobby brad bradley brandon brenda brian bruce bryan caleb calvin cameron cara carl carlos carol
+caroline carolyn carrie casey catherine cathy chad charles charlie charlotte chelsea cheryl chris christian christina
+christine christopher cindy claire clara clarence cody colin connie corey craig crystal curtis cynthia dale dan dana
+daniel danielle danny darrell darren dave david dawn dean debbie deborah debra denise dennis derek derrick diana
+diane dominic don donald donna doris dorothy doug douglas duane dustin dylan earl ed eddie edward elaine eleanor
+elena elijah elizabeth ella ellen emily emma eric erica erik erin ernest ethan eugene eva evan evelyn felix frances
+francis frank fred gabriel gail garrett gary gene george gerald gerard gina glen glenn gloria gordon grace greg
+gregory hannah harold harry heather helen henry holly howard hunter ian isaac isabella jack jackie jacob jake james
+jamie jan jane janet janice jared jason jay jean jeff jeffrey jenna jennifer jenny jeremy jerome jerry jesse jessica
+jill jim jimmy joan joanna joe joel john johnny jon jonathan jordan jose joseph josh joshua joyce juan judith judy
+julia julian julie justin kaitlyn karen kat kate katherine kathleen kathryn kathy katie kayla keith kelly ken kenneth
+kevin kim kimberly kirk kristen kristin kurt kyle lance larry laura lauren laurie lawrence lee leah leo leon leonard
+leslie lily linda lisa logan lori louis louise lucas luis luke lynn madison marc marcus margaret maria marie marilyn
+mario mark martha martin marvin mary mason matt matthew maurice megan melanie melissa michael michelle mike miranda
+molly monica morgan nancy natalie nathan neil nicholas nick nicole nina noah nora norman olga oliver olivia oscar
+pamela patricia patrick paul paula peggy peter phil philip phillip phyllis rachel ralph randall randy ray raymond
+rebecca regina renee rex rhonda richard rick ricky rita rob robert roberta robin rodney roger ron ronald rose ross
+roy russell ruth ryan sam samantha samuel sandra sara sarah scott sean seth shane shannon sharon shawn sheila
+shirley sidney smitty sofia sophia spencer stacey stacy stanley stephanie stephen steve steven stuart sue susan
+suzanne sylvia tammy tanya tara taylor ted teresa terry theodore theresa thomas tiffany tim timothy tina todd tom
+tommy toni tony tracy travis trevor troy tyler valerie vanessa vernon veronica victor victoria vincent virginia
+vivian walter wanda warren wayne wendy wesley whitney will willie wyatt zachary""".split())
+
+
+def _name_from_email(email: str) -> str:
+    """Best-effort first name from an email localpart — ONLY when it confidently
+    matches a common first name (willie/josh/olga...), else '' so the greeting
+    falls back to 'there' instead of 'Hey Pakalak'."""
+    import re as _re
+    local = (email or "").split("@")[0].lower()
+    local = _re.sub(r"\d+", "", local)
+    if not local:
+        return ""
+    # separator style: olga.homar, errol.d.burrell -> first token
+    tokens = [t for t in _re.split(r"[._\-+]", local) if t]
+    if tokens and tokens[0] in _COMMON_NAMES:
+        return tokens[0].title()
+    # glued style: williejackson, joshreedhughes -> longest name prefix
+    best = ""
+    for n in _COMMON_NAMES:
+        if len(n) > len(best) and local.startswith(n):
+            best = n
+    return best.title() if len(best) >= 3 else ""
+
+
 def _lead_view(lead: dict) -> dict:
     """Pull the display fields for a lead, with friendly fallbacks."""
     name = (lead.get("name") or "").strip()
@@ -157,8 +207,9 @@ def _lead_view(lead: dict) -> dict:
     else:
         svc = ""  # no services stored (e.g. legacy leads) — sentence adapts
     val = meta.get("deal_value")
-    # Greeting: use a name if we have a distinct one, else something warm.
-    greet = name if name else (artist or "there")
+    # Greeting: use a name if we have a distinct one, else a confident
+    # email-derived first name (2026-07-20), else something warm.
+    greet = name if name else (artist or _name_from_email(lead.get("email", "")) or "there")
     return {
         "email": lead.get("email", ""),
         "greet": greet,
