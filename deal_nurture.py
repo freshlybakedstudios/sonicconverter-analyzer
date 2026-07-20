@@ -275,6 +275,70 @@ def _html_and_plain(html: str):
     return html, plain
 
 
+# --- Gmail API rail (2026-07-20) -------------------------------------------
+# Evidence: SendGrid nurture to a lead was never seen (spam/promotions) while
+# the owner's personal Gmail to the SAME lead got a reply in hours. Lead-facing
+# mail now rides the owner's Gmail (same rail as outreach, 9.4% reply rate);
+# SendGrid remains the fallback and still carries owner digests if Gmail creds
+# are absent. Configure on Railway: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET,
+# GMAIL_REFRESH_TOKEN. From: NURTURE_GMAIL_FROM (Gmail silently rewrites to the
+# primary address unless it's a registered send-as alias — either way it lands).
+NURTURE_GMAIL_FROM = os.getenv("NURTURE_GMAIL_FROM", "rates@freshlybakedstudios.com")
+
+_gmail_tok = {"value": None, "ts": 0.0}
+
+
+def _gmail_access_token():
+    import time as _t
+
+    import requests as _rq
+    cid = os.getenv("GMAIL_CLIENT_ID")
+    sec = os.getenv("GMAIL_CLIENT_SECRET")
+    ref = os.getenv("GMAIL_REFRESH_TOKEN")
+    if not (cid and sec and ref):
+        return None
+    if _gmail_tok["value"] and _t.time() - _gmail_tok["ts"] < 3000:
+        return _gmail_tok["value"]
+    r = _rq.post("https://oauth2.googleapis.com/token", data={
+        "client_id": cid, "client_secret": sec,
+        "refresh_token": ref, "grant_type": "refresh_token",
+    }, timeout=20)
+    if r.status_code != 200:
+        print(f"[nurture] gmail token refresh failed: {r.status_code}")
+        return None
+    _gmail_tok["value"] = r.json()["access_token"]
+    _gmail_tok["ts"] = _t.time()
+    return _gmail_tok["value"]
+
+
+def _send_via_gmail(to_email: str, subject: str, html: str, plain: str) -> bool:
+    import base64
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    import requests as _rq
+    tok = _gmail_access_token()
+    if not tok:
+        return False
+    m = MIMEMultipart("alternative")
+    m["To"] = to_email
+    m["From"] = f"Alexander Almgren <{NURTURE_GMAIL_FROM}>"
+    m["Reply-To"] = f"Alexander Almgren <{NURTURE_REPLY_TO}>"
+    m["Subject"] = subject
+    m.attach(MIMEText(plain, "plain"))
+    m.attach(MIMEText(html, "html"))
+    raw = base64.urlsafe_b64encode(m.as_bytes()).decode()
+    r = _rq.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        headers={"Authorization": f"Bearer {tok}"},
+        json={"raw": raw}, timeout=30,
+    )
+    if r.status_code in (200, 202):
+        return True
+    print(f"[nurture] gmail send failed {r.status_code}: {r.text[:150]}")
+    return False
+
+
 def _send_email(to_email: str, subject: str, html: str) -> bool:
     api_key = os.getenv("SENDGRID_API_KEY")
     if not api_key:
@@ -284,6 +348,10 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
     from sendgrid.helpers.mail import Bcc, IpPoolName, Mail, HtmlContent, ReplyTo
 
     html, plain = _html_and_plain(html)
+    # Lead-facing mail prefers the Gmail rail (lands in Primary); owner digests
+    # and Gmail failures fall through to SendGrid.
+    if to_email.lower() != (OWNER_EMAIL or "").lower() and _send_via_gmail(to_email, subject, html, plain):
+        return True
     msg = Mail(
         from_email=NURTURE_FROM,
         to_emails=to_email,
