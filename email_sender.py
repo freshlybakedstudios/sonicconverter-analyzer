@@ -294,10 +294,13 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
     </div>
     """
 
+    from deal_nurture import _html_and_plain as _hp
+    html, _plain = _hp(html)
     message = Mail(
         from_email='analyzer@freshlybakedstudios.com',
         to_emails=email,
         subject=f'{name}, your sonic breakdown is ready',
+        plain_text_content=_plain,
         html_content=HtmlContent(html),
     )
     # analyzer@ has no inbox — route replies to the owner (audit 2026-07-20).

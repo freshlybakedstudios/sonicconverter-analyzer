@@ -262,6 +262,19 @@ def build_touch(lead: dict, touch: int):
     return subject, html
 
 
+def _html_and_plain(html: str):
+    """Mail-tester fixes (2026-07-20): wrap fragments in a real <html> doc
+    (HTML_MIME_NO_HTML_TAG -0.6) and derive a text/plain part (MIME_HTML_ONLY)."""
+    if '<html' not in html.lower():
+        html = f"<html><body>{html}</body></html>"
+    import re as _re
+    plain = _re.sub(r'<(style|script)[^>]*>.*?</\1>', ' ', html, flags=_re.S | _re.I)
+    plain = _re.sub(r'<br\s*/?>|</p>|</div>', '\n', plain, flags=_re.I)
+    plain = _re.sub(r'<[^>]+>', '', plain)
+    plain = _re.sub(r'\n{3,}', '\n\n', _re.sub(r'[ \t]+', ' ', plain)).strip()
+    return html, plain
+
+
 def _send_email(to_email: str, subject: str, html: str) -> bool:
     api_key = os.getenv("SENDGRID_API_KEY")
     if not api_key:
@@ -270,10 +283,12 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
     from sendgrid import SendGridAPIClient
     from sendgrid.helpers.mail import Bcc, IpPoolName, Mail, HtmlContent, ReplyTo
 
+    html, plain = _html_and_plain(html)
     msg = Mail(
         from_email=NURTURE_FROM,
         to_emails=to_email,
         subject=subject,
+        plain_text_content=plain,
         html_content=HtmlContent(html),
     )
     # deals@ is SEND-ONLY (no alias/forward exists — audited 2026-07-20: probes
