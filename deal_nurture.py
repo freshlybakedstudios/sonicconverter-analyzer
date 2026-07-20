@@ -30,7 +30,7 @@ from datetime import datetime, timezone, timedelta
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://freshlybakedstudios.com")
 PUBLIC_API_BASE = os.getenv("PUBLIC_API_BASE", "https://analyze.freshlybakedstudios.com")
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "freshlybakedstudios@gmail.com")
-NURTURE_FROM = os.getenv("NURTURE_FROM", "deals@freshlybakedstudios.com")
+NURTURE_FROM = os.getenv("NURTURE_FROM", "rates@freshlybakedstudios.com")
 NURTURE_REPLY_TO = os.getenv("NURTURE_REPLY_TO", "almgren@freshlybakedstudios.com")
 # BCC every nurture send into the studio mailbox so outbound auto-replies are
 # visible in Gmail (SendGrid API sends otherwise never touch the mailbox).
