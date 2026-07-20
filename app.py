@@ -6039,11 +6039,14 @@ def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
     from sendgrid.helpers.mail import IpPoolName, Mail, HtmlContent
 
     message = Mail(
-        from_email='deals@freshlybakedstudios.com',
+        from_email='rates@freshlybakedstudios.com',
         to_emails=email,
         subject=f'{name}, your production agreement — Freshly Baked Studios',
         html_content=HtmlContent(html),
     )
+    # rates@ is a real alias (2026-07-20); replies also route to the owner.
+    from sendgrid.helpers.mail import ReplyTo as _ReplyTo
+    message.reply_to = _ReplyTo('almgren@freshlybakedstudios.com', 'Alexander Almgren')
     message.ip_pool_name = IpPoolName('production_pool2')
 
     try:
