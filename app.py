@@ -2074,10 +2074,13 @@ def _send_reset_email(email: str, reset_token: str) -> bool:
 
     from sendgrid import SendGridAPIClient
     from sendgrid.helpers.mail import IpPoolName, Mail, HtmlContent
+    from deal_nurture import _html_and_plain as _hp
+    html, _plain = _hp(html)
     message = Mail(
         from_email='noreply@freshlybakedstudios.com',
         to_emails=email,
         subject='Reset your Sonic Analyzer password',
+        plain_text_content=_plain,
         html_content=HtmlContent(html),
     )
     message.ip_pool_name = IpPoolName('production_pool2')
@@ -6038,10 +6041,13 @@ def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
     from sendgrid import SendGridAPIClient
     from sendgrid.helpers.mail import IpPoolName, Mail, HtmlContent
 
+    from deal_nurture import _html_and_plain as _hp
+    html, _plain = _hp(html)
     message = Mail(
         from_email='rates@freshlybakedstudios.com',
         to_emails=email,
         subject=f'{name}, your production agreement — Freshly Baked Studios',
+        plain_text_content=_plain,
         html_content=HtmlContent(html),
     )
     # rates@ is a real alias (2026-07-20); replies also route to the owner.
