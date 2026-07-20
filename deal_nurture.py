@@ -31,6 +31,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://freshlybakedstudios.com")
 PUBLIC_API_BASE = os.getenv("PUBLIC_API_BASE", "https://analyze.freshlybakedstudios.com")
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "freshlybakedstudios@gmail.com")
 NURTURE_FROM = os.getenv("NURTURE_FROM", "deals@freshlybakedstudios.com")
+NURTURE_REPLY_TO = os.getenv("NURTURE_REPLY_TO", "almgren@freshlybakedstudios.com")
 # BCC every nurture send into the studio mailbox so outbound auto-replies are
 # visible in Gmail (SendGrid API sends otherwise never touch the mailbox).
 NURTURE_BCC = os.getenv("NURTURE_BCC", "almgren@freshlybakedstudios.com")
@@ -267,7 +268,7 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
         print("[nurture] SENDGRID_API_KEY not set — cannot send")
         return False
     from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Bcc, IpPoolName, Mail, HtmlContent
+    from sendgrid.helpers.mail import Bcc, IpPoolName, Mail, HtmlContent, ReplyTo
 
     msg = Mail(
         from_email=NURTURE_FROM,
@@ -275,6 +276,10 @@ def _send_email(to_email: str, subject: str, html: str) -> bool:
         subject=subject,
         html_content=HtmlContent(html),
     )
+    # deals@ is SEND-ONLY (no alias/forward exists — audited 2026-07-20: probes
+    # to it never arrive anywhere). Every "just hit reply" reply bounced until
+    # this ReplyTo. Replies must go to a real, monitored mailbox.
+    msg.reply_to = ReplyTo(NURTURE_REPLY_TO, "Alexander Almgren")
     if NURTURE_BCC and NURTURE_BCC.lower() != to_email.lower():
         msg.add_bcc(Bcc(NURTURE_BCC))
     # Transactional/nurture stream rides its own dedicated IP (pool2) so cold
