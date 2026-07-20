@@ -427,6 +427,11 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
         # lead answers by email — a human conversation has started, stop the robot.
         if nur.get("replied_at"):
             continue
+        # manual_followup is stamped when the OWNER emails the lead personally
+        # (by reply-sync outbound detection, or by hand). The robot must never
+        # follow a personal note with a template from the same address.
+        if nur.get("manual_followup"):
+            continue
         created = _parse(r.get("created_at"))
         if not created:
             continue
