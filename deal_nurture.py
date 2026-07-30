@@ -232,7 +232,9 @@ def build_touch(lead: dict, touch: int):
     v = _lead_view(lead)
     email = v["email"]
     unsub = f"{PUBLIC_API_BASE}/api/deal/nurture/unsubscribe?e={email}&t={unsub_token(email)}"
-    rates = f"{FRONTEND_URL}/rates"
+    # UTM-tagged so nurture clicks classify as Email in GA4 instead of Direct
+    # (2026-07-29 audit: the Email channel showed literally zero sessions).
+    rates = f"{FRONTEND_URL}/rates?utm_source=nurture&utm_medium=email&utm_campaign=touch{touch}"
     for_artist = f" for {v['artist']}" if v["artist"] else ""
     price = f" — ${v['value']:,}" if isinstance(v["value"], (int, float)) and v["value"] else ""
     svc = v["service_str"]
