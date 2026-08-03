@@ -45,7 +45,13 @@ _UNSUB_SECRET = os.getenv("NURTURE_UNSUB_SECRET", "fbs-nurture-unsub")
 # Wait this long after a lead abandons before touch 1, and after touch 1 before touch 2.
 # Touch 1 fires ~30 min after they leave the site — timely cart-abandonment nudge.
 TOUCH1_DELAY = timedelta(minutes=30)
-TOUCH2_DELAY = timedelta(days=4)
+# Day 4 was calibrated for the old generic nudge. Touch 2 is now the money
+# email (personal observation + call-gated listen) — artists in motion decide
+# in days, not weeks (Oxford Drive locked another studio before noon). 2 days
+# keeps distance from the 30-min receipt so "actual human" stays plausible;
+# checkout-abandoners were reaching for a wallet, they get it a day sooner.
+TOUCH2_DELAY = timedelta(days=2)
+TOUCH2_DELAY_HOT = timedelta(days=1)
 # Touch 3 = long-tail re-engage: 8 days after touch 2 ≈ day 12 of the sequence.
 TOUCH3_DELAY = timedelta(days=8)
 LOOKBACK = timedelta(days=30)  # don't chase leads older than this
@@ -509,6 +515,12 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
         or []
     )
     booked = {r["email"].lower() for r in rows if r.get("step") == "paid" and r.get("email")}
+    # Cart abandoners — started checkout, never paid. Hottest leads, fast lane.
+    hot_emails = {
+        r["email"].lower()
+        for r in rows
+        if r.get("step") == "checkout_started" and r.get("email")
+    }
 
     # Earliest 'contact' row per email = the lead's first quote.
     contacts = sorted(
@@ -543,7 +555,8 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
                 t1.append(r)
         elif not nur.get("t2_sent_at"):
             t1_at = _parse(nur.get("t1_sent_at"))
-            if t1_at and now - t1_at >= TOUCH2_DELAY:
+            delay2 = TOUCH2_DELAY_HOT if email in hot_emails else TOUCH2_DELAY
+            if t1_at and now - t1_at >= delay2:
                 t2.append(r)
         elif not nur.get("t3_sent_at"):
             t2_at = _parse(nur.get("t2_sent_at"))
