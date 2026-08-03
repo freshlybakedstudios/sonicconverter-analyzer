@@ -29,6 +29,10 @@ from datetime import datetime, timezone, timedelta
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://freshlybakedstudios.com")
 PUBLIC_API_BASE = os.getenv("PUBLIC_API_BASE", "https://analyze.freshlybakedstudios.com")
+# Free-listen intake (touches 2/3): track lands in the owner's Dropbox file
+# request, and the listen is delivered ON a booked call — never before.
+DROPBOX_REQUEST_URL = "https://www.dropbox.com/request/C4h4VR18b7rqZEY9cS9C"
+CAL_BOOKING_URL = "https://cal.freshlybakedstudios.com/freshlybakedstudios/30min"
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "freshlybakedstudios@gmail.com")
 NURTURE_FROM = os.getenv("NURTURE_FROM", "rates@freshlybakedstudios.com")
 NURTURE_REPLY_TO = os.getenv("NURTURE_REPLY_TO", "almgren@freshlybakedstudios.com")
@@ -258,65 +262,86 @@ def build_touch(lead: dict, touch: int):
                See my pricing</a>
           </p>
           <p style="color:#ccc">And if something's holding you back — budget, timeline, a question
-             about the deal — just hit reply. I read these myself.</p>
+             about the deal — just hit reply. It comes straight to my phone, not a
+             support inbox.</p>
           <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
         """
     elif touch == 3:
-        # Long-tail re-engage — social proof + easy door back in. NOTE: the
-        # streams figure must stay "3.3B+" to match the site (the 12.3B Muso
-        # number is disputed mislinks — never cite it).
-        subject = "Before I close your file"
+        # Long-tail close-out — plain "typed by a person" style (no logo, no
+        # button). Advice-with-no-ask + the evergreen listen offer. Streams
+        # figure must stay "3.3B+" (12.3B Muso number is disputed mislinks).
+        subject = "closing your file (for real)"
         body = f"""
-          <p style="color:#ccc">Hey {v['greet']},</p>
-          <p style="color:#ccc">Last note from me, promise. I know timing is everything with a record,
-             so no pressure — just two things worth knowing before you decide who touches
-             {project_phrase2}{for_artist}:</p>
-          <p style="color:#ccc">Eight artists booked calls with the studio in the last 90 days, so the
-             calendar does move. And the credits behind the desk sit at
-             <strong>3.3B+ streams</strong> across projects I've worked on — your record
-             would be in experienced hands.</p>
-          <p style="color:#ccc">Your numbers are still saved if you want to pick things back up:</p>
-          <p style="text-align:center;margin:28px 0">
-            <a href="{rates}" style="background:#D8E166;color:#222020;text-decoration:none;
-               font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
-               Revisit my quote</a>
-          </p>
-          <p style="color:#ccc">And if it's easier to just talk it through, reply here — I read these
-             myself.</p>
-          <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
+          <p>Hey {v['greet']} — last one from me, promise.</p>
+          <p>Your quote's saved if the record comes back around:
+             <a href="{rates}">{FRONTEND_URL}/rates</a>. And the listen offer from my
+             last email doesn't expire — the drop link
+             (<a href="{DROPBOX_REQUEST_URL}">here</a>) and
+             <a href="{CAL_BOOKING_URL}">my calendar</a> both work months from now.</p>
+          <p>One thing before I go quiet: whoever you end up trusting with
+             {project_phrase2}{for_artist}, make them play you something they mixed in your
+             genre first. That one ask filters out most of the bad experiences in this
+             business.</p>
+          <p>Rooting for the record either way.</p>
+          <p>Alexander<br>
+             <span style="color:#888">(917) 286-7324<br>
+             <a href="https://www.instagram.com/alexanderalmgren/" style="color:#888">@alexanderalmgren</a>
+             · <a href="https://freshlybakedstudios.com" style="color:#888">freshlybakedstudios.com</a></span></p>
         """
     else:
-        subject = "Want me to take a listen?"
+        # The proven "actual human" shape (closed the Aidan $2k deal). Free
+        # listen is delivered ON a booked call — work only happens with a call
+        # locked (Fading Emerald rule: no pass-then-ghost window).
+        subject = "the actual human this time"
         body = f"""
-          <p style="color:#ccc">Hey {v['greet']},</p>
-          <p style="color:#ccc">Circling back one more time. If you've got a track that's close but not
-             quite hitting, I'm happy to give it a quick listen and tell you exactly what I'd do with
-             it — no charge, no strings. Sometimes it's one thing holding a record back.</p>
-          <p style="color:#ccc">Just reply with a link and I'll take a pass. Or if you're ready to
-             lock in {project_phrase2}{for_artist}, your quote's still here:</p>
-          <p style="text-align:center;margin:28px 0">
-            <a href="{rates}" style="background:#D8E166;color:#222020;text-decoration:none;
-               font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
-               Pick up my quote</a>
-          </p>
-          <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
+          <p>Hey {v['greet']} — Alexander here. The actual human this time, not the
+             quote machine.</p>
+          <p>I saw you priced out {project_phrase}{for_artist} but didn't end up booking —
+             and I get it. The song's probably still moving, or the timing isn't there yet.</p>
+          <p>So here's a no-strings offer while you decide: I'll take a real pass at your
+             track — what I'd do with it, what's holding it back, whether it even needs
+             what you priced out. Free.</p>
+          <p>How it works, two quick steps:</p>
+          <p>1. Drop your track here: <a href="{DROPBOX_REQUEST_URL}">{DROPBOX_REQUEST_URL}</a><br>
+             2. Grab a slot on my calendar: <a href="{CAL_BOOKING_URL}">{CAL_BOOKING_URL}</a></p>
+          <p>I do the listen and walk you through it live on the call. No card, no
+             obligation after.</p>
+          <p>Alexander<br>
+             <span style="color:#888">(917) 286-7324<br>
+             <a href="https://www.instagram.com/alexanderalmgren/" style="color:#888">@alexanderalmgren</a>
+             · <a href="https://freshlybakedstudios.com" style="color:#888">freshlybakedstudios.com</a></span></p>
         """
 
-    html = f"""
-    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-                max-width:560px;margin:0 auto;background:#141213;color:#eee;padding:32px;border-radius:12px">
-      <div style="text-align:center;margin-bottom:8px">
-        <img src="https://storage.googleapis.com/fbs-static-assets/axd-logo.png"
-             alt="Freshly Baked Studios" style="width:140px;height:auto;margin-bottom:8px">
-      </div>
-      {body}
-      <p style="color:#555;font-size:11px;text-align:center;margin-top:28px;border-top:1px solid #2a2626;padding-top:16px">
-        Freshly Baked Studios · Brooklyn, NY<br>
-        You got this because you requested a quote on our site.
-        <a href="{unsub}" style="color:#777">Unsubscribe</a>
-      </p>
-    </div>
-    """
+    if touch == 1:
+        # Touch 1 keeps the branded card — it reads as a quote receipt.
+        html = f"""
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                    max-width:560px;margin:0 auto;background:#141213;color:#eee;padding:32px;border-radius:12px">
+          <div style="text-align:center;margin-bottom:8px">
+            <img src="https://storage.googleapis.com/fbs-static-assets/axd-logo.png"
+                 alt="Freshly Baked Studios" style="width:140px;height:auto;margin-bottom:8px">
+          </div>
+          {body}
+          <p style="color:#555;font-size:11px;text-align:center;margin-top:28px;border-top:1px solid #2a2626;padding-top:16px">
+            Freshly Baked Studios · Brooklyn, NY<br>
+            You got this because you requested a quote on our site.
+            <a href="{unsub}" style="color:#777">Unsubscribe</a>
+          </p>
+        </div>
+        """
+    else:
+        # Touches 2/3 look typed by a person: no logo, no card, no button —
+        # the packaging that closed the Aidan deal. Unsub stays (legal).
+        html = f"""
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                    max-width:560px;margin:0 auto;color:#111;font-size:15px;line-height:1.5">
+          {body}
+          <p style="color:#999;font-size:11px;margin-top:28px">
+            You got this because you requested a quote at freshlybakedstudios.com ·
+            <a href="{unsub}" style="color:#999">unsubscribe</a>
+          </p>
+        </div>
+        """
     return subject, html
 
 
