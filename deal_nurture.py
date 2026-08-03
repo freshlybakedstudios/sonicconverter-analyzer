@@ -293,14 +293,34 @@ def build_touch(lead: dict, touch: int):
         # listen is delivered ON a booked call — work only happens with a call
         # locked (Fading Emerald rule: no pass-then-ghost window).
         subject = "the actual human this time"
+        # Mixer observation stamped by the local personalizer (nurture_personalize.py
+        # on the Mac) — a grounded sonic read of THEIR top track, same generator as
+        # the daily outreach. Present → lead hears we actually listened; absent →
+        # the generic (still proven) copy below.
+        pers = (lead.get("metadata") or {}).get("personalization") or {}
+        obs = (pers.get("observation") or "").strip()
+        obs_track = (pers.get("track") or "").strip()
+        if obs:
+            listened = (
+                f"<p>Before writing this I pulled up "
+                f"{'<strong>' + obs_track + '</strong>' if obs_track else 'your music'} — "
+                f"{obs}</p>"
+                f"<p>Which is exactly the kind of thing I'd dig into properly on a free "
+                f"pass at your track: what I'd do with it, what's holding it back, whether "
+                f"it even needs what you priced out.</p>"
+            )
+        else:
+            listened = (
+                "<p>So here's a no-strings offer while you decide: I'll take a real pass "
+                "at your track — what I'd do with it, what's holding it back, whether it "
+                "even needs what you priced out. Free.</p>"
+            )
         body = f"""
           <p>Hey {v['greet']} — Alexander here. The actual human this time, not the
              quote machine.</p>
           <p>I saw you priced out {project_phrase}{for_artist} but didn't end up booking —
              and I get it. The song's probably still moving, or the timing isn't there yet.</p>
-          <p>So here's a no-strings offer while you decide: I'll take a real pass at your
-             track — what I'd do with it, what's holding it back, whether it even needs
-             what you priced out. Free.</p>
+          {listened}
           <p>How it works, two quick steps:</p>
           <p>1. Drop your track here: <a href="{DROPBOX_REQUEST_URL}">{DROPBOX_REQUEST_URL}</a><br>
              2. Grab a slot on my calendar: <a href="{CAL_BOOKING_URL}">{CAL_BOOKING_URL}</a></p>
