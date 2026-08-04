@@ -679,20 +679,31 @@ def run_daily_digest(supabase) -> dict:
         who = v["artist"] or (v["greet"] if v["greet"] != "there" else v["email"].split("@")[0])
         # Only add "for <artist>" when it isn't just repeating the greeting
         for_artist = f" for {v['artist']}" if v["artist"] and v["artist"] != v["greet"] else ""
-        opener = (
-            f"Hey {v['greet']} — saw you priced out {opener_about}"
-            f"{for_artist}. "
-            f"Send me your latest track and I'll take a quick listen — "
-            f"I'll tell you exactly what I'd do with it."
-        )
+        # Since 2026-08-03 the robot's touch 2 IS the personal-feeling email
+        # (mixer observation + call-gated free listen). Hand-emailing a lead
+        # stamps manual_followup and CANCELS that send — so the digest only
+        # nudges the owner toward whales, where the real human beats any robot.
+        whale = isinstance(v["value"], (int, float)) and v["value"] >= 2000
+        pers = bool((r.get("metadata") or {}).get("personalization"))
+        if whale:
+            action = ("<span style='color:#c00;font-weight:bold'>WHALE — worth a real note from you.</span> "
+                      "<span style='color:#555;font-size:13px'>If you email them personally, the robot stands down "
+                      "(that's by design). Angle: </span>"
+                      f"<em style='color:#333'>Hey {v['greet']} — saw you priced out {opener_about}{for_artist}. "
+                      "Before you decide anything, send me the track — I'll listen and tell you exactly "
+                      "what I'd do with it.</em>")
+        else:
+            action = ("<span style='color:#2a7;font-size:13px'>🤖 Robot's got this one — personalized "
+                      "“actual human” email lands on schedule"
+                      + (" (sonic observation ready)" if pers else "")
+                      + ". No action needed unless they reply.</span>")
         return f"""
         <div style="border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:12px{';border-color:#c00' if hot else ''}">
           <b>{who}</b> &lt;{v['email']}&gt;
           {'<span style="color:#c00;font-weight:bold"> · STARTED CHECKOUT — hottest</span>' if hot else ''}<br>
           {v['service_str'] or 'services unknown'} · {price_line}
           {f' · nurture sent: {touches}' if touches else ' · no nurture sent yet'}<br>
-          <span style="color:#555;font-size:13px">Suggested opener (personalize + send from your inbox):</span><br>
-          <em style="color:#333">{opener}</em>
+          {action}
         </div>"""
 
     def paid_block(p):
@@ -714,14 +725,15 @@ def run_daily_digest(supabase) -> dict:
     <div style="font-family:sans-serif;max-width:640px;margin:0 auto;color:#222">
       <h2>Deal-calc leads — last 24h</h2>
       {wins_html}
-      <h3>🔥 Leads to personally follow up ({len(leads)})</h3>
-      <p style="color:#555;font-size:13px">The automated nurture already ran or will —
-      these are worth one personal line from you. Reply from your own inbox, not SendGrid.</p>
+      <h3>Leads in — last 24h ({len(leads)})</h3>
+      <p style="color:#555;font-size:13px">The robot handles follow-up now (personalized
+      "actual human" touch at day 1–2). Only WHALE-flagged leads are worth your keyboard —
+      and emailing one personally cancels its automated sequence, so pick your lane per lead.</p>
       {leads_html}
     </div>"""
 
     n_leads = len(leads)
-    subject = f"☀️ {n_leads} lead{'s' if n_leads != 1 else ''} to follow up" + (f" · {len(paid)} paid 💰" if paid else "")
+    subject = f"☀️ {n_leads} new lead{'s' if n_leads != 1 else ''}" + (f" · {len(paid)} paid 💰" if paid else "")
     sent = _send_email(OWNER_EMAIL, subject, html)
     if sent:
         supabase.table("deal_leads").insert({
