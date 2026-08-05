@@ -45,12 +45,11 @@ _UNSUB_SECRET = os.getenv("NURTURE_UNSUB_SECRET", "fbs-nurture-unsub")
 # Wait this long after a lead abandons before touch 1, and after touch 1 before touch 2.
 # Touch 1 fires ~30 min after they leave the site — timely cart-abandonment nudge.
 TOUCH1_DELAY = timedelta(minutes=30)
-# Day 4 was calibrated for the old generic nudge. Touch 2 is now the money
-# email (personal observation + call-gated listen) — artists in motion decide
-# in days, not weeks (Oxford Drive locked another studio before noon). 2 days
-# keeps distance from the 30-min receipt so "actual human" stays plausible;
-# checkout-abandoners were reaching for a wallet, they get it a day sooner.
-TOUCH2_DELAY = timedelta(days=2)
+# Owner call 2026-08-04: touch 2 (the "actual human" email) goes out the NEXT
+# DAY after the quote, for everyone — whales included, fully automatic.
+# Artists in motion decide fast (Oxford Drive locked another studio before
+# noon); one day is still enough distance from the 30-min receipt.
+TOUCH2_DELAY = timedelta(days=1)
 TOUCH2_DELAY_HOT = timedelta(days=1)
 # Touch 3 = long-tail re-engage: 8 days after touch 2 ≈ day 12 of the sequence.
 TOUCH3_DELAY = timedelta(days=8)
