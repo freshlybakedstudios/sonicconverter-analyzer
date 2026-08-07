@@ -56,7 +56,7 @@ from chartmetric_lookup import (
 from email_sender import send_results_email
 from job_manager import JobManager
 from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
-                           candidate_lane_families)
+                           candidate_lane_families, user_lane_families)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -2562,7 +2562,7 @@ async def analyze(
         # fall back to the artist's first two resolvable families (positional,
         # same approach as the URL path).
         if dropdown_genre:
-            user_families = _genre_families(dropdown_genre)
+            user_families = user_lane_families(dropdown_genre)
         else:
             artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
             seen, tags = set(), []
@@ -2574,7 +2574,7 @@ async def analyze(
                     tags.append(g); seen.add(lg)
                     if len(tags) >= 2:
                         break
-            user_families = _genre_families(*tags) if tags else set()
+            user_families = user_lane_families(*tags) if tags else set()
 
         print(f"  Upload lane (heavy-weight dropdown): {user_families} | "
               f"dropdown='{dropdown_genre}' | artist_genre='{artist_genre[:80]}'")
@@ -2596,7 +2596,7 @@ async def analyze(
         # Widen-only — cannot change results when the lane is healthy.
         MIN_AFTER_LANE_FILTER = 25
         _av_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
-        artist_families = _genre_families(*_av_parts) if _av_parts else set()
+        artist_families = user_lane_families(*_av_parts) if _av_parts else set()
         if len(lane_filtered) < MIN_AFTER_LANE_FILTER and (artist_families - user_families):
             relaxed = user_families | artist_families
             lane_filtered = [m for m in all_matches if in_lane(m, relaxed)]
@@ -2672,7 +2672,7 @@ async def analyze(
             user_tier_num = tier_order_map.get(user_tier, -1)
 
             # Use family-based filtering (same as Similar Artists)
-            user_families = _genre_families(genre or '')
+            user_families = user_lane_families(genre or '')
             # Market banding: only demote foreign-market targets when the USER
             # is an Anglophone-market artist themselves (else it's not "foreign").
             user_non_native = _is_non_native_market(genre or '')
@@ -2979,7 +2979,7 @@ async def analyze(
         if user_profile is not None:
             # Reuse the genre families computed for the matcher's family
             # filter — same source of truth (user's detected/declared genres).
-            _file_upload_user_fams = _genre_families(genre or '')
+            _file_upload_user_fams = user_lane_families(genre or '')
             _file_upload_user_primary = _primary_genre_family(genre or '')
             user_profile['pitch_comparables'] = _compute_pitch_comparables(
                 matches, high_converter_gems, matcher._gems_by_isrc,
@@ -3002,7 +3002,13 @@ async def analyze(
         signature_recs = _generate_signature_recommendations(features, high_converter_gems)
 
         # Create background enrichment job
-        job_id = job_mgr.create_job(token, features, matches, all_matches=matches)
+        job_id = job_mgr.create_job(token, features, matches, all_matches=matches,
+                                    identity={
+                                        'track_name': (file.filename or '').rsplit('.', 1)[0][:200],
+                                        'spotify_url': artist_spotify_url,
+                                        'user_email': lead.get('email'),
+                                        'scan_source': 'upload',
+                                    })
 
         # Get user's CM artist ID for related-artists lookup (used by the
         # background enrichment job for the "related artists" reverse lookup).
@@ -3449,6 +3455,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         all_playlists = []
         seen_curator_ids = set()
         curator_count = 0
+        curators_locked = 0  # free tier: curators found but withheld — the Pro upsell count
         BATCH_SIZE = 10
 
         _sse_publish(job_id, 'enrichment_progress', {
@@ -3635,6 +3642,9 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
 
             if not include_curators and batch_curators:
                 # Free tier: curator contacts are paid-only — never resolve or scrape.
+                # Count what was withheld: the results page shows this number on the
+                # locked Pro block ("N curators found — contacts unlock with Pro").
+                curators_locked += len(batch_curators)
                 print(f"Enrichment [{job_id[:8]}]: skipping {len(batch_curators)} curators (free tier)")
                 batch_curators = []
             if batch_curators:
@@ -3953,9 +3963,18 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             job_mgr.update_job(job_id, campaign_forecast=forecast)
 
         # Done
+        if curators_locked:
+            _sse_publish(job_id, 'curators_locked', {'count': curators_locked})
+            # Merge into stored progress (don't clobber batch fields) so the
+            # SSE catch-up path can replay the locked count on reconnect.
+            _prog = dict(((job_mgr.get_job_state(job_id) or {}).get('progress') or {}))
+            _prog['curators_locked'] = curators_locked
+            job_mgr.update_job(job_id, progress=_prog)
         job_mgr.update_job(job_id, status='complete')
-        _sse_publish(job_id, 'complete', {'status': 'complete'})
-        print(f"Enrichment [{job_id[:8]}]: Complete")
+        _sse_publish(job_id, 'complete', {'status': 'complete',
+                                          'curators_locked': curators_locked})
+        print(f"Enrichment [{job_id[:8]}]: Complete"
+              + (f" — {curators_locked} curators locked behind Pro" if curators_locked else ""))
         # Notify resource-switcher that we're done — local scripts can resume
         _notify_local_pipeline('user_idle')
 
@@ -4006,7 +4025,12 @@ async def stream_enrichment(job_id: str):
                 if state.get('campaign_forecast'):
                     yield f"event: campaign_forecast\ndata: {json.dumps(state['campaign_forecast'])}\n\n"
                 if state.get('status') == 'complete':
-                    yield f"event: complete\ndata: {json.dumps({'status': 'complete'})}\n\n"
+                    _locked = 0
+                    if isinstance(state.get('progress'), dict):
+                        _locked = state['progress'].get('curators_locked', 0) or 0
+                    if _locked:
+                        yield f"event: curators_locked\ndata: {json.dumps({'count': _locked})}\n\n"
+                    yield f"event: complete\ndata: {json.dumps({'status': 'complete', 'curators_locked': _locked})}\n\n"
                     return
 
             # Stream live updates
@@ -4551,8 +4575,8 @@ async def analyze_url(
     # to let an alternative track inherit a country/reggae lane. The candidate side
     # still checks each candidate's track AND artist genres, so an off-lane act
     # can't slip through on sparse track tags.
-    track_user_families = _genre_families(genre or '')
-    artist_user_families = _genre_families(artist_genre or '')
+    track_user_families = user_lane_families(genre or '')
+    artist_user_families = user_lane_families(artist_genre or '')
     # Kept broad (track ∪ artist) for the looser flattery pass downstream.
     user_families = track_user_families | artist_user_families
 
@@ -4677,7 +4701,13 @@ async def analyze_url(
         for _, _, m, _ in flattery_candidates[:20]:
             flattery_matches.append(m)
 
-    new_job_id = job_mgr.create_job(token, features, found_matches)
+    new_job_id = job_mgr.create_job(token, features, found_matches, identity={
+        'track_name': track_name,
+        'artist_name': artist_name,
+        'spotify_url': spotify_url,
+        'user_email': lead.get('email'),
+        'scan_source': 'url',
+    })
 
     # Build user_profile for "Where You Stand" conversion comparison
     user_profile = None
@@ -4840,7 +4870,7 @@ async def analyze_url(
         # already genre-family-filtered by the matcher). Pass user_families +
         # primary family so the alignment + primary-share filters can scope
         # to the user's dominant lane (catches hybrid-vs-hybrid false positives).
-        _url_user_fams = _genre_families(genre or '')
+        _url_user_fams = user_lane_families(genre or '')
         _url_user_primary = _primary_genre_family(genre or '')
         pitch_comparables = _compute_pitch_comparables(
             found_matches, high_converter_gems_url, matcher._gems_by_isrc,
@@ -5240,7 +5270,7 @@ async def deal_lookup(
             track_tags = [t for t in (features.get('primary_genre'),
                                       features.get('secondary_genre')) if t]
             if track_tags:
-                deal_lane = _genre_families(*track_tags)
+                deal_lane = user_lane_families(*track_tags)
             if not deal_lane and genres_str:
                 seen_tags, lane_tags = set(), []
                 for g in (p.strip() for p in genres_str.split(',') if p.strip()):
@@ -5251,7 +5281,7 @@ async def deal_lookup(
                         lane_tags.append(g); seen_tags.add(lg)
                         if len(lane_tags) >= 2:
                             break
-                deal_lane = _genre_families(*lane_tags) if lane_tags else set()
+                deal_lane = user_lane_families(*lane_tags) if lane_tags else set()
             if deal_lane == {'electronic'} and genres_str:
                 from track_matcher import ELECTRONIC_SUBGENRES
                 deep = _genre_families(genres_str) & ELECTRONIC_SUBGENRES
