@@ -24,14 +24,23 @@ class JobManager:
         self._supabase = client
 
     def create_job(self, token: str, features: dict, matches: list,
-                   all_matches: list = None) -> str:
-        """Create a new analysis job. Returns the job_id (UUID)."""
+                   all_matches: list = None, identity: dict = None) -> str:
+        """Create a new analysis job. Returns the job_id (UUID).
+
+        identity: scan identity — {track_name, artist_name, spotify_url,
+        user_email, scan_source}. Every scan must be auditable (2026-08-07:
+        the Dark Funeral test scan was anonymous in the DB — the scan IS the
+        lead, so anonymous jobs are unacceptable)."""
         job_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
+        identity = {k: v for k, v in (identity or {}).items()
+                    if k in ('track_name', 'artist_name', 'spotify_url',
+                             'user_email', 'scan_source') and v}
         job = {
             'id': job_id,
             'token': token,
             'status': 'enriching',
+            **identity,
             'features': features,
             'matches': matches[:20],  # core matches for immediate display
             'all_matches': all_matches or matches,
@@ -66,6 +75,7 @@ class JobManager:
                     'progress': json.dumps(job['progress']),
                     'created_at': now,
                     'updated_at': now,
+                    **identity,
                 }
                 self._supabase.table('analysis_jobs').insert(row).execute()
             except Exception as e:

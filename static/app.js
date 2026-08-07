@@ -624,8 +624,17 @@ function startSSE(jobId) {
     }
   });
 
-  eventSource.addEventListener('complete', () => {
+  eventSource.addEventListener('curators_locked', (e) => {
+    const data = JSON.parse(e.data);
+    renderCuratorsLockedBlock(data.count);
+  });
+
+  eventSource.addEventListener('complete', (e) => {
     sseComplete = true;
+    try {
+      const data = JSON.parse(e.data || '{}');
+      if (data.curators_locked) renderCuratorsLockedBlock(data.curators_locked);
+    } catch {}
     const enrichEl = $('#enrichment-status');
     if (enrichEl) {
       enrichEl.innerHTML = '<span class="enrichment-done">Enrichment complete</span>';
@@ -2398,6 +2407,37 @@ function updateCreditsSummary() {
     }
     summaryEl.innerHTML = html;
   }
+}
+
+// Free tier: curators exist but contacts are withheld — show the locked Pro
+// block with the real scan-specific count instead of an empty/hidden section.
+// This is the paywall door (2026-08-07: before this, free users never saw a
+// single pay link — the vault existed but the lobby had no door).
+function renderCuratorsLockedBlock(count) {
+  if (!count) return;
+  const card = $('#curator-emails-card');
+  if (!card) return;
+  card.classList.remove('hidden');
+  const sub = $('#curator-contacts-count');
+  if (sub) sub.textContent = '';
+  const body = $('#curator-emails-body');
+  if (body) {
+    const table = body.closest('table');
+    if (table) table.style.display = 'none';
+  }
+  let locked = $('#curators-locked-block');
+  if (!locked) {
+    locked = document.createElement('div');
+    locked.id = 'curators-locked-block';
+    locked.style.cssText = 'text-align:center;padding:28px 20px;border:1px dashed rgba(255,255,255,0.25);border-radius:12px;margin-top:8px';
+    card.appendChild(locked);
+  }
+  locked.innerHTML =
+    `<div style="font-size:28px;margin-bottom:6px">🔒</div>` +
+    `<div style="font-size:17px;font-weight:600;margin-bottom:6px">${count} playlist curators found in your lane</div>` +
+    `<div style="opacity:0.75;margin-bottom:14px">Names, contact emails, SubmitHub/Groover links and the campaign forecast unlock with Pro.</div>` +
+    `<button id="curators-locked-upgrade" class="btn" style="min-width:220px">Unlock curator contacts (Pro)</button>`;
+  $('#curators-locked-upgrade').addEventListener('click', startAnalyzerUpgrade);
 }
 
 const seenCurators = new Set();

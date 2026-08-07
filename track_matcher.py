@@ -370,6 +370,41 @@ def lane_strong_foreign(allowed: Set[str]) -> Set[str]:
     return strong
 
 
+def user_lane_families(*genre_strings: str) -> Set[str]:
+    """Build the USER's lane from their genre tags, with exclusive-family
+    narrowing (2026-08-07, the Dark Funeral scan: tags 'rock, metal, black
+    metal, european metal, european rock' resolved to {metal, rock}, and the
+    umbrella 'rock' admitted Patrick Swayze and The Brothers Johnson as
+    trajectory targets for a black metal act — every 'us rock'-tagged artist
+    in the universe passed the cf-overlap rule through the rock door).
+
+    Rule: count how many of the user's individual tags resolve to each
+    family; if the DOMINANT family is EXCLUSIVE (identity-defining), the lane
+    narrows to the exclusive families present — umbrella co-families (rock
+    next to metal, pop next to country) are tag-soup noise, not identity.
+    Dominance-checked so one stray 'nu metal' tag on an alt-rock act does NOT
+    narrow that act's lane to metal. Candidate-side gating is unchanged."""
+    counts: Dict[str, int] = {}
+    for gs in genre_strings:
+        if not gs or gs == 'unknown':
+            continue
+        # Comma-split only — _genre_families handles slash phrases itself
+        # ('singer/songwriter' must stay whole).
+        for tag in gs.split(','):
+            tag = tag.strip()
+            if not tag:
+                continue
+            for fam in _genre_families(tag):
+                counts[fam] = counts.get(fam, 0) + 1
+    if not counts:
+        return set()
+    families = set(counts)
+    dominant = max(counts, key=lambda f: counts[f])
+    if dominant in EXCLUSIVE_FAMILIES:
+        return families & EXCLUSIVE_FAMILIES
+    return families
+
+
 def in_lane_families(cf: Set[str], primary_fams: Set[str],
                      artist_soup_fams: Set[str], allowed: Set[str]) -> bool:
     """Pure-set canonical gate. True = candidate belongs in the lane.
