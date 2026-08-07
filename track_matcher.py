@@ -399,8 +399,13 @@ def user_lane_families(*genre_strings: str) -> Set[str]:
     if not counts:
         return set()
     families = set(counts)
-    dominant = max(counts, key=lambda f: counts[f])
-    if dominant in EXCLUSIVE_FAMILIES:
+    max_count = max(counts.values())
+    # Exclusive families win ties: an act tagged 'rock, metal' (1-1) is a
+    # metal act with an umbrella tag, not a coin flip. Narrowing only loses
+    # to a broad family when the broad family strictly outnumbers it.
+    top_exclusive = {f for f in families & EXCLUSIVE_FAMILIES
+                     if counts[f] >= max_count}
+    if top_exclusive:
         return families & EXCLUSIVE_FAMILIES
     return families
 
