@@ -217,6 +217,27 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_nurture_loop())
         print(f"✅ Nurture scheduler started (poll {_NURTURE_POLL_SECONDS}s)", flush=True)
 
+    # Orphaned-enrichment reaper (2026-08-07): enrichment runs on an in-process
+    # thread, so any container restart (deploy, OOM, Railway maintenance) kills
+    # it silently and the job sits 'enriching' forever — the user's page spins
+    # with no end. On startup, close out any job that hasn't written progress in
+    # 30+ minutes: mark complete with whatever it accumulated. The SSE catch-up
+    # path then serves partial results + the complete event instead of hanging.
+    if supabase:
+        try:
+            from datetime import timedelta, timezone
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+            stale = supabase.table('analysis_jobs') \
+                .update({'status': 'complete'}) \
+                .eq('status', 'enriching') \
+                .lt('updated_at', cutoff) \
+                .execute()
+            n = len(stale.data or [])
+            if n:
+                print(f"🧹 Reaped {n} orphaned enrichment job(s) (stuck 'enriching' >30 min)")
+        except Exception as e:
+            print(f"⚠️  Orphan-reaper failed (non-fatal): {e}")
+
     print("Ready.")
     yield
     print("Shutting down.")
