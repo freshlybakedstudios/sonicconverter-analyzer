@@ -410,6 +410,47 @@ def user_lane_families(*genre_strings: str) -> Set[str]:
     return families
 
 
+# Which broad umbrella families each exclusive identity naturally lives under.
+# Used by resolve_scan_lane: an artist-level identity genre may sharpen a vague
+# track lane ONLY when the track's umbrella is the identity's natural home —
+# metal sharpens a bare 'rock' track lane; reggae never does (that cross-lane
+# adoption is exactly the old artist-union bug this system was built to stop).
+EXCLUSIVE_UMBRELLAS = {
+    'metal': {'rock'},
+    'hip-hop': {'r&b', 'pop'},
+    'country': {'folk', 'pop'},
+    'latin': {'pop'},
+    'jazz': {'r&b', 'soul'},
+    'classical': set(),
+    'reggae': set(),
+}
+
+
+def resolve_scan_lane(track_lane: Set[str], artist_lane: Set[str]) -> Set[str]:
+    """Combine track and artist lanes into the scan's effective lane.
+
+    1. Track identity wins: if the track's own tags narrowed to an exclusive
+       family, that IS the lane (a producer's country side-project track
+       stays country even if the artist is tagged hip-hop).
+    2. Silent track: no track tags at all → fall back to the artist lane
+       (previously this meant NO filtering — the sparse-tag hole).
+    3. Vague track: track lane is broad-only, artist lane carries an
+       exclusive identity → adopt the artist identity only if the track's
+       broad lane is that identity's natural umbrella (metal under rock).
+       Foreign identities (reggae under rock) never cross-adopt.
+    """
+    track_exclusive = track_lane & EXCLUSIVE_FAMILIES
+    if track_exclusive:
+        return track_lane
+    if not track_lane:
+        return set(artist_lane)
+    artist_exclusive = artist_lane & EXCLUSIVE_FAMILIES
+    for fam in artist_exclusive:
+        if track_lane & EXCLUSIVE_UMBRELLAS.get(fam, set()):
+            return artist_exclusive
+    return track_lane
+
+
 def in_lane_families(cf: Set[str], primary_fams: Set[str],
                      artist_soup_fams: Set[str], allowed: Set[str]) -> bool:
     """Pure-set canonical gate. True = candidate belongs in the lane.
