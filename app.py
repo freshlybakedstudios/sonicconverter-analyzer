@@ -56,7 +56,8 @@ from chartmetric_lookup import (
 from email_sender import send_results_email
 from job_manager import JobManager
 from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
-                           candidate_lane_families, user_lane_families)
+                           candidate_lane_families, user_lane_families,
+                           resolve_scan_lane)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -4575,7 +4576,8 @@ async def analyze_url(
     # to let an alternative track inherit a country/reggae lane. The candidate side
     # still checks each candidate's track AND artist genres, so an off-lane act
     # can't slip through on sparse track tags.
-    track_user_families = user_lane_families(genre or '')
+    track_user_families = resolve_scan_lane(user_lane_families(genre or ''),
+                                            user_lane_families(artist_genre or ''))
     artist_user_families = user_lane_families(artist_genre or '')
     # Kept broad (track ∪ artist) for the looser flattery pass downstream.
     user_families = track_user_families | artist_user_families
