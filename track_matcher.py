@@ -482,6 +482,19 @@ def in_lane_families(cf: Set[str], primary_fams: Set[str],
         return False
     if (cf & EXCLUSIVE_FAMILIES) - allowed:
         return False
+    # Exclusive-lane artist-identity rule (2026-08-08, the VersaEmerge leak):
+    # when the lane is an identity family (metal/hip-hop/...), the candidate
+    # must carry it at ARTIST level (primary/secondary/artist genres) — one
+    # stray tag on a single TRACK is not an identity (VersaEmerge: pure
+    # emo/pop-punk artist, one 'metal' track tag, reached a black metal act's
+    # match table). Artists with NO artist-level tags at all fall through to
+    # the cf-overlap rule above (don't punish sparse tagging — Amenra-types
+    # with 'rock' primary but metal in the artist soup stay in).
+    exclusive_in_lane = allowed & EXCLUSIVE_FAMILIES
+    if exclusive_in_lane:
+        artist_level = primary_fams | artist_soup_fams
+        if artist_level and not (artist_level & exclusive_in_lane):
+            return False
     strong_foreign = lane_strong_foreign(allowed)
     if (allowed & ELECTRONIC_SUBGENRES) and not (allowed & _ROCK_CLUSTER):
         if cf & _ROCK_CLUSTER:
@@ -564,6 +577,11 @@ def match_in_lane(m: Dict, allowed: Set[str]) -> bool:
     artist_soup_fams: Set[str] = set()
     for g in (m.get('artist_genres') or []):
         artist_soup_fams |= _genre_families(g)
+    # Secondary genre is artist-level identity too (feeds the exclusive-lane
+    # artist-identity rule).
+    secondary = (m.get('secondary_genre') or '').strip()
+    if secondary:
+        artist_soup_fams |= _genre_families(secondary)
     return in_lane_families(candidate_lane_families(m), primary_fams,
                             artist_soup_fams, allowed)
 
