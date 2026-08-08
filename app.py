@@ -57,7 +57,7 @@ from email_sender import send_results_email
 from job_manager import JobManager
 from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
                            candidate_lane_families, user_lane_families,
-                           resolve_scan_lane)
+                           resolve_scan_lane, primary_in_lane)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -1301,7 +1301,7 @@ PITCH_COMPARABLES_MIN_SIMILARITY = 0.70  # Tighter than matcher's 0.55 floor —
 # that survive only because of one shared genre family tag. Filter applies to
 # both the pitch comparables list AND the cohort scatter cloud.
 
-PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT = 0.30  # Fraction of the candidate's
+PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT = 0.45  # (0.30→0.45 2026-08-08, owner: one A&R comparable "really kinda bad") Fraction of the candidate's
 # individual genre tags whose families overlap with the user's. The 0.67
 # original was tuned for broad lanes (rock/electronic) — for narrow lanes
 # like breaks, even legit jungle artists have mixed tags
@@ -1309,7 +1309,7 @@ PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT = 0.30  # Fraction of the candidate's
 # so 0.67 emptied the quadrant. 0.30 keeps the legit narrow-lane candidates
 # while still rejecting "touched the lane on one tag" drift.
 
-PITCH_COMPARABLES_MIN_PRIMARY_SHARE = 0.25  # Fraction of the candidate's
+PITCH_COMPARABLES_MIN_PRIMARY_SHARE = 0.35  # (0.25→0.35 2026-08-08, same tighten) Fraction of the candidate's
 # tags that must resolve to the user's PRIMARY (most-frequent) genre family.
 # Same narrow-lane rationale as above — breaks-primary artists carry many
 # electronic/dance tags so the share runs ~0.40; 0.25 lets the real
@@ -2717,6 +2717,10 @@ async def analyze(
                 # trajectory pool consistent with what's surfacing in the table.
                 if not in_lane(m, user_families):
                     continue
+                # Hero-surface tightening (2026-08-08): trajectory targets must
+                # have their PRIMARY genre in the lane, not just a soup tag.
+                if not primary_in_lane(m, user_families):
+                    continue
                 # Sparse-data drop already enforced by in_lane(); explicit sparse
                 # check here keeps the trajectory-specific log readable.
                 cand_genre_parts = []
@@ -3159,14 +3163,19 @@ async def analyze(
         enrichment_matches = enrichment_matches[:200]  # Cap total
         # Resume enrichment gate — user-facing CM calls are done
         _resume_enrichment()
-        # Tier: paid (full_enrichment) or legacy/owner sessions get the full
-        # 200-match pass with curator contacts; free accounts get 25, no curators.
+        # Same tiering as analyze-url (2026-08-08): free = NO enrichment, the
+        # pitch list is the Pro product. (Upload is Pro-only in the UI now
+        # anyway — this is the defensive backend mirror.)
         _full = bool(lead.get('full_enrichment')) or not lead.get('id')
-        enrichment_pool.submit(
-            _run_background_enrichment,
-            job_id, enrichment_matches, user_cm_id,
-            200 if _full else 25, _full,
-        )
+        result['pro'] = _full
+        if _full:
+            enrichment_pool.submit(
+                _run_background_enrichment,
+                job_id, enrichment_matches, user_cm_id,
+                200, True,
+            )
+        else:
+            job_mgr.update_job(job_id, status='complete')
 
         _use_scan(lead)
         return result
@@ -4703,6 +4712,11 @@ async def analyze_url(
             if track_user_families:
                 if not match_in_lane(m, track_user_families):
                     continue
+                # Hero-surface tightening (2026-08-08): trajectory targets must
+                # have their PRIMARY genre in the lane, not just a soup tag
+                # (kills the Everclear-via-one-metal-tag stragglers).
+                if not primary_in_lane(m, track_user_families):
+                    continue
                 shared = candidate_lane_families(m) & track_user_families
                 total_boost += 0.05 * len(shared)
             cand_pronoun = m.get('pronoun_title', 'They')
@@ -5016,23 +5030,30 @@ async def analyze_url(
     except Exception as e:
         print(f"Email send error (non-fatal): {e}")
 
-    # Kick off background enrichment: displayed matches FIRST, then wider pool
-    # This ensures every match the user sees gets playlist data
-    displayed_ids = {str(m.get('artist_id', '')) for m in found_matches}
-    wider_pool = sorted(all_found, key=lambda m: m.get('similarity', 0), reverse=True)
-    wider_extra = [m for m in wider_pool if str(m.get('artist_id', '')) not in displayed_ids]
-    enrichment_matches = found_matches + wider_extra
-    enrichment_matches = enrichment_matches[:200]  # Cap total
     # Resume enrichment gate — user-facing CM calls are done
     _resume_enrichment()
     # Tier: paid (full_enrichment) or legacy/owner sessions get the full
-    # 200-match pass with curator contacts; free accounts get 25, no curators.
+    # 200-match pass with curator contacts. Free accounts get NO enrichment at
+    # all (2026-08-08, owner): the pitch list (playlists + curators) IS the Pro
+    # product, and the playlist tail was the entire Chartmetric cost + the
+    # multi-user pileup risk. Free scans now cost ~2 CM calls and finish at
+    # scan time; the frontend shows the locked Pro block instead of a stream.
     _full = bool(lead.get('full_enrichment')) or not lead.get('id')
-    enrichment_pool.submit(
-        _run_background_enrichment,
-        new_job_id, enrichment_matches, user_cm_id,
-        200 if _full else 25, _full,
-    )
+    result['pro'] = _full
+    if _full:
+        # Displayed matches FIRST, then wider pool, so every visible match
+        # gets playlist data
+        displayed_ids = {str(m.get('artist_id', '')) for m in found_matches}
+        wider_pool = sorted(all_found, key=lambda m: m.get('similarity', 0), reverse=True)
+        wider_extra = [m for m in wider_pool if str(m.get('artist_id', '')) not in displayed_ids]
+        enrichment_matches = (found_matches + wider_extra)[:200]
+        enrichment_pool.submit(
+            _run_background_enrichment,
+            new_job_id, enrichment_matches, user_cm_id,
+            200, True,
+        )
+    else:
+        job_mgr.update_job(new_job_id, status='complete')
 
     _use_scan(lead)
     return result
