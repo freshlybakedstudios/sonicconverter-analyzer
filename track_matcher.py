@@ -531,6 +531,24 @@ def is_blocked_genre(m: Dict) -> bool:
     return any(tok in blob for tok in BLOCKED_GENRE_TOKENS)
 
 
+def primary_in_lane(m: Dict, allowed: Set[str]) -> bool:
+    """Stricter identity check for hero surfaces (trajectory targets, A&R
+    comparables): the candidate's PRIMARY genre family must sit in the lane —
+    a stray soup tag isn't enough (2026-08-08: Everclear-types reached a metal
+    act's trajectory list via one metal tag in a rock soup). Candidates with
+    no primary genre fall back to the regular soup gate (don't punish sparse
+    tagging on otherwise-valid peers)."""
+    if not allowed:
+        return True
+    primary = (m.get('primary_genre') or '').strip()
+    if not primary:
+        return True
+    fams = _genre_families(primary)
+    if not fams:
+        return True
+    return bool(fams & allowed)
+
+
 def match_in_lane(m: Dict, allowed: Set[str]) -> bool:
     """Canonical gate applied to a matcher match dict.
 

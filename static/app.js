@@ -432,6 +432,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const modeUrl = $('#mode-url');
   if (modeFile) modeFile.addEventListener('click', () => setInputMode('file'));
   if (modeUrl) modeUrl.addEventListener('click', () => setInputMode('url'));
+  // 2026-08-08 (owner): Spotify URL only for now — file upload is off until
+  // it has a proper home in the paid tier. Toggle hidden, URL mode forced.
+  const toggle = document.querySelector('.input-mode-toggle');
+  if (toggle) toggle.style.display = 'none';
+  setInputMode('url');
 });
 
 // -------------------------------------------------------
@@ -543,8 +548,15 @@ async function analyzeTrack() {
     show($('#floating-cta'));
     $('#results-section').scrollIntoView({ behavior: 'smooth' });
 
-    // Start SSE for background enrichment
-    if (currentJobId) {
+    // Free tier (2026-08-08): no background enrichment runs at all — the
+    // pitch list (playlists + curators) is the Pro product. Show the locked
+    // block immediately instead of opening SSE for work that won't happen.
+    if (data.pro === false) {
+      renderPitchLockedBlock((data.matches || []).length);
+      const enrichEl = $('#enrichment-status');
+      if (enrichEl) hide(enrichEl);
+    } else if (currentJobId) {
+      // Pro/legacy: full enrichment streams in as before
       startSSE(currentJobId);
     }
 
@@ -2415,6 +2427,15 @@ function updateCreditsSummary() {
 // single pay link — the vault existed but the lobby had no door).
 function renderCuratorsLockedBlock(count) {
   if (!count) return;
+  renderPitchLockedBlock(null, count);
+}
+
+// Free-tier paywall door. Two shapes:
+//  - pitch mode (matchCount): shown at scan-complete — no enrichment ran,
+//    sells the whole pitch list (playlists + curators) built from N matches.
+//  - curator mode (curatorCount): legacy/edge — enrichment ran but contacts
+//    were withheld; sells contacts with the exact found count.
+function renderPitchLockedBlock(matchCount, curatorCount) {
   const card = $('#curator-emails-card');
   if (!card) return;
   card.classList.remove('hidden');
@@ -2432,11 +2453,17 @@ function renderCuratorsLockedBlock(count) {
     locked.style.cssText = 'text-align:center;padding:28px 20px;border:1px dashed rgba(255,255,255,0.25);border-radius:12px;margin-top:8px';
     card.appendChild(locked);
   }
+  const headline = curatorCount
+    ? `${curatorCount} playlist curators found in your lane`
+    : `Your pitch list is ready to build`;
+  const subcopy = curatorCount
+    ? `Names, contact emails, SubmitHub/Groover links and the campaign forecast unlock with Pro.`
+    : `Playlists, curator names and contact emails, SubmitHub/Groover links and a campaign forecast — built from your ${matchCount || 'matched'} sonic matches. Unlocks with Pro, builds in minutes.`;
   locked.innerHTML =
     `<div style="font-size:28px;margin-bottom:6px">🔒</div>` +
-    `<div style="font-size:17px;font-weight:600;margin-bottom:6px">${count} playlist curators found in your lane</div>` +
-    `<div style="opacity:0.75;margin-bottom:14px">Names, contact emails, SubmitHub/Groover links and the campaign forecast unlock with Pro.</div>` +
-    `<button id="curators-locked-upgrade" class="btn" style="min-width:220px">Unlock curator contacts (Pro)</button>`;
+    `<div style="font-size:17px;font-weight:600;margin-bottom:6px">${headline}</div>` +
+    `<div style="opacity:0.75;margin-bottom:14px">${subcopy}</div>` +
+    `<button id="curators-locked-upgrade" class="btn" style="min-width:220px">Unlock the pitch list (Pro)</button>`;
   $('#curators-locked-upgrade').addEventListener('click', startAnalyzerUpgrade);
 }
 
