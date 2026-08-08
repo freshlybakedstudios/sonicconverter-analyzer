@@ -4,6 +4,10 @@ builder = "nixpacks"
 [deploy]
 startCommand = "python start.py"
 healthcheckPath = "/health"
-healthcheckTimeout = 300
+# 300 -> 900 (2026-08-08): the 1.2GB universe cache takes ~4-5 min to load on
+# boot, making every deploy a coin flip against the 5-min window — all three
+# of today's deployments died at healthcheck while the old version silently
+# kept serving. 15 min = 3x headroom.
+healthcheckTimeout = 900
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3

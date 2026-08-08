@@ -63,3 +63,10 @@ sonicemotionconversion/
 
 # Markdown docs
 *.md
+
+# personal docs — never ship
+Alexander_Almgren_Resume*.pdf
+Alexander_Almgren_Resume*.docx
+PreExisting_IP_Statement.pdf
+*.~lock*
+.~lock*
