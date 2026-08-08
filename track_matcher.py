@@ -1002,7 +1002,22 @@ class TrackMatcher:
                 penalty += (onset_d - 0.18) * 0.5
             if bpm_d > 20:
                 penalty += (bpm_d - 20) * 0.003
-            penalty = min(penalty, 0.20)
+            # Production-sanity: loudness world-gap (2026-08-08, Sarah Stiles —
+            # a −18.1 LUFS Broadway villain duet scored 83% vs a −11.7 black
+            # metal track; emotion dims outvoted production dims, and her
+            # 0.14 energy gap slid under the 0.15 penalty knee). 3.5 dB of
+            # integrated-loudness gap is free (masters legitimately vary);
+            # beyond that, different production worlds. Guard: LUFS is always
+            # negative when measured — 0/positive means missing, no penalty.
+            t_lufs = _float(target_profile.get('lufs_integrated'))
+            c_lufs = _float(profile.get('lufs_integrated'))
+            if t_lufs < -0.01 and c_lufs < -0.01:
+                lufs_d = abs(t_lufs - c_lufs)
+                if lufs_d > 3.5:
+                    penalty += (lufs_d - 3.5) * 0.05
+            # Cap raised 0.20→0.30 so extreme production gaps can actually
+            # disqualify instead of merely denting the score.
+            penalty = min(penalty, 0.30)
 
             similarity = max(0.0, similarity - penalty)
             if similarity < threshold:
