@@ -1405,7 +1405,8 @@ def _genre_alignment_fraction(user_families: set, candidate: dict) -> float:
 def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
                                 gems_by_isrc: dict, user_families: set = None,
                                 user_primary_family: str = None,
-                                n: int = 5, user_features: dict = None) -> list:
+                                n: int = 5, user_features: dict = None,
+                                user_pronoun: str = None) -> list:
     """Returns up to N candidates with name, listeners, similarity, performance
     percentile, originality score, plus a pitch_angle string. Empty if pool
     is too thin or no candidates qualify.
@@ -1523,6 +1524,7 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             'perf_pct': round(p, 3),
             'orig_score': o,
             'dev_alignment': dev_alignment,
+            'pronoun': (x.get('pronoun_title') or '').strip(),
         })
     if not scored: return []
 
@@ -1573,6 +1575,12 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             + 0.35 * (c['orig_score'] / 100),
             3,
         )
+        # Pronoun-affinity nudge (2026-08-09, owner: "more julias than
+        # chrises"): a comparable who shares the user's pronoun is a
+        # stronger story in a pitch deck. Nudge, not gate — reorders
+        # near-ties, can't push an unqualified candidate into the list.
+        if user_pronoun and c['pronoun'] and c['pronoun'] == user_pronoun:
+            c['combined_score'] = round(c['combined_score'] + 0.025, 3)
     qualified.sort(key=lambda c: -c['combined_score'])
     return qualified[:n]
 
@@ -3093,6 +3101,7 @@ async def analyze(
                 user_families=_file_upload_user_fams,
                 user_primary_family=_file_upload_user_primary,
                 user_features=features,
+                user_pronoun=user_pronoun or None,
             )
             # Cohort scatter — every same-tier peer with both axes computed,
             # for the Sonic Quadrant background cloud.
@@ -5049,11 +5058,21 @@ async def analyze_url(
         # to the user's dominant lane (catches hybrid-vs-hybrid false positives).
         _url_user_fams = user_lane_families(genre or '')
         _url_user_primary = _primary_genre_family(genre or '')
+        # User pronoun for the comparable-affinity nudge: CM artist data
+        # first, then the GEMS artist cache keyed by spotify profile URL.
+        _url_user_pronoun = (track_artist_cm_data or {}).get('pronoun_title') or ''
+        if not _url_user_pronoun and artist_spotify_url:
+            _asp = artist_spotify_url.split('?')[0].rstrip('/')
+            for _aid, _adata in matcher._artists.items():
+                if (_adata.get('spotify_url') or '').split('?')[0].rstrip('/') == _asp:
+                    _url_user_pronoun = _adata.get('pronoun_title') or ''
+                    break
         pitch_comparables = _compute_pitch_comparables(
             found_matches, high_converter_gems_url, matcher._gems_by_isrc,
             user_families=_url_user_fams,
             user_primary_family=_url_user_primary,
             user_features=features,
+            user_pronoun=_url_user_pronoun or None,
         )
         # Cohort scatter for the Sonic Quadrant background cloud
         cohort_scatter = _compute_cohort_scatter(
