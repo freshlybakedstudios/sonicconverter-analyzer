@@ -58,7 +58,8 @@ from job_manager import JobManager
 from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
                            candidate_lane_families, user_lane_families,
                            resolve_scan_lane, primary_in_lane,
-                           track_tags_contradict)
+                           track_tags_contradict, aggressive_lane_context,
+                           aesthetic_clash)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -918,6 +919,12 @@ NON_NATIVE_TRAJECTORY_TOKENS = (
     # Non-Anglophone European / other markets
     'italian', 'french', 'german', 'greek', 'turkish', 'russian',
     'hebrew', 'israeli', 'arabic', 'hindi', 'bollywood', 'persian',
+    # Latin-American / Iberian markets (2026-08-09: Perro Callejero —
+    # 'latin rock, mexican rock' — hit #4 in a US post-hardcore trajectory
+    # untouched because this block was a TODO in the comment above)
+    'latin', 'spanish', 'mexican', 'argentine', 'brazilian', 'colombian',
+    'chilean', 'peruvian', 'uruguayan', 'venezuelan', 'cuban', 'dominican',
+    'puerto ric', 'portuguese', 'reggaeton', 'regional mexican',
 )
 
 
@@ -2674,6 +2681,24 @@ async def analyze(
                   f"relaxed to dropdown∪artist → {len(lane_filtered)}")
         all_matches = lane_filtered
 
+        # Trajectory-grade gates on the Similar Artists pool — parity with the
+        # URL path (2026-08-09 owner call): primary-in-lane + track-tag
+        # contradiction + aesthetic-clash veto, with a starvation fallback.
+        upload_aggr_ctx = aggressive_lane_context(user_families,
+                                                  dropdown_genre or '', artist_genre or '')
+        if user_families:
+            hero_gated = [m for m in all_matches
+                          if primary_in_lane(m, user_families)
+                          and not track_tags_contradict(m, user_families)
+                          and not aesthetic_clash(m, upload_aggr_ctx)]
+            if len(hero_gated) >= 25:
+                print(f"  Hero gate (upload similar artists): {len(all_matches)} → {len(hero_gated)} "
+                      f"(aggressive_ctx={upload_aggr_ctx})")
+                all_matches = hero_gated
+            else:
+                print(f"  Hero gate (upload): kept only {len(hero_gated)} (<25) — "
+                      f"falling back to lane-gated pool of {len(all_matches)}")
+
         # Country boost: same-region artists get a small boost. Targets the
         # SCANNED artist's market when a form artist URL was provided (client
         # scans), falling back to the account's country.
@@ -2798,6 +2823,9 @@ async def analyze(
                     pronoun_boost = 0.035  # 3.5% boost for matching pronouns
 
                 total_boost = genre_boost + pronoun_boost
+                # Aesthetic-clash veto (parity with URL-path trajectory).
+                if aesthetic_clash(m, upload_aggr_ctx):
+                    continue
                 # Slight market penalty: nudge foreign-market targets down so they
                 # interleave with same-market peers instead of stacking on top.
                 nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _is_non_native_market(*cand_genre_parts)) else 0.0
@@ -4696,6 +4724,32 @@ async def analyze_url(
         all_found = track_filtered
         print(f"  Family filter (track-to-track overlap): {len(all_matches_unfiltered)} → {len(all_found)} matches")
 
+    # Trajectory-grade gates on the Similar Artists pool (2026-08-09, owner
+    # call: "similar artists matching should resemble trajectory, just at the
+    # user's tier"). Same hero-surface rules the flattery loop runs — primary
+    # genre in lane, track-tag contradiction veto, aesthetic-clash veto — plus
+    # the foreign-market interleave nudge on ORDERING (displayed similarity is
+    # untouched; only rank shifts). Safety fallback if the strict pool starves.
+    user_non_native = _is_non_native_market(artist_genre or '', track_genre or '', genre or '')
+    aggr_ctx = aggressive_lane_context(track_user_families,
+                                       genre or '', track_genre or '', artist_genre or '')
+    if track_user_families:
+        hero_gated = [m for m in all_found
+                      if primary_in_lane(m, track_user_families)
+                      and not track_tags_contradict(m, track_user_families)
+                      and not aesthetic_clash(m, aggr_ctx)]
+        if len(hero_gated) >= 25:
+            print(f"  Hero gate (similar artists): {len(all_found)} → {len(hero_gated)} "
+                  f"(aggressive_ctx={aggr_ctx})")
+            all_found = hero_gated
+        else:
+            print(f"  Hero gate (similar artists): kept only {len(hero_gated)} (<25) — "
+                  f"falling back to lane-gated pool of {len(all_found)}")
+    all_found.sort(key=lambda m: (m.get('similarity', 0)
+                                  - (NON_NATIVE_TRAJECTORY_PENALTY
+                                     if (not user_non_native and _cand_non_native(m)) else 0.0)),
+                   reverse=True)
+
     # Tier filtering for display table
     MIN_PEER_MATCHES = 10
     tier_order = list(TIER_RANGES.keys())
@@ -4737,9 +4791,8 @@ async def analyze_url(
     if user_tier and all_matches_unfiltered:
         tier_order_map = {t: i for i, t in enumerate(TIER_RANGES.keys())}
         user_tier_num = tier_order_map.get(user_tier, 0)
-        # Market banding: demote foreign-market targets to a second band, but
-        # only when the user is an Anglophone-market artist themselves.
-        user_non_native = _is_non_native_market(artist_genre or '', track_genre or '', genre or '')
+        # Market banding (user_non_native / aggr_ctx computed above, shared
+        # with the Similar Artists hero gate).
         flattery_candidates = []
         seen_artists = set()
         for m in all_matches_unfiltered:
@@ -4771,6 +4824,10 @@ async def analyze_url(
                     continue
                 shared = candidate_lane_families(m) & track_user_families
                 total_boost += 0.05 * len(shared)
+            # Aesthetic-clash veto: soft/mellow acts never headline an
+            # aggressive-lane user's trajectory (Train/Noel Gallagher case).
+            if aesthetic_clash(m, aggr_ctx):
+                continue
             cand_pronoun = m.get('pronoun_title', 'They')
             # Slight market penalty: nudge foreign-market targets down so they
             # interleave with same-market peers instead of stacking on top.
