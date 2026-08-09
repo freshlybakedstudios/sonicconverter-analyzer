@@ -2777,7 +2777,10 @@ async def analyze(
             seen_artists = set()
             dropdown_lower = dropdown_genre.lower() if dropdown_genre else ''
 
-            for m in all_matches_unfiltered:
+            # Mirror by construction (2026-08-09): draw from the SAME hero-gated
+            # pool the Similar Artists table uses (all_matches survives the tier
+            # filter intact — `matches` is the tier slice), not the pre-gate pool.
+            for m in all_matches:
                 cand_tier_num = tier_order_map.get(m.get('tier', 'unknown'), -1)
                 if cand_tier_num <= user_tier_num:
                     continue
@@ -4465,7 +4468,20 @@ async def analyze_url(
                 if cm_live and cm_live.strip().lower() != 'others':
                     track_genre_display = cm_live
                     print(f"  URL analysis: track genres (CM live, display) = {cm_live[:120]}")
-                if not track_genre and cm_live:
+                    # Lane-source consistency (2026-08-09, the Grubby case):
+                    # a freshly-captured track's gems row holds only 1-2
+                    # artist-echo tags, so its SECOND scan (cache hit) resolved
+                    # a narrower lane than its first (capture path used CM
+                    # live) — same track, different results. When the gems
+                    # snapshot is sparse, MERGE the live tags into the lane
+                    # source so both paths resolve the same lane.
+                    merged = [g.strip() for g in (track_genre or '').split(',') if g.strip()]
+                    for g in cm_live.split(','):
+                        g = g.strip()
+                        if g and g.lower() not in {x.lower() for x in merged}:
+                            merged.append(g)
+                    track_genre = ', '.join(merged)
+                elif not track_genre and cm_live:
                     track_genre = cm_live  # use CM as last-resort lane source too
             except Exception as e:
                 print(f"  URL analysis: track genre fetch failed for {track_isrc}: {e}")
@@ -4749,6 +4765,11 @@ async def analyze_url(
                                   - (NON_NATIVE_TRAJECTORY_PENALTY
                                      if (not user_non_native and _cand_non_native(m)) else 0.0)),
                    reverse=True)
+    # Trajectory mirrors Similar Artists (2026-08-09 owner call): the flattery
+    # loop below draws from THIS pool — same gates, same ordering basis — so
+    # the two surfaces can never disagree. Snapshot before the tier filter
+    # slices it down to the user's tier.
+    hero_pool_all_tiers = list(all_found)
 
     # Tier filtering for display table
     MIN_PEER_MATCHES = 10
@@ -4786,16 +4807,18 @@ async def analyze_url(
     # Stash for the originality pass below (user_profile is built later in this path)
     _url_sonic_originality = _compute_originality(features, high_converter_gems_url)
 
-    # Flattery matches — higher-tier artists from unfiltered pool (before genre filter)
+    # Flattery matches — higher-tier artists from the SAME hero-gated pool as
+    # the Similar Artists table (mirror by construction; was the unfiltered
+    # pool with its own separate gates until 2026-08-09).
     flattery_matches = []
-    if user_tier and all_matches_unfiltered:
+    if user_tier and hero_pool_all_tiers:
         tier_order_map = {t: i for i, t in enumerate(TIER_RANGES.keys())}
         user_tier_num = tier_order_map.get(user_tier, 0)
         # Market banding (user_non_native / aggr_ctx computed above, shared
         # with the Similar Artists hero gate).
         flattery_candidates = []
         seen_artists = set()
-        for m in all_matches_unfiltered:
+        for m in hero_pool_all_tiers:
             cand_tier = m.get('tier', '')
             cand_tier_num = tier_order_map.get(cand_tier, 0)
             if cand_tier_num <= user_tier_num:
@@ -4839,7 +4862,7 @@ async def analyze_url(
         flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
         if flattery_candidates:
-            print(f"  Flattery: {len(flattery_candidates)} total candidates from {len(all_matches_unfiltered)} unfiltered pool")
+            print(f"  Flattery: {len(flattery_candidates)} total candidates from {len(hero_pool_all_tiers)} hero-gated pool")
             print(f"  Flattery: user families = {user_families}, user tier = {user_tier} (num={user_tier_num})")
             for i, (tn, sc, m, _) in enumerate(flattery_candidates[:10]):
                 print(f"    {i+1}. {m.get('name','?')[:25]:<25} tier={m.get('tier','?'):<12} sim={m.get('similarity',0):.1%} boosted={sc:.1%}")
