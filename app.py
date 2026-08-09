@@ -59,7 +59,7 @@ from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
                            candidate_lane_families, user_lane_families,
                            resolve_scan_lane, primary_in_lane,
                            track_tags_contradict, aggressive_lane_context,
-                           aesthetic_clash, EXCLUSIVE_FAMILIES)
+                           aesthetic_clash, EXCLUSIVE_FAMILIES, is_faith_world)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -2719,6 +2719,22 @@ async def analyze(
         print(f"  Upload lane (heavy-weight dropdown): {user_families} | "
               f"dropdown='{dropdown_genre}' | artist_genre='{artist_genre[:80]}'")
 
+        # Faith overlay — parity with URL path (christian = market, not sound).
+        # Styling from the RAW tag soup: dominance voting may already have
+        # dropped the styling families from the collapsed lane.
+        _upload_faith_filter = False
+        _u_probe = user_families | user_lane_families(artist_genre or '')
+        if 'gospel' in _u_probe:
+            _u_raw = set()
+            for _gs in (dropdown_genre or '', artist_genre or ''):
+                for _t in _gs.split(','):
+                    _u_raw |= _genre_families(_t.strip())
+            _u_styling = _u_raw - {'gospel'}
+            if _u_styling:
+                print(f"  Faith overlay (upload): lane {user_families} -> {_u_styling}")
+                user_families = _u_styling
+                _upload_faith_filter = True
+
         # Canonical gate — shared single source of truth in track_matcher.py
         # (match_in_lane / in_lane_families). Rules: sparse-data drop,
         # cf-overlap with lane, EXCLUSIVE_FAMILIES foreign drop (incl. reggae;
@@ -2753,7 +2769,8 @@ async def analyze(
             hero_gated = [m for m in all_matches
                           if primary_in_lane(m, user_families)
                           and not track_tags_contradict(m, user_families)
-                          and not aesthetic_clash(m, upload_aggr_ctx)]
+                          and not aesthetic_clash(m, upload_aggr_ctx)
+                          and (not _upload_faith_filter or is_faith_world(m))]
             if len(hero_gated) >= 25:
                 print(f"  Hero gate (upload similar artists): {len(all_matches)} → {len(hero_gated)} "
                       f"(aggressive_ctx={upload_aggr_ctx})")
@@ -4823,6 +4840,31 @@ async def analyze_url(
                       f"rebuilt lane = {_rebuilt}")
                 track_user_families = _rebuilt
                 _lane_vetoed = True
+
+    # Faith overlay (2026-08-09, Jon Keith: christian hip-hop pulled worship
+    # acts — same faith shelf, wrong record). Christian is a market, not a
+    # sound: when the lane has 'gospel' PLUS real styling families, the
+    # styling becomes the lane and faith becomes a candidate membership
+    # filter applied in the hero gate below. Pure worship artists (gospel
+    # only, no styling) keep the gospel lane unchanged.
+    _faith_filter = False
+    _faith_probe = track_user_families | user_lane_families(artist_genre or '')
+    if 'gospel' in _faith_probe:
+        # Styling must come from the RAW tag soup — dominance voting may
+        # have already dropped the styling families before we get here
+        # (Jon Keith: genre pick 'christian hip-hop, gospel' voted gospel-
+        # dominant and dropped hip-hop as a minority exclusive).
+        _raw_fams = set()
+        for _gs in (_lane_track_src, artist_genre or ''):
+            for _t in _gs.split(','):
+                _raw_fams |= _genre_families(_t.strip())
+        _styling_fams = _raw_fams - {'gospel'}
+        if _styling_fams:
+            print(f"  Faith overlay: lane {track_user_families} -> styling {_styling_fams}, "
+                  f"candidates must be faith-world")
+            track_user_families = _styling_fams
+            _faith_filter = True
+
     artist_user_families = user_lane_families(artist_genre or '')
     # Kept broad (track ∪ artist) for the looser flattery pass downstream.
     user_families = track_user_families | artist_user_families
@@ -4888,7 +4930,8 @@ async def analyze_url(
         hero_gated = [m for m in all_found
                       if primary_in_lane(m, track_user_families)
                       and not track_tags_contradict(m, track_user_families)
-                      and not aesthetic_clash(m, aggr_ctx)]
+                      and not aesthetic_clash(m, aggr_ctx)
+                      and (not _faith_filter or is_faith_world(m))]
         if len(hero_gated) >= 25:
             print(f"  Hero gate (similar artists): {len(all_found)} → {len(hero_gated)} "
                   f"(aggressive_ctx={aggr_ctx})")

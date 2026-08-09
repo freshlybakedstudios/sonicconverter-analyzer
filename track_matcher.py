@@ -499,7 +499,13 @@ def in_lane_families(cf: Set[str], primary_fams: Set[str],
     exclusive_in_lane = allowed & EXCLUSIVE_FAMILIES
     if exclusive_in_lane:
         artist_level = primary_fams | artist_soup_fams
-        if artist_level and not (artist_level & exclusive_in_lane):
+        # Mixed lanes (2026-08-09, Kirk Franklin: lane {r&b, hip-hop} from
+        # the faith overlay): an artist native to a NON-exclusive lane
+        # family is legitimately in-lane — the exclusive-identity demand
+        # applies only against families outside the lane. Pure exclusive
+        # lanes ({metal}) behave exactly as before.
+        _lane_pass = exclusive_in_lane | (allowed - EXCLUSIVE_FAMILIES)
+        if artist_level and not (artist_level & _lane_pass):
             return False
     strong_foreign = lane_strong_foreign(allowed)
     if (allowed & ELECTRONIC_SUBGENRES) and not (allowed & _ROCK_CLUSTER):
@@ -649,6 +655,19 @@ def aesthetic_clash(m: Dict, aggressive_ctx: bool) -> bool:
     if not any(s in blob for s in SOFT_AESTHETIC_TOKENS):
         return False
     return not any(a in blob for a in AGGRESSIVE_CONTEXT_TOKENS)
+
+
+# --- Faith overlay (2026-08-09, the Jon Keith scan) --------------------------
+# 'Christian' is a MARKET, not a sound: christian rap, christian country and
+# worship pop are different sonic worlds sharing a community. When a user's
+# lane carries 'gospel' PLUS a real styling family, the styling is the lane
+# and faith becomes a candidate-side membership test — match the actual
+# genre styling within the Christian lens (owner's framing).
+def is_faith_world(m: Dict) -> bool:
+    """True when the candidate belongs to the faith market (any of their
+    tags resolves into the gospel family — the mapping gives 'gospel' to
+    all christian-*/worship/devotional tags)."""
+    return 'gospel' in candidate_lane_families(m)
 
 
 def match_in_lane(m: Dict, allowed: Set[str]) -> bool:
