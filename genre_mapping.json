@@ -1050,7 +1050,8 @@
    "hasidic": "gospel",
    "buddhist chant": "gospel",
    "hindu devotional": "gospel",
-   "islamic devotional": "gospel"
+   "islamic devotional": "gospel",
+   "muslim": "gospel"
   },
   "world_subgenres": {
    "world": "world",
