@@ -2411,6 +2411,16 @@ async def analyze(
     """
     # Validate token
     lead = _validate_session(token)
+    # Uploading your OWN audio (unreleased music) is the Pro feature
+    # (2026-08-09, owner call) — link scans of any Spotify track are free.
+    # Legacy tokens (no user id — owner/test sessions) stay ungated.
+    if lead.get('id') and not (lead.get('full_enrichment') or lead.get('fresh_capture')):
+        raise HTTPException(402, {
+            'code': 'pro_required',
+            'message': "Uploading your own audio is a Pro feature. "
+                       "Scan any released track free by pasting its Spotify link — "
+                       "or unlock Pro to analyze unreleased music straight from your files.",
+        })
     _check_scan_cap(lead)
 
     # Validate file type
@@ -4271,15 +4281,10 @@ async def analyze_url(
             print(f"  URL analysis: ISRC {track_isrc!r} not in universe cache "
                   f"(in-memory index says {'PRESENT' if (track_isrc and matcher._gems_by_isrc.get(track_isrc)) else 'absent'})")
 
-    # Paid gate for the capture lane. Legacy tokens (no user id — owner/test
-    # sessions) stay ungated, mirroring _check_scan_cap.
-    if not features and lead.get('id') and not lead.get('fresh_capture'):
-        raise HTTPException(402, {
-            'code': 'fresh_capture_required',
-            'message': "This track isn't in our 274k-track analysis library yet. "
-                       "Upload your audio file for a free instant scan, or unlock "
-                       "studio-grade fresh capture to scan any Spotify track.",
-        })
+    # Capture lane is FREE for link scans (2026-08-09, owner call): any Spotify
+    # track should scan for anyone, cache hit or miss — the Mac rig serves free
+    # users too, bounded by the per-account scan cap. The PAID feature is now
+    # uploading your OWN (unreleased) audio — gated on /api/analyze instead.
 
     # Track-momentum prefetch: if the scanned track isn't in the universe cache,
     # its momentum needs 1 Spotify + ~3 CM calls (~3-5s). Kick that off NOW in a
@@ -6027,7 +6032,7 @@ async def analyzer_upgrade(token: str = Form(...)):
                         'currency': 'usd',
                         'product_data': {
                             'name': 'Sonic Analyzer Pro',
-                            'description': 'Studio-grade fresh audio capture for any Spotify track + full pitch-list enrichment with curator contacts',
+                            'description': 'Analyze your own unreleased audio straight from your files + full pitch-list enrichment with playlists, curator contacts and campaign forecast',
                         },
                         'unit_amount': amount * 100,
                     },
