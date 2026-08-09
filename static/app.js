@@ -406,9 +406,13 @@ async function startAnalyzerUpgrade() {
 document.addEventListener('DOMContentLoaded', async () => {
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get('upgrade_session');
-  if (!sessionId || !accessToken) return;
+  // Race fix (2026-08-09, owner's own purchase didn't flip): accessToken is
+  // set ASYNC after /api/me resolves, but this handler runs at page load —
+  // read the saved token directly so the verify can't silently bail.
+  const verifyToken = accessToken || localStorage.getItem('sc_token');
+  if (!sessionId || !verifyToken) return;
   try {
-    const res = await fetch(`${API_URL}/api/analyzer/upgrade/status?session_id=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(accessToken)}`);
+    const res = await fetch(`${API_URL}/api/analyzer/upgrade/status?session_id=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(verifyToken)}`);
     const data = await res.json();
     if (res.ok && data.status === 'complete') {
       alert('🔓 Pro unlocked — studio-grade fresh scans and full pitch lists are now enabled. Run your scan again.');
