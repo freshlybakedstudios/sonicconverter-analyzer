@@ -2726,6 +2726,14 @@ async def analyze(
                 all_matches.sort(key=lambda x: x.get('similarity', 0), reverse=True)
                 print(f"  Country boost: {boosted_count} matches from {boost_code2} boosted +{COUNTRY_BOOST*100:.0f}%")
 
+        # Pronoun-affinity nudge on Similar Artists ORDERING (2026-08-09,
+        # parity with URL path / comparables / trajectory — displayed
+        # similarity untouched, only rank shifts).
+        if user_pronoun:
+            all_matches.sort(key=lambda x: (x.get('similarity', 0)
+                                            + (0.02 if (x.get('pronoun_title') or '') == user_pronoun else 0.0)),
+                             reverse=True)
+
         # Debug: show top 40 matches with genre families
         print(f"  Top 40 matches (before tier filter):")
         for i, m in enumerate(all_matches[:40]):
@@ -4764,6 +4772,15 @@ async def analyze_url(
     user_non_native = _is_non_native_market(artist_genre or '', track_genre or '', genre or '')
     aggr_ctx = aggressive_lane_context(track_user_families,
                                        genre or '', track_genre or '', artist_genre or '')
+    # User pronoun (for the affinity nudge on all three surfaces): CM artist
+    # data first, then the GEMS artist cache by spotify profile URL.
+    _url_user_pronoun = (track_artist_cm_data or {}).get('pronoun_title') or ''
+    if not _url_user_pronoun and artist_spotify_url:
+        _asp = artist_spotify_url.split('?')[0].rstrip('/')
+        for _aid, _adata in matcher._artists.items():
+            if (_adata.get('spotify_url') or '').split('?')[0].rstrip('/') == _asp:
+                _url_user_pronoun = _adata.get('pronoun_title') or ''
+                break
     if track_user_families:
         hero_gated = [m for m in all_found
                       if primary_in_lane(m, track_user_families)
@@ -4778,7 +4795,10 @@ async def analyze_url(
                   f"falling back to lane-gated pool of {len(all_found)}")
     all_found.sort(key=lambda m: (m.get('similarity', 0)
                                   - (NON_NATIVE_TRAJECTORY_PENALTY
-                                     if (not user_non_native and _cand_non_native(m)) else 0.0)),
+                                     if (not user_non_native and _cand_non_native(m)) else 0.0)
+                                  + (0.02 if (_url_user_pronoun
+                                              and (m.get('pronoun_title') or '') == _url_user_pronoun)
+                                     else 0.0)),
                    reverse=True)
     # Trajectory mirrors Similar Artists (2026-08-09 owner call): the flattery
     # loop below draws from THIS pool — same gates, same ordering basis — so
@@ -4867,6 +4887,10 @@ async def analyze_url(
             if aesthetic_clash(m, aggr_ctx):
                 continue
             cand_pronoun = m.get('pronoun_title', 'They')
+            # Pronoun-affinity nudge (parity with the upload path's
+            # pronoun_boost and the A&R comparables nudge).
+            if _url_user_pronoun and (m.get('pronoun_title') or '') == _url_user_pronoun:
+                total_boost += 0.035
             # Slight market penalty: nudge foreign-market targets down so they
             # interleave with same-market peers instead of stacking on top.
             nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _cand_non_native(m)) else 0.0
@@ -5058,15 +5082,7 @@ async def analyze_url(
         # to the user's dominant lane (catches hybrid-vs-hybrid false positives).
         _url_user_fams = user_lane_families(genre or '')
         _url_user_primary = _primary_genre_family(genre or '')
-        # User pronoun for the comparable-affinity nudge: CM artist data
-        # first, then the GEMS artist cache keyed by spotify profile URL.
-        _url_user_pronoun = (track_artist_cm_data or {}).get('pronoun_title') or ''
-        if not _url_user_pronoun and artist_spotify_url:
-            _asp = artist_spotify_url.split('?')[0].rstrip('/')
-            for _aid, _adata in matcher._artists.items():
-                if (_adata.get('spotify_url') or '').split('?')[0].rstrip('/') == _asp:
-                    _url_user_pronoun = _adata.get('pronoun_title') or ''
-                    break
+        # (_url_user_pronoun resolved earlier, shared by all three surfaces)
         pitch_comparables = _compute_pitch_comparables(
             found_matches, high_converter_gems_url, matcher._gems_by_isrc,
             user_families=_url_user_fams,
