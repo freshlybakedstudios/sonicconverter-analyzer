@@ -59,7 +59,8 @@ from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
                            candidate_lane_families, user_lane_families,
                            resolve_scan_lane, primary_in_lane,
                            track_tags_contradict, aggressive_lane_context,
-                           aesthetic_clash, EXCLUSIVE_FAMILIES, is_faith_world)
+                           aesthetic_clash, EXCLUSIVE_FAMILIES, is_faith_world,
+                           isrc_year)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -958,6 +959,21 @@ def sonic_envelope_rejects(features: dict, families: set) -> bool:
 
 
 NON_NATIVE_TRAJECTORY_PENALTY = 0.03  # ~ erases the typical foreign sonic edge so they interleave
+
+# Era interleave nudge (2026-08-09, the Byrds/Jefferson Airplane in Solya's
+# trajectory; Richie Sambora next to Drug Church): tags can't see decades, but
+# the ISRC registration year can. Recordings older than RETRO_YEARS get a
+# slight ordering penalty on hero surfaces — legacy legends interleave down
+# instead of headlining a modern artist's pitch story. Nudge, not ban.
+RETRO_YEARS = 25
+RETRO_TRAJECTORY_PENALTY = 0.03
+
+
+def _retro_penalty(m: dict) -> float:
+    y = isrc_year(m.get('isrc') or '')
+    if y is not None and y < (datetime.now().year - RETRO_YEARS):
+        return RETRO_TRAJECTORY_PENALTY
+    return 0.0
 NON_NATIVE_TRAJECTORY_TOKENS = (
     # East / SE Asian markets
     'j-pop', 'j-rock', 'j-rap', 'japanese', 'anime', 'city pop',
@@ -2920,7 +2936,7 @@ async def analyze(
                 # Slight market penalty: nudge foreign-market targets down so they
                 # interleave with same-market peers instead of stacking on top.
                 nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _is_non_native_market(*cand_genre_parts)) else 0.0
-                score = m.get('similarity', 0) + total_boost - nn_penalty
+                score = m.get('similarity', 0) + total_boost - nn_penalty - _retro_penalty(m)
                 flattery_candidates.append((cand_tier_num, score, m, cand_pronoun))
 
             # Sort by tier (highest first), then market-weighted sonic similarity.
@@ -4968,6 +4984,7 @@ async def analyze_url(
     all_found.sort(key=lambda m: (m.get('similarity', 0)
                                   - (NON_NATIVE_TRAJECTORY_PENALTY
                                      if (not user_non_native and _cand_non_native(m)) else 0.0)
+                                  - _retro_penalty(m)
                                   + (0.02 if (_url_user_pronoun
                                               and (m.get('pronoun_title') or '') == _url_user_pronoun)
                                      else 0.0)),
@@ -5066,7 +5083,7 @@ async def analyze_url(
             # Slight market penalty: nudge foreign-market targets down so they
             # interleave with same-market peers instead of stacking on top.
             nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _cand_non_native(m)) else 0.0
-            score = m.get('similarity', 0) + total_boost - nn_penalty
+            score = m.get('similarity', 0) + total_boost - nn_penalty - _retro_penalty(m)
             flattery_candidates.append((cand_tier_num, score, m, cand_pronoun))
 
         # Sort by tier (highest first), then market-weighted sonic similarity.

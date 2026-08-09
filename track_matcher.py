@@ -553,7 +553,25 @@ BLOCKED_GENRE_TOKENS = (
     'karaoke', 'tribute', '8-bit', 'music box', 'sped up', 'nightcore',
     'slowed', 'white noise', 'asmr', 'meditation', 'binaural', 'novelty',
     'sleep aid', 'rain sounds',
+    # Spoken-audio (2026-08-09): not music. 'spoken word' deliberately NOT
+    # blocked — that's a real artist lane (Kae Tempest, Gil Scott-Heron).
+    'podcast', 'audiobook', 'audio drama', 'sound effects', 'field recording',
+    'nature sounds', 'guided',
 )
+
+
+def isrc_year(isrc: str) -> int | None:
+    """Registration year from ISRC chars 6-7 (CC-XXX-YY-NNNNN). The 'date
+    column hiding in plain sight' (owner, 2026-08-09) — lets hero surfaces
+    nudge legacy-era recordings down without any external data. Caveat:
+    remasters carry re-registration years, so coverage is partial."""
+    if not isrc or len(isrc) < 7:
+        return None
+    yy = isrc[5:7]
+    if not yy.isdigit():
+        return None
+    y = int(yy)
+    return 2000 + y if y <= 26 else 1900 + y
 
 # Name-level denylist for celebrity entities whose vendor tags LIE about what
 # they are (Bo Burnham: tagged only 'us pop', no comedy tag anywhere in our
