@@ -4570,6 +4570,10 @@ async def analyze_url(
                 job_mgr._supabase.table('analysis_jobs').insert({
                     'id': job_id, 'token': token, 'status': 'pending_features',
                     'spotify_url': spotify_url,
+                    'track_name': track_name[:200] if track_name else None,
+                    'artist_name': artist_name[:200] if artist_name else None,
+                    'user_email': lead.get('email'),
+                    'scan_source': 'worker_capture',
                     'features': '{}', 'matches': '[]', 'playlists': '{}',
                     'related_artists': '[]', 'credits': '{}', 'curator_emails': '{}',
                     'confidence_map': '{}', 'progress': '{}',
@@ -4815,7 +4819,9 @@ async def analyze_url(
         'artist_name': artist_name,
         'spotify_url': spotify_url,
         'user_email': lead.get('email'),
-        'scan_source': 'url',
+        # Distinguish cache-hit link scans from Mac-rig capture scans so the
+        # dashboard source split shows real rig load, not just link volume.
+        'scan_source': 'url' if features_source == 'universe_cache' else 'url_capture',
     })
 
     # Build user_profile for "Where You Stand" conversion comparison
