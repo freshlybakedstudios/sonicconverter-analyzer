@@ -546,6 +546,13 @@ BLOCKED_GENRE_TOKENS = (
     # legitimate pitch comp).
     'soundtrack', 'musical', 'show tunes', 'broadway', 'cast recording',
     'comedy', 'parody', 'disney',
+    # Derivative / functional audio (2026-08-09): not artists — remix mills,
+    # cover projects, and background-audio channels that score spuriously
+    # close to real acts (a slowed+reverb mill sounds like a dreamy version
+    # of whoever it rips).
+    'karaoke', 'tribute', '8-bit', 'music box', 'sped up', 'nightcore',
+    'slowed', 'white noise', 'asmr', 'meditation', 'binaural', 'novelty',
+    'sleep aid', 'rain sounds',
 )
 
 # Name-level denylist for celebrity entities whose vendor tags LIE about what
