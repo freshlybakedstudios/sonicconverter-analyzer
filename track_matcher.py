@@ -533,12 +533,31 @@ def candidate_lane_families(m: Dict) -> Set[str]:
 BLOCKED_GENRE_TOKENS = (
     'christmas', 'holiday', 'seasonal',
     "children", "child's", 'kids', 'nursery', 'lullab',  # lullaby/lullabies
+    # Musical theatre / soundtrack / comedy (2026-08-09, the Ashe scan:
+    # Sarah Stiles 'us soundtrack' + Idina Menzel 'musical, us soundtrack'
+    # reached the A&R comparables — theatrical pop is sonically dynamic pop
+    # and tag-resolves to the pop family, but a cast recording is never a
+    # legitimate pitch comp).
+    'soundtrack', 'musical', 'show tunes', 'broadway', 'cast recording',
+    'comedy', 'parody', 'disney',
 )
+
+# Name-level denylist for celebrity entities whose vendor tags LIE about what
+# they are (Bo Burnham: tagged only 'us pop', no comedy tag anywhere in our
+# data — no genre rule can catch him). Keep tiny; prefer BLOCKED_GENRE_TOKENS
+# whenever the tags themselves carry the tell.
+BLOCKED_ENTITY_NAMES = frozenset({
+    'bo burnham',
+    '"weird al" yankovic', 'weird al yankovic',
+    'the lonely island',
+})
 
 
 def is_blocked_genre(m: Dict) -> bool:
-    """True if any of the candidate's raw genre tags is a categorically
-    blocked genre (christmas / holiday / children's / kids)."""
+    """True if the candidate is categorically invalid as a comp: a blocked
+    genre tag (christmas/kids/soundtrack/comedy/...) or a denylisted entity."""
+    if (m.get('name') or '').strip().lower() in BLOCKED_ENTITY_NAMES:
+        return True
     parts = []
     for field in ('primary_genre', 'secondary_genre'):
         g = m.get(field)
