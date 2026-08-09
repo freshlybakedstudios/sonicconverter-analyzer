@@ -407,7 +407,13 @@ def user_lane_families(*genre_strings: str) -> Set[str]:
                      if counts[f] >= max_count}
     if top_exclusive:
         return families & EXCLUSIVE_FAMILIES
-    return families
+    # Sub-dominant exclusive tags are soup noise the other way too (2026-08-09,
+    # Grubby: one 'metal' among 7 punk/rock tags). An exclusive family in the
+    # lane activates the strict candidate-side artist-identity gate, so
+    # carrying a minority exclusive would reject every candidate that isn't
+    # that identity — one stray tag poisoning the whole lane. Drop them.
+    non_exclusive = families - EXCLUSIVE_FAMILIES
+    return non_exclusive if non_exclusive else families
 
 
 # Which broad umbrella families each exclusive identity naturally lives under.
