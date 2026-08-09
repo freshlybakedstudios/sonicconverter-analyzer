@@ -562,6 +562,24 @@ def primary_in_lane(m: Dict, allowed: Set[str]) -> bool:
     return bool(fams & allowed)
 
 
+def track_tags_contradict(m: Dict, allowed: Set[str]) -> bool:
+    """Track-tag contradiction veto for hero surfaces (2026-08-09, the Olivia
+    Rodrigo case: artist-tagged 'us rock' by a sloppy vendor, track tags all
+    pop/acoustic/electropop — she reached a punk act's trajectory list through
+    the one bad artist tag, which was also her primary so the primary gate
+    passed her). If a candidate's TRACK tags resolve to real families and NONE
+    of them touch the lane, the track itself is testifying against the artist
+    tag — veto. Candidates with no/unresolvable track tags are unaffected."""
+    if not allowed:
+        return False
+    fams: Set[str] = set()
+    for g in (m.get('track_genres') or []):
+        fams |= _genre_families(g)
+    if not fams:
+        return False
+    return not (fams & allowed)
+
+
 def match_in_lane(m: Dict, allowed: Set[str]) -> bool:
     """Canonical gate applied to a matcher match dict.
 

@@ -57,7 +57,8 @@ from email_sender import send_results_email
 from job_manager import JobManager
 from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
                            candidate_lane_families, user_lane_families,
-                           resolve_scan_lane, primary_in_lane)
+                           resolve_scan_lane, primary_in_lane,
+                           track_tags_contradict)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -1397,7 +1398,7 @@ def _genre_alignment_fraction(user_families: set, candidate: dict) -> float:
 def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
                                 gems_by_isrc: dict, user_families: set = None,
                                 user_primary_family: str = None,
-                                n: int = 5) -> list:
+                                n: int = 5, user_features: dict = None) -> list:
     """Returns up to N candidates with name, listeners, similarity, performance
     percentile, originality score, plus a pitch_angle string. Empty if pool
     is too thin or no candidates qualify.
@@ -1455,11 +1456,32 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
         if cm is not None: return 0.50 * pop + 0.30 * cm + 0.20 * pl
         return 0.714 * pop + 0.286 * pl
 
+    def _dev_profile(f):
+        """Deviation-direction fingerprint: the set of (feature, sign) dims
+        where this track sits >1.25 sigma from cohort consensus. Two tracks are
+        'distinctive the same way' when these overlap (2026-08-09, the Cathrine
+        Lynn Rose lesson: originality measures HOW FAR from consensus, not in
+        WHICH DIRECTION — a comparable must deviate along the user's axes)."""
+        out = set()
+        if not f: return out
+        for feat in ORIGINALITY_WEIGHTS:
+            if feat not in centroid: continue
+            v = f.get(feat)
+            if v is None: continue
+            try: z = (float(v) - centroid[feat]) / stds[feat]
+            except (TypeError, ValueError, ZeroDivisionError): continue
+            if abs(z) > 1.25:
+                out.add((feat, 1 if z > 0 else -1))
+        return out
+
+    user_dev = _dev_profile(user_features or {})
+
     def _orig(isrc):
-        if not isrc: return None
+        if not isrc: return None, set()
         f = gems_by_isrc.get(isrc)
-        if not f: return None
+        if not f: return None, set()
         dist_sq, cnt = 0.0, 0
+        dev = set()
         for feat, w in ORIGINALITY_WEIGHTS.items():
             if feat not in centroid: continue
             v = f.get(feat)
@@ -1468,14 +1490,17 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             except (TypeError, ValueError, ZeroDivisionError): continue
             dist_sq += w * z * z
             cnt += 1
-        if cnt < 5: return None
-        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5)))
+            if abs(z) > 1.25:
+                dev.add((feat, 1 if z > 0 else -1))
+        if cnt < 5: return None, set()
+        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5))), dev
 
     scored = []
     for x in found_matches:
         p = _perf(x)
-        o = _orig(x.get('isrc'))
+        o, cand_dev = _orig(x.get('isrc'))
         if o is None: continue
+        dev_alignment = len(user_dev & cand_dev)
         scored.append({
             'name': x.get('name'),
             'spotify_url': x.get('spotify_url'),       # artist profile URL (kept for backwards compat)
@@ -1490,6 +1515,7 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             'playlists_total': _safe_int(x.get('editorial_playlists')) + _safe_int(x.get('user_playlists')),
             'perf_pct': round(p, 3),
             'orig_score': o,
+            'dev_alignment': dev_alignment,
         })
     if not scored: return []
 
@@ -1502,6 +1528,18 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     # Tier 2: "Winning OR distinctive" — perf ≥ p75 OR orig ≥ 75
     # Tier 3: Soft p60 floors on both axes (original fallback)
     # Tier 4: Full scored pool (last resort)
+    # Direction gate: a candidate whose CLAIM is distinctiveness (orig >= 75)
+    # must be distinctive along at least one of the user's own deviation axes
+    # — otherwise they're original in a different direction entirely and prove
+    # nothing about this track's lane (Cathrine Lynn Rose). Users with no
+    # deviations (pure consensus tracks) skip the gate.
+    def _direction_ok(c):
+        if not user_dev: return True
+        if c['orig_score'] < 75: return True
+        return c['dev_alignment'] >= 1
+    scored = [c for c in scored if _direction_ok(c)]
+    if not scored: return []
+
     sos_peers = [c for c in scored if c['perf_pct'] >= 0.75 and c['orig_score'] >= 75]
     if len(sos_peers) >= n:
         qualified = sos_peers
@@ -1589,11 +1627,32 @@ def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
         if cm is not None: return 0.50 * pop + 0.30 * cm + 0.20 * pl
         return 0.714 * pop + 0.286 * pl
 
+    def _dev_profile(f):
+        """Deviation-direction fingerprint: the set of (feature, sign) dims
+        where this track sits >1.25 sigma from cohort consensus. Two tracks are
+        'distinctive the same way' when these overlap (2026-08-09, the Cathrine
+        Lynn Rose lesson: originality measures HOW FAR from consensus, not in
+        WHICH DIRECTION — a comparable must deviate along the user's axes)."""
+        out = set()
+        if not f: return out
+        for feat in ORIGINALITY_WEIGHTS:
+            if feat not in centroid: continue
+            v = f.get(feat)
+            if v is None: continue
+            try: z = (float(v) - centroid[feat]) / stds[feat]
+            except (TypeError, ValueError, ZeroDivisionError): continue
+            if abs(z) > 1.25:
+                out.add((feat, 1 if z > 0 else -1))
+        return out
+
+    user_dev = _dev_profile(user_features or {})
+
     def _orig(isrc):
-        if not isrc: return None
+        if not isrc: return None, set()
         f = gems_by_isrc.get(isrc)
-        if not f: return None
+        if not f: return None, set()
         dist_sq, cnt = 0.0, 0
+        dev = set()
         for feat, w in ORIGINALITY_WEIGHTS.items():
             if feat not in centroid: continue
             v = f.get(feat)
@@ -1602,8 +1661,10 @@ def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
             except (TypeError, ValueError, ZeroDivisionError): continue
             dist_sq += w * z * z
             cnt += 1
-        if cnt < 5: return None
-        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5)))
+            if abs(z) > 1.25:
+                dev.add((feat, 1 if z > 0 else -1))
+        if cnt < 5: return None, set()
+        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5))), dev
 
     scatter = []
     for x in found_matches:
@@ -1614,6 +1675,7 @@ def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
             'name': x.get('name'),
             'perf_pct': round(p, 3),
             'orig_score': o,
+            'dev_alignment': dev_alignment,
         })
     return scatter
 
@@ -2731,6 +2793,8 @@ async def analyze(
                 # have their PRIMARY genre in the lane, not just a soup tag.
                 if not primary_in_lane(m, user_families):
                     continue
+                if track_tags_contradict(m, user_families):
+                    continue
                 # Sparse-data drop already enforced by in_lane(); explicit sparse
                 # check here keeps the trajectory-specific log readable.
                 cand_genre_parts = []
@@ -3021,6 +3085,7 @@ async def analyze(
                 matches, high_converter_gems, matcher._gems_by_isrc,
                 user_families=_file_upload_user_fams,
                 user_primary_family=_file_upload_user_primary,
+                user_features=features,
             )
             # Cohort scatter — every same-tier peer with both axes computed,
             # for the Sonic Quadrant background cloud.
@@ -4722,6 +4787,8 @@ async def analyze_url(
                 # (kills the Everclear-via-one-metal-tag stragglers).
                 if not primary_in_lane(m, track_user_families):
                     continue
+                if track_tags_contradict(m, track_user_families):
+                    continue
                 shared = candidate_lane_families(m) & track_user_families
                 total_boost += 0.05 * len(shared)
             cand_pronoun = m.get('pronoun_title', 'They')
@@ -4918,6 +4985,7 @@ async def analyze_url(
             found_matches, high_converter_gems_url, matcher._gems_by_isrc,
             user_families=_url_user_fams,
             user_primary_family=_url_user_primary,
+            user_features=features,
         )
         # Cohort scatter for the Sonic Quadrant background cloud
         cohort_scatter = _compute_cohort_scatter(
