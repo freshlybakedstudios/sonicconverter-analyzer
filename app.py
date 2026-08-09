@@ -965,7 +965,7 @@ NON_NATIVE_TRAJECTORY_PENALTY = 0.03  # ~ erases the typical foreign sonic edge 
 # the ISRC registration year can. Recordings older than RETRO_YEARS get a
 # slight ordering penalty on hero surfaces — legacy legends interleave down
 # instead of headlining a modern artist's pitch story. Nudge, not ban.
-RETRO_YEARS = 25
+RETRO_YEARS = 20
 RETRO_TRAJECTORY_PENALTY = 0.03
 
 
