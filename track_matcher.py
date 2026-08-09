@@ -580,6 +580,52 @@ def track_tags_contradict(m: Dict, allowed: Set[str]) -> bool:
     return not (fams & allowed)
 
 
+# --- Aesthetic-clash veto (2026-08-09, the Train/Noel Gallagher case) --------
+# Family-level gates can't separate "soft rock"/"psychedelic rock" from
+# post-hardcore — both reduce to {rock} and pass every lane check, yet Train
+# next to Drug Church is an obvious miss to any human. The separating signal
+# lives in the aesthetic TOKENS: when the user's lane is aggressive (punk/metal
+# families, or emo/hardcore/etc. in their tags), candidates carrying soft/
+# mellow aesthetic tokens are vetoed from hero surfaces — UNLESS the candidate
+# also carries an aggressive token themselves (Julien Baker: slowcore + emo
+# survives; Train: soft rock, no aggressive tag, dies).
+AGGRESSIVE_CONTEXT_TOKENS = (
+    'punk', 'emo', 'hardcore', 'beatdown', 'screamo', 'skramz', 'metalcore',
+    'post-hardcore', 'metal', 'thrash', 'grindcore', 'powerviolence',
+    'sludge', 'crust', 'deathcore', 'djent', 'grunge', 'noise rock',
+    'industrial',
+)
+SOFT_AESTHETIC_TOKENS = (
+    'soft rock', 'psychedelic', 'dream pop', 'jangle', 'adult contemporary',
+    'easy listening', 'lounge', 'yacht rock', 'soft pop', 'chamber pop',
+    'new age', 'bossa', 'soft country',
+)
+
+
+def aggressive_lane_context(lane: Set[str], *user_genre_strings) -> bool:
+    """True when the scan's identity is aggressive-lane: punk/metal in the
+    resolved lane, or an aggressive token anywhere in the user's own tags."""
+    if lane & {'punk', 'metal'}:
+        return True
+    blob = ' '.join(g for g in user_genre_strings if g).lower()
+    return any(t in blob for t in AGGRESSIVE_CONTEXT_TOKENS)
+
+
+def aesthetic_clash(m: Dict, aggressive_ctx: bool) -> bool:
+    """Hero-surface veto: candidate reads soft/mellow against an aggressive
+    user lane. No-op when the user isn't aggressive-lane (pop users keep
+    their dream-pop peers)."""
+    if not aggressive_ctx:
+        return False
+    parts = [m.get('primary_genre') or '', m.get('secondary_genre') or '']
+    parts += [g for g in (m.get('artist_genres') or []) if g]
+    parts += [g for g in (m.get('track_genres') or []) if g]
+    blob = ' '.join(parts).lower()
+    if not any(s in blob for s in SOFT_AESTHETIC_TOKENS):
+        return False
+    return not any(a in blob for a in AGGRESSIVE_CONTEXT_TOKENS)
+
+
 def match_in_lane(m: Dict, allowed: Set[str]) -> bool:
     """Canonical gate applied to a matcher match dict.
 
