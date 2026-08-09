@@ -4700,7 +4700,13 @@ async def analyze_url(
     # to let an alternative track inherit a country/reggae lane. The candidate side
     # still checks each candidate's track AND artist genres, so an off-lane act
     # can't slip through on sparse track tags.
-    track_user_families = resolve_scan_lane(user_lane_families(genre or ''),
+    # Lane from the FULL track-tag soup, not the 2-position `genre` pick
+    # (2026-08-09, Grubby: cached tags 'emo, indie' truncated the lane while
+    # the live tags said 'hardcore, punk, metal, rock' — the hardcore lens
+    # never reached the lane). user_lane_families dominance-votes the soup,
+    # so noise tags can't hijack; dropdown still overrides via `genre`.
+    _lane_track_src = dropdown_genre or track_genre or genre or ''
+    track_user_families = resolve_scan_lane(user_lane_families(_lane_track_src),
                                             user_lane_families(artist_genre or ''))
     artist_user_families = user_lane_families(artist_genre or '')
     # Kept broad (track ∪ artist) for the looser flattery pass downstream.
