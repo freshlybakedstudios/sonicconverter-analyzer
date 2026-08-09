@@ -916,6 +916,7 @@ NON_NATIVE_TRAJECTORY_TOKENS = (
     'k-pop', 'k-rap', 'k-rock', 'korean',
     'c-pop', 'cantopop', 'mandopop', 'chinese', 'taiwanese', 'hong kong',
     'thai', 'vietnamese', 'indonesian', 'malaysian', 'opm', 'pinoy',
+    'southeast asian', 'east asia',
     # Non-Anglophone European / other markets
     'italian', 'french', 'german', 'greek', 'turkish', 'russian',
     'hebrew', 'israeli', 'arabic', 'hindi', 'bollywood', 'persian',
@@ -924,7 +925,7 @@ NON_NATIVE_TRAJECTORY_TOKENS = (
     # untouched because this block was a TODO in the comment above)
     'latin', 'spanish', 'mexican', 'argentine', 'brazilian', 'colombian',
     'chilean', 'peruvian', 'uruguayan', 'venezuelan', 'cuban', 'dominican',
-    'puerto ric', 'portuguese', 'reggaeton', 'regional mexican',
+    'puerto ric', 'portuguese', 'reggaeton', 'regional mexican', 'caribbean',
 )
 
 
@@ -1406,7 +1407,8 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
                                 gems_by_isrc: dict, user_families: set = None,
                                 user_primary_family: str = None,
                                 n: int = 5, user_features: dict = None,
-                                user_pronoun: str = None) -> list:
+                                user_pronoun: str = None,
+                                user_non_native: bool = False) -> list:
     """Returns up to N candidates with name, listeners, similarity, performance
     percentile, originality score, plus a pitch_angle string. Empty if pool
     is too thin or no candidates qualify.
@@ -1525,6 +1527,7 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             'orig_score': o,
             'dev_alignment': dev_alignment,
             'pronoun': (x.get('pronoun_title') or '').strip(),
+            'non_native': _cand_non_native(x),
         })
     if not scored: return []
 
@@ -1581,6 +1584,10 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
         # near-ties, can't push an unqualified candidate into the list.
         if user_pronoun and c['pronoun'] and c['pronoun'] == user_pronoun:
             c['combined_score'] = round(c['combined_score'] + 0.025, 3)
+        # Foreign-market interleave nudge (parity with trajectory/similar —
+        # a Malaysian comp in a US pitch deck is a weaker proof point).
+        if not user_non_native and c.get('non_native'):
+            c['combined_score'] = round(c['combined_score'] - 0.02, 3)
     qualified.sort(key=lambda c: -c['combined_score'])
     return qualified[:n]
 
@@ -3110,6 +3117,7 @@ async def analyze(
                 user_primary_family=_file_upload_user_primary,
                 user_features=features,
                 user_pronoun=user_pronoun or None,
+                user_non_native=_is_non_native_market(genre or '', artist_genre or ''),
             )
             # Cohort scatter — every same-tier peer with both axes computed,
             # for the Sonic Quadrant background cloud.
@@ -5139,6 +5147,7 @@ async def analyze_url(
             user_primary_family=_url_user_primary,
             user_features=features,
             user_pronoun=_url_user_pronoun or None,
+            user_non_native=user_non_native,
         )
         # Cohort scatter for the Sonic Quadrant background cloud
         cohort_scatter = _compute_cohort_scatter(
