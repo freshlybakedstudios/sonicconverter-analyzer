@@ -4476,8 +4476,20 @@ async def analyze_url(
         # Cache-first (same 30d Supabase read-through the deal calculator uses,
         # ~4-5s saved per scan on known artists); live Chartmetric only on miss.
         track_artist_cm_data = _cached_artist_lookup(artist_spotify_url)
+        if track_artist_cm_data and not (track_artist_cm_data.get('genres') or '').strip():
+            # Cache row exists but carries NO genres (2026-08-09, Jon Keith:
+            # artists-table row had listeners history but genres=None — the
+            # cache hit short-circuited live CM, identity collapsed, lane
+            # emptied, 3,998-match free-for-all). Genres are the identity
+            # spine — a genre-less hit must still consult live CM.
+            print(f"  URL analysis: cache row has no genres — consulting live CM anyway")
+            _live = lookup_artist_by_spotify(artist_spotify_url)
+            if _live and (_live.get('genres') or '').strip():
+                track_artist_cm_data = _live
         if track_artist_cm_data:
-            print(f"  URL analysis: artist served from cache ({track_artist_cm_data.get('_cache_age_days')}d old)")
+            print(f"  URL analysis: artist served from cache ({track_artist_cm_data.get('_cache_age_days')}d old)"
+                  if track_artist_cm_data.get('_cache_age_days') is not None else
+                  f"  URL analysis: artist served live (genre-less cache bypassed)")
         else:
             track_artist_cm_data = lookup_artist_by_spotify(artist_spotify_url)
         if track_artist_cm_data:
