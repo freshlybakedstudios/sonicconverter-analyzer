@@ -28,6 +28,7 @@ test_*.py
 # JSON data files
 *.json
 !genre_mapping.json
+!sonic_family_envelopes.json
 
 # Logs
 *.log

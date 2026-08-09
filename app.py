@@ -909,6 +909,54 @@ def _listeners_to_tier(listeners: int) -> str:
 # 'latin'/'spanish' to nudge those too, drop a token to let that market rank
 # natively) and NON_NATIVE_TRAJECTORY_PENALTY (bigger = pushes them down harder;
 # 0 = off). Auto-disabled when the user is themselves a non-native artist.
+# --- Per-family sonic envelopes (2026-08-09, owner's double-check idea) -----
+# Empirical p01-p99 feature ranges per genre family, computed offline from
+# 267k tagged universe tracks (script in session scratchpad; rebuild when the
+# universe refreshes). Used to veto an exclusive lane collapse when we hold
+# no GEMS artist record: audio with >=2 features outside a family's p01/p99
+# cannot plausibly BE that family, whatever the vendor tags claim.
+# Calibration: Solya (danceability 0.24, bpm 61) vs metal p01s (0.48, 67).
+try:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           'sonic_family_envelopes.json')) as _sef:
+        _SONIC_ENVELOPES = json.load(_sef).get('envelopes', {})
+    print(f"Loaded sonic envelopes for {len(_SONIC_ENVELOPES)} families")
+except Exception as _see:
+    print(f"Sonic envelopes unavailable ({_see}) — envelope veto disabled")
+    _SONIC_ENVELOPES = {}
+
+
+def sonic_envelope_rejects(features: dict, families: set) -> bool:
+    """True when the captured audio sits outside the empirical envelope of
+    EVERY family in the collapsed lane (>=2 features beyond that family's
+    p01/p99). Conservative by design: one outlier is an artistic choice,
+    two is a different genre. Unknown family or missing envelopes -> False
+    (never veto blind)."""
+    if not _SONIC_ENVELOPES or not features or not families:
+        return False
+    for fam in families:
+        env = _SONIC_ENVELOPES.get(fam)
+        if not env:
+            return False
+        outliers = []
+        for feat, band in env.items():
+            v = features.get(feat)
+            if v is None and feat == 'lufs_integrated':
+                v = features.get('lufs')
+            if v is None:
+                continue
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                continue
+            if v < band['p01'] or v > band['p99']:
+                outliers.append(f"{feat}={v:.3g} outside [{band['p01']},{band['p99']}]")
+        if len(outliers) < 2:
+            return False
+        print(f"  Sonic envelope: audio rejects '{fam}': {'; '.join(outliers[:4])}")
+    return True
+
+
 NON_NATIVE_TRAJECTORY_PENALTY = 0.03  # ~ erases the typical foreign sonic edge so they interleave
 NON_NATIVE_TRAJECTORY_TOKENS = (
     # East / SE Asian markets
@@ -4751,17 +4799,16 @@ async def analyze_url(
                 if (_adata0.get('spotify_url') or '').split('?')[0].rstrip('/') == _asp0:
                     _gems_art_fams = user_lane_families(_adata0.get('genres') or '')
                     break
-        _contradiction = bool(_gems_art_fams) and not (_gems_art_fams & track_user_families)
-        if not _contradiction and 'metal' in track_user_families and features:
-            try:
-                _nrg = float(features.get('energy') or 0)
-            except (TypeError, ValueError):
-                _nrg = 1.0
-            # Metal without energy is a contradiction in terms — vendor tag
-            # can't outvote the waveform. 0.35 is far below any real metal
-            # capture; soft ballads by true metal bands correctly widen too.
-            if 0 < _nrg < 0.35:
-                _contradiction = True
+        # GEMS-record agreement is CONCLUSIVE either way: agreement clears
+        # the collapse (no further checks — the 274k-universe envelopes show
+        # real metal spans energy 0.17-0.41, so a naive audio threshold
+        # would wrongly veto ~40% of true metal scans); contradiction vetoes.
+        # The sonic envelope check runs ONLY when we have no record at all.
+        if _gems_art_fams:
+            _contradiction = not (_gems_art_fams & track_user_families)
+        else:
+            _contradiction = bool(features) and sonic_envelope_rejects(
+                features, track_user_families)
         if _contradiction:
             _union_fams = set()
             for _gs in (_lane_track_src, artist_genre or ''):
