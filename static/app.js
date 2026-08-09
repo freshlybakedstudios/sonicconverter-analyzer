@@ -361,34 +361,28 @@ function setInputMode(mode) {
 }
 
 // -------------------------------------------------------
-// Paid fresh-capture gate: chooser + Stripe upgrade flow
-// -------------------------------------------------------
-function showFreshCaptureChooser(message) {
-  let overlay = $('#fresh-capture-chooser');
+// Pro gate: shown when a free account tries a Pro feature (uploading your own
+// unreleased audio). Link scans of any Spotify track are free — cache hit or
+// fresh capture (2026-08-09 owner call).
+function showProGate(message) {
+  let overlay = $('#pro-gate');
   if (!overlay) {
     overlay = document.createElement('div');
-    overlay.id = 'fresh-capture-chooser';
+    overlay.id = 'pro-gate';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px';
     overlay.innerHTML =
       '<div style="background:#1c1a1b;border:1px solid #3a3536;border-radius:14px;max-width:460px;padding:28px;text-align:center">' +
-        '<h3 style="margin:0 0 10px;color:#fff">This track needs a fresh scan</h3>' +
-        '<p id="fcc-msg" style="color:#bbb;font-size:14px;line-height:1.5;margin:0 0 20px"></p>' +
-        '<button id="fcc-upload" class="btn btn-primary" style="width:100%;margin-bottom:10px">Upload your audio file — free &amp; instant</button>' +
-        '<button id="fcc-upgrade" class="btn" style="width:100%;margin-bottom:10px">Unlock studio-grade fresh scans (Pro)</button>' +
-        '<button id="fcc-close" style="background:none;border:none;color:#777;cursor:pointer;font-size:13px">Never mind</button>' +
+        '<h3 style="margin:0 0 10px;color:#fff">That\'s a Pro feature</h3>' +
+        '<p id="pro-gate-msg" style="color:#bbb;font-size:14px;line-height:1.5;margin:0 0 20px"></p>' +
+        '<button id="pro-gate-upgrade" class="btn btn-primary" style="width:100%;margin-bottom:10px">Unlock Pro</button>' +
+        '<button id="pro-gate-close" style="background:none;border:none;color:#777;cursor:pointer;font-size:13px">Never mind</button>' +
       '</div>';
     document.body.appendChild(overlay);
-    $('#fcc-upload').addEventListener('click', () => {
-      overlay.remove();
-      setInputMode('file');
-      const zone = $('#upload-zone');
-      if (zone) zone.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-    $('#fcc-upgrade').addEventListener('click', startAnalyzerUpgrade);
-    $('#fcc-close').addEventListener('click', () => overlay.remove());
+    $('#pro-gate-upgrade').addEventListener('click', startAnalyzerUpgrade);
+    $('#pro-gate-close').addEventListener('click', () => overlay.remove());
   }
-  const msgEl = $('#fcc-msg');
-  if (msgEl) msgEl.textContent = message || 'Upload your file for a free scan, or go Pro to scan any Spotify track.';
+  const msgEl = $('#pro-gate-msg');
+  if (msgEl) msgEl.textContent = message || 'Unlock Pro to analyze your own unreleased audio and build full pitch lists with curator contacts.';
   overlay.style.display = 'flex';
 }
 
@@ -432,10 +426,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const modeUrl = $('#mode-url');
   if (modeFile) modeFile.addEventListener('click', () => setInputMode('file'));
   if (modeUrl) modeUrl.addEventListener('click', () => setInputMode('url'));
-  // 2026-08-08 (owner): Spotify URL only for now — file upload is off until
-  // it has a proper home in the paid tier. Toggle hidden, URL mode forced.
-  const toggle = document.querySelector('.input-mode-toggle');
-  if (toggle) toggle.style.display = 'none';
+  // 2026-08-09 (owner): link scans of ANY Spotify track are free (capture
+  // included); uploading your OWN unreleased audio is the Pro feature. URL
+  // mode is the default; the upload tab stays visible labeled as Pro — free
+  // accounts hit the Pro gate on analyze (402 from the backend).
+  if (modeFile) modeFile.textContent = 'Upload Your File (Pro)';
   setInputMode('url');
 });
 
@@ -521,13 +516,13 @@ async function analyzeTrack() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      // Paid gate: track not in the universe cache and user hasn't unlocked
-      // fresh capture — offer the free upload path or the Pro checkout.
-      if (res.status === 402 && err.detail && err.detail.code === 'fresh_capture_required') {
+      // Pro gate (402): free account tried a Pro feature (own-audio upload).
+      if (res.status === 402 && err.detail && err.detail.code) {
         clearInterval(statusInterval);
         if (queueInterval) clearInterval(queueInterval);
         hide($('#loading-section'));
-        showFreshCaptureChooser(err.detail.message);
+        show($('#upload-section'));
+        showProGate(err.detail.message);
         return;
       }
       throw new Error((typeof err.detail === 'string' && err.detail) || 'Analysis failed');
