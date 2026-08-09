@@ -3685,10 +3685,16 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         })
 
         _no_subscriber_since = None  # Track when subscribers disappeared
+        # Paid enrichment runs to completion UNATTENDED (2026-08-09): the
+        # stale cutoff is a free-tier cost-saver — a Pro customer who paid
+        # for the full pitch list gets it even if they close the laptop.
+        # include_curators is the paid gate (Phase C), so it doubles as the
+        # paid marker here.
+        _paid_run = bool(include_curators)
 
         for batch_start in range(0, total, BATCH_SIZE):
             # Stop enrichment if no one is listening (tab closed) — 30s grace for reconnects
-            if job_id not in sse_subscribers or not sse_subscribers[job_id]:
+            if not _paid_run and (job_id not in sse_subscribers or not sse_subscribers[job_id]):
                 if _no_subscriber_since is None:
                     _no_subscriber_since = time.time()
                     print(f"Enrichment [{job_id[:8]}]: No SSE subscribers — waiting 30s for reconnect")
@@ -3697,6 +3703,8 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     job_mgr.update_job(job_id, status='stale')
                     _notify_local_pipeline('user_idle')
                     return
+            elif _paid_run:
+                pass
             else:
                 _no_subscriber_since = None
 
@@ -3876,8 +3884,9 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 try:
                     curators_checked += 1
 
-                    # Check for tab closed every 10 curators
-                    if curators_checked % 10 == 0:
+                    # Check for tab closed every 10 curators (free runs only —
+                    # paid runs complete unattended)
+                    if not _paid_run and curators_checked % 10 == 0:
                         if job_id not in sse_subscribers or not sse_subscribers[job_id]:
                             if _no_subscriber_since is None:
                                 _no_subscriber_since = time.time()
