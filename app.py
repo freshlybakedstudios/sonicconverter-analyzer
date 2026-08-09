@@ -2814,13 +2814,13 @@ async def analyze(
                 all_matches.sort(key=lambda x: x.get('similarity', 0), reverse=True)
                 print(f"  Country boost: {boosted_count} matches from {boost_code2} boosted +{COUNTRY_BOOST*100:.0f}%")
 
-        # Pronoun-affinity nudge on Similar Artists ORDERING (2026-08-09,
-        # parity with URL path / comparables / trajectory — displayed
-        # similarity untouched, only rank shifts).
-        if user_pronoun:
-            all_matches.sort(key=lambda x: (x.get('similarity', 0)
-                                            + (0.02 if (x.get('pronoun_title') or '') == user_pronoun else 0.0)),
-                             reverse=True)
+        # Ordering nudges on Similar Artists (parity with URL path):
+        # faith-first tiering + pronoun affinity. Displayed similarity
+        # untouched, only rank shifts.
+        all_matches.sort(key=lambda x: ((1.0 if (_upload_faith_filter and is_faith_world(x)) else 0.0)
+                                        + x.get('similarity', 0)
+                                        + (0.02 if (user_pronoun and (x.get('pronoun_title') or '') == user_pronoun) else 0.0)),
+                         reverse=True)
 
         # Debug: show top 40 matches with genre families
         print(f"  Top 40 matches (before tier filter):")
@@ -2937,7 +2937,9 @@ async def analyze(
                 # interleave with same-market peers instead of stacking on top.
                 nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _is_non_native_market(*cand_genre_parts)) else 0.0
                 score = m.get('similarity', 0) + total_boost - nn_penalty - _retro_penalty(m)
-                flattery_candidates.append((cand_tier_num, score, m, cand_pronoun))
+                # Faith-first tiering (parity with URL path).
+                faith_rank = 1 if (_upload_faith_filter and is_faith_world(m)) else 0
+                flattery_candidates.append(((faith_rank, cand_tier_num), score, m, cand_pronoun))
 
             # Sort by tier (highest first), then market-weighted sonic similarity.
             flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
@@ -4981,7 +4983,14 @@ async def analyze_url(
         else:
             print(f"  Hero gate (similar artists): kept only {len(hero_gated)} (<25) — "
                   f"falling back to lane-gated pool of {len(all_found)}")
-    all_found.sort(key=lambda m: (m.get('similarity', 0)
+    # Faith-first tiering (owner call 2026-08-09): when the user is faith-
+    # world and the strict pool was thin, faith acts surface as a block
+    # ABOVE the genre-matched secular fill — the 1.0 term dominates every
+    # similarity/nudge difference, so ordering inside each block stays the
+    # normal nudged-sonic ranking.
+    all_found.sort(key=lambda m: ((1.0 if (_faith_filter and is_faith_world(m)) else
+                                   0.0 if _faith_filter else 0.0)
+                                  + m.get('similarity', 0)
                                   - (NON_NATIVE_TRAJECTORY_PENALTY
                                      if (not user_non_native and _cand_non_native(m)) else 0.0)
                                   - _retro_penalty(m)
@@ -5084,7 +5093,10 @@ async def analyze_url(
             # interleave with same-market peers instead of stacking on top.
             nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _cand_non_native(m)) else 0.0
             score = m.get('similarity', 0) + total_boost - nn_penalty - _retro_penalty(m)
-            flattery_candidates.append((cand_tier_num, score, m, cand_pronoun))
+            # Faith-first tiering: faith-world targets lead the trajectory
+            # for faith-world users; genre-matched secular follow.
+            faith_rank = 1 if (_faith_filter and is_faith_world(m)) else 0
+            flattery_candidates.append(((faith_rank, cand_tier_num), score, m, cand_pronoun))
 
         # Sort by tier (highest first), then market-weighted sonic similarity.
         flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
