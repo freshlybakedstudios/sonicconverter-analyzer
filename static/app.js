@@ -538,6 +538,10 @@ async function analyzeTrack() {
 
     renderResults(data);
 
+    // Tabs: remember Pro state for the padlock, land on Your Sound each scan
+    window._analyzerIsPro = data.pro === true;
+    if (typeof switchResultsTab === 'function') switchResultsTab('sound');
+
     hide($('#loading-section'));
     show($('#results-section'));
     show($('#floating-cta'));
@@ -2824,7 +2828,7 @@ async function generateAnalysisPDF() {
     }
 
     const safe = s => String(s).replace(/[\/\\:*?"<>|]/g, '_').trim();
-    doc.save(`${safe(artist)} - ${safe(track)} - SonicConverter.pdf`);
+    doc.save(`${safe(artist)} - ${safe(track)} - Sonic Analyzer.pdf`);
   } catch (e) {
     console.error('PDF export failed', e);
     alert('PDF export failed: ' + (e && e.message ? e.message : e));
@@ -3031,3 +3035,41 @@ function animateFloatingPies() {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', initFloatingPies);
+
+
+// ---- RESULTS TAB BAR (2026-08-09) ------------------------------------------
+// Five stages of the journey. Cards keep their own show/hide logic; tabs only
+// toggle .tab-hide (display:none !important) on cards outside the active tab.
+const RESULT_TABS = {
+  sound: ['sonic-breakdown-card', 'freq-balance-card', 'emotion-card',
+          'sonic-originality-card', 'sonic-quadrant-card'],
+  peers: ['similar-artists-card', 'audience-match-card', 'conversion-card'],
+  trajectory: ['flattery-card', 'track-momentum'],
+  pitch: ['pitch-comparables-card', 'editorial-playlists-card',
+          'all-playlists-card', 'curator-emails-card', 'credits-card'],
+  production: ['production-recs-card', 'campaign-forecast-card'],
+};
+
+function switchResultsTab(tab) {
+  if (!RESULT_TABS[tab]) tab = 'sound';
+  document.querySelectorAll('.results-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
+  for (const [t, ids] of Object.entries(RESULT_TABS)) {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('tab-hide', t !== tab);
+    }
+  }
+  // Deep link without scroll jump
+  try { history.replaceState(null, '', '#' + tab); } catch (e) {}
+  // Unlock badge: hide the padlock once the account is Pro
+  const lock = document.getElementById('pitch-tab-lock');
+  if (lock && window._analyzerIsPro) lock.style.display = 'none';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.results-tab').forEach(b =>
+    b.addEventListener('click', () => switchResultsTab(b.dataset.tab)));
+  const initial = (window.location.hash || '').replace('#', '');
+  switchResultsTab(RESULT_TABS[initial] ? initial : 'sound');
+});

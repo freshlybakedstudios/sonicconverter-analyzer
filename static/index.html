@@ -400,20 +400,31 @@
         </div>
       </div>
 
+      <!-- Results tab bar: five stages of the artist's journey. Cards are
+           assigned to tabs in app.js (RESULT_TABS); switching toggles the
+           .tab-hide class — app.js's own show/hide logic is untouched. -->
+      <nav class="results-tabs" id="results-tabs" aria-label="Result sections">
+        <button class="results-tab active" data-tab="sound">Your Sound</button>
+        <button class="results-tab" data-tab="peers">Your Peers</button>
+        <button class="results-tab" data-tab="trajectory">Trajectory</button>
+        <button class="results-tab" data-tab="pitch">Pitch Kit <span class="tab-lock" id="pitch-tab-lock">🔒</span></button>
+        <button class="results-tab" data-tab="production">Production Notes</button>
+      </nav>
+
       <!-- 2. Sonic Breakdown -->
-      <div class="result-card">
+      <div class="result-card" id="sonic-breakdown-card">
         <h3>Your Sonic Breakdown</h3>
         <div class="stats-grid stats-grid-6" id="stats-grid"></div>
       </div>
 
       <!-- 3. Frequency Balance -->
-      <div class="result-card">
+      <div class="result-card" id="freq-balance-card">
         <h3>Frequency Balance</h3>
         <div class="eq-chart" id="eq-chart"></div>
       </div>
 
       <!-- 4. Emotional Character -->
-      <div class="result-card">
+      <div class="result-card" id="emotion-card">
         <h3>Emotional Character</h3>
         <div class="emotion-tags" id="emotion-tags"></div>
       </div>
@@ -443,7 +454,7 @@
            Each feature shows a band between two consensus targets: the full
            high-converter cohort (safe/genre edge) and the signature-of-success
            subset (distinctive-winners edge). Aim anywhere in the band. -->
-      <div class="result-card">
+      <div class="result-card" id="production-recs-card">
         <h3>Production Recommendations
           <button class="export-targets-btn hidden" id="export-targets-btn" type="button" title="Download all target ranges as a .sonictargets.json file for the SonicMeter plugin">Export targets for plugin</button>
         </h3>
@@ -557,7 +568,7 @@
       </div>
 
       <!-- 8. Similar Artists -->
-      <div class="result-card">
+      <div class="result-card" id="similar-artists-card">
         <h3>Similar Artists</h3>
         <p class="card-sub">From our universe of 210,000+ sonically profiled tracks</p>
         <div class="matches-controls">
