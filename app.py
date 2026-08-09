@@ -59,7 +59,7 @@ from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
                            candidate_lane_families, user_lane_families,
                            resolve_scan_lane, primary_in_lane,
                            track_tags_contradict, aggressive_lane_context,
-                           aesthetic_clash)
+                           aesthetic_clash, EXCLUSIVE_FAMILIES)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -4725,6 +4725,49 @@ async def analyze_url(
     _lane_track_src = dropdown_genre or track_genre or genre or ''
     track_user_families = resolve_scan_lane(user_lane_families(_lane_track_src),
                                             user_lane_families(artist_genre or ''))
+
+    # Exclusive-collapse corroboration (2026-08-09, Solya: CM tagged an
+    # indie singer-songwriter 'black metal, us metal...' — vendor tags can
+    # lie about IDENTITY, not just precision. Energy 0.24, dissonance 0.03,
+    # 61bpm: the audio said ballad while the lane collapsed to {metal}).
+    # Before an exclusive collapse stands, demand corroboration from an
+    # independent source: (a) our own GEMS artist record's families, or
+    # (b) for metal, the captured audio itself. On contradiction, rebuild
+    # the lane from the non-exclusive tag families + the GEMS record.
+    _lane_vetoed = False
+    if track_user_families and track_user_families <= EXCLUSIVE_FAMILIES:
+        _gems_art_fams = set()
+        if artist_spotify_url:
+            _asp0 = artist_spotify_url.split('?')[0].rstrip('/')
+            for _aid0, _adata0 in matcher._artists.items():
+                if (_adata0.get('spotify_url') or '').split('?')[0].rstrip('/') == _asp0:
+                    _gems_art_fams = user_lane_families(_adata0.get('genres') or '')
+                    break
+        _contradiction = bool(_gems_art_fams) and not (_gems_art_fams & track_user_families)
+        if not _contradiction and 'metal' in track_user_families and features:
+            try:
+                _nrg = float(features.get('energy') or 0)
+            except (TypeError, ValueError):
+                _nrg = 1.0
+            # Metal without energy is a contradiction in terms — vendor tag
+            # can't outvote the waveform. 0.35 is far below any real metal
+            # capture; soft ballads by true metal bands correctly widen too.
+            if 0 < _nrg < 0.35:
+                _contradiction = True
+        if _contradiction:
+            _union_fams = set()
+            for _gs in (_lane_track_src, artist_genre or ''):
+                for _t in _gs.split(','):
+                    _union_fams |= _genre_families(_t.strip())
+            _rebuilt = ((_union_fams - EXCLUSIVE_FAMILIES)
+                        | (_gems_art_fams - EXCLUSIVE_FAMILIES))
+            if _rebuilt:
+                print(f"  Lane veto: exclusive collapse {track_user_families} contradicted "
+                      f"(gems artist fams={_gems_art_fams or 'n/a'}, "
+                      f"energy={features.get('energy') if features else 'n/a'}); "
+                      f"rebuilt lane = {_rebuilt}")
+                track_user_families = _rebuilt
+                _lane_vetoed = True
     artist_user_families = user_lane_families(artist_genre or '')
     # Kept broad (track ∪ artist) for the looser flattery pass downstream.
     user_families = track_user_families | artist_user_families
@@ -4770,8 +4813,13 @@ async def analyze_url(
     # the foreign-market interleave nudge on ORDERING (displayed similarity is
     # untouched; only rank shifts). Safety fallback if the strict pool starves.
     user_non_native = _is_non_native_market(artist_genre or '', track_genre or '', genre or '')
-    aggr_ctx = aggressive_lane_context(track_user_families,
-                                       genre or '', track_genre or '', artist_genre or '')
+    # When the lane veto fired, the tag blob itself is untrustworthy (it's
+    # what lied) — judge aggression from the corrected lane alone.
+    if _lane_vetoed:
+        aggr_ctx = aggressive_lane_context(track_user_families)
+    else:
+        aggr_ctx = aggressive_lane_context(track_user_families,
+                                           genre or '', track_genre or '', artist_genre or '')
     # User pronoun (for the affinity nudge on all three surfaces): CM artist
     # data first, then the GEMS artist cache by spotify profile URL.
     _url_user_pronoun = (track_artist_cm_data or {}).get('pronoun_title') or ''
@@ -5080,8 +5128,10 @@ async def analyze_url(
         # already genre-family-filtered by the matcher). Pass user_families +
         # primary family so the alignment + primary-share filters can scope
         # to the user's dominant lane (catches hybrid-vs-hybrid false positives).
-        _url_user_fams = user_lane_families(genre or '')
-        _url_user_primary = _primary_genre_family(genre or '')
+        # Corrected lane (post exclusive-collapse veto) — not the raw
+        # `genre` pick, which is what lied in the Solya case.
+        _url_user_fams = set(track_user_families) if track_user_families else user_lane_families(genre or '')
+        _url_user_primary = None if _lane_vetoed else _primary_genre_family(genre or '')
         # (_url_user_pronoun resolved earlier, shared by all three surfaces)
         pitch_comparables = _compute_pitch_comparables(
             found_matches, high_converter_gems_url, matcher._gems_by_isrc,
