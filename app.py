@@ -1627,32 +1627,11 @@ def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
         if cm is not None: return 0.50 * pop + 0.30 * cm + 0.20 * pl
         return 0.714 * pop + 0.286 * pl
 
-    def _dev_profile(f):
-        """Deviation-direction fingerprint: the set of (feature, sign) dims
-        where this track sits >1.25 sigma from cohort consensus. Two tracks are
-        'distinctive the same way' when these overlap (2026-08-09, the Cathrine
-        Lynn Rose lesson: originality measures HOW FAR from consensus, not in
-        WHICH DIRECTION — a comparable must deviate along the user's axes)."""
-        out = set()
-        if not f: return out
-        for feat in ORIGINALITY_WEIGHTS:
-            if feat not in centroid: continue
-            v = f.get(feat)
-            if v is None: continue
-            try: z = (float(v) - centroid[feat]) / stds[feat]
-            except (TypeError, ValueError, ZeroDivisionError): continue
-            if abs(z) > 1.25:
-                out.add((feat, 1 if z > 0 else -1))
-        return out
-
-    user_dev = _dev_profile(user_features or {})
-
     def _orig(isrc):
-        if not isrc: return None, set()
+        if not isrc: return None
         f = gems_by_isrc.get(isrc)
-        if not f: return None, set()
+        if not f: return None
         dist_sq, cnt = 0.0, 0
-        dev = set()
         for feat, w in ORIGINALITY_WEIGHTS.items():
             if feat not in centroid: continue
             v = f.get(feat)
@@ -1661,10 +1640,8 @@ def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
             except (TypeError, ValueError, ZeroDivisionError): continue
             dist_sq += w * z * z
             cnt += 1
-            if abs(z) > 1.25:
-                dev.add((feat, 1 if z > 0 else -1))
-        if cnt < 5: return None, set()
-        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5))), dev
+        if cnt < 5: return None
+        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5)))
 
     scatter = []
     for x in found_matches:
@@ -1675,7 +1652,6 @@ def _compute_cohort_scatter(found_matches: list, high_converter_gems: list,
             'name': x.get('name'),
             'perf_pct': round(p, 3),
             'orig_score': o,
-            'dev_alignment': dev_alignment,
         })
     return scatter
 
