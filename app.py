@@ -4512,6 +4512,20 @@ async def analyze_url(
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
 
+    # Resilience fallback (2026-08-09, Jon Keith re-scan: CM artist lookup
+    # returned nothing and the scan's identity collapsed to the track's own
+    # pop-leaning tags — same track, different results scan-to-scan). When
+    # CM gives us no artist genres, fall back to our own GEMS artist record.
+    if not artist_genre and artist_spotify_url:
+        _asp_fb = artist_spotify_url.split('?')[0].rstrip('/')
+        for _aid_fb, _adata_fb in matcher._artists.items():
+            if (_adata_fb.get('spotify_url') or '').split('?')[0].rstrip('/') == _asp_fb:
+                _g_fb = (_adata_fb.get('genres') or '').strip()
+                if _g_fb:
+                    artist_genre = _g_fb
+                    print(f"  URL analysis: artist genres (GEMS fallback) = {artist_genre[:100]}")
+                break
+
     # Track-level genre — split into two sources for lane vs display:
     #
     # `track_genre` drives the LANE resolver — must be stable + deterministic
