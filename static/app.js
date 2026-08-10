@@ -390,6 +390,7 @@ async function startAnalyzerUpgrade() {
   try {
     const form = new FormData();
     form.append('token', accessToken);
+    if (typeof gtag === 'function') gtag('event', 'begin_checkout', { currency: 'USD', value: 49.00 });
     const res = await fetch(`${API_URL}/api/analyzer/upgrade`, { method: 'POST', body: form });
     const data = await res.json();
     if (res.ok && data.checkout_url) {
@@ -415,6 +416,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const res = await fetch(`${API_URL}/api/analyzer/upgrade/status?session_id=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(verifyToken)}`);
     const data = await res.json();
     if (res.ok && data.status === 'complete') {
+      if (typeof gtag === 'function') gtag('event', 'purchase', {
+        currency: 'USD', value: 49.00, transaction_id: sessionId,
+        items: [{ item_name: 'Analyzer Pro', price: 49.00, quantity: 1 }],
+      });
       alert('🔓 Pro unlocked — studio-grade fresh scans and full pitch lists are now enabled. Run your scan again.');
     }
   } catch (e) { /* silent — user can re-trigger by rescanning */ }
@@ -3063,6 +3068,7 @@ function switchResultsTab(tab) {
   if (!RESULT_TABS[tab]) tab = 'sound';
   document.querySelectorAll('.results-tab').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab));
+  if (typeof gtag === 'function') gtag('event', 'tab_view', { tab_name: tab });
   for (const [t, ids] of Object.entries(RESULT_TABS)) {
     for (const id of ids) {
       const el = document.getElementById(id);
