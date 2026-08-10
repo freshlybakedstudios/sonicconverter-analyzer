@@ -542,9 +542,14 @@ async function analyzeTrack() {
 
     renderResults(data);
 
-    // Tabs: remember Pro state for the padlock, land on Your Sound each scan
+    // Tabs: remember Pro state for the padlock. Land on the arrival
+    // deep-link tab (ads pointing at /#production) the FIRST scan, then
+    // Your Sound on subsequent scans.
     window._analyzerIsPro = data.pro === true;
-    if (typeof switchResultsTab === 'function') switchResultsTab('sound');
+    if (typeof switchResultsTab === 'function') {
+      switchResultsTab(window._arrivalTab || 'sound');
+      window._arrivalTab = null;
+    }
 
     hide($('#loading-section'));
     show($('#results-section'));
@@ -3075,5 +3080,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.results-tab').forEach(b =>
     b.addEventListener('click', () => switchResultsTab(b.dataset.tab)));
   const initial = (window.location.hash || '').replace('#', '');
-  switchResultsTab(RESULT_TABS[initial] ? initial : 'sound');
+  // Arrival deep-link (2026-08-10): ads/content can link /#production so the
+  // scan lands the artist on that tab once, then normal per-scan reset applies.
+  window._arrivalTab = RESULT_TABS[initial] ? initial : null;
+  switchResultsTab(window._arrivalTab || 'sound');
 });
