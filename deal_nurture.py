@@ -236,6 +236,13 @@ def _lead_view(lead: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Email content (approved copy)
 # ---------------------------------------------------------------------------
+# The owner's REAL Gmail signature, pulled verbatim from his Google account
+# settings (users/me/settings/sendAs, almgren@) on 2026-08-15. Touches 2/3 use
+# this so they render identically to an email he typed himself. If he edits his
+# signature in Gmail, re-pull and update this constant.
+OWNER_SIGNATURE_HTML = """<div dir="ltr"><div style="margin-bottom:0pt;margin-top:0pt;line-height:1.38"><p style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline">Alexander Almgren</span></p><p style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline"><br></span></p><p dir="ltr" style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline"><font size="1">(917)-286-7324</font></span></p><p dir="ltr" style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline"><font size="1"><a href="https://www.instagram.com/alexanderalmgren/" style="color:rgb(17,85,204)" target="_blank">@alexanderalmgren</a><br></font></span></p><p style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><font size="1"><a href="http://freshlybakedstudios.com" target="_blank">freshlybakedstudios.com</a></font></p></div></div>"""
+
+
 def build_touch(lead: dict, touch: int):
     """Return (subject, html) for touch 1, 2 or 3."""
     v = _lead_view(lead)
@@ -278,80 +285,77 @@ def build_touch(lead: dict, touch: int):
         # button). Advice-with-no-ask + the evergreen listen offer. Streams
         # figure must stay "3.3B+" (12.3B Muso number is disputed mislinks).
         subject = "closing your file (for real)"
-        # Voice pass + price-structure paragraph 2026-08-15. The flex line names
-        # STRUCTURAL options only (scope, installments, $250 reserve — all live
-        # on the checkout), never a discount; it shows only to leads already
-        # silent after 3 touches, so full-price buyers never see it.
+        # Price-structure paragraph 2026-08-15: names STRUCTURAL options only
+        # (scope, installments, $250 reserve — all live on the checkout), never
+        # a discount; shows only to leads already silent after 3 touches.
+        # Normal capitalization + owner's real Gmail signature (owner 2026-08-15).
         body = f"""
-          <p>hey {v['greet']}, last one from me, promise.</p>
-          <p>your quote's saved if the record comes back around:
-             <a href="{rates}">{FRONTEND_URL}/rates</a>. and the listen offer from my
-             last email doesn't expire. the drop link
+          <p>Hey {v['greet']}, last one from me, promise.</p>
+          <p>Your quote's saved if the record comes back around:
+             <a href="{rates}">{FRONTEND_URL}/rates</a>. And the listen offer from my
+             last email doesn't expire. The drop link
              (<a href="{DROPBOX_REQUEST_URL}">here</a>) and
              <a href="{CAL_BOOKING_URL}">my calendar</a> both work months from now.</p>
-          <p>also, if the number was the blocker, just say so. there's usually a way in.
-             fewer songs to start, splitting the payments, or locking it in for $250 now
-             and starting when the record's ready. i'd rather shape the deal than lose
+          <p>Also, if the number was the blocker, just say so. There's usually a way in.
+             Fewer songs to start, splitting the payments, or locking it in for $250 now
+             and starting when the record's ready. I'd rather shape the deal than lose
              the song.</p>
-          <p>one thing before i go quiet: whoever you end up trusting with
-             {project_phrase2}{for_artist}, make them play you something they mixed in your
-             genre first. that one ask filters out most of the bad experiences in this
-             business.</p>
-          <p>rooting for the record either way.</p>
-          <p>alexander<br>
-             <span style="color:#888">(917) 286-7324<br>
-             <a href="https://www.instagram.com/alexanderalmgren/" style="color:#888">@alexanderalmgren</a>
-             · <a href="https://freshlybakedstudios.com" style="color:#888">freshlybakedstudios.com</a></span></p>
+          <p>One thing before I go quiet: whoever ends up mixing this record, ask them
+             to play you something they've done in your genre first. That one question
+             filters out most of the bad experiences in this business.</p>
+          <p>Rooting for the record either way.</p>
+          {OWNER_SIGNATURE_HTML}
         """
     else:
         # The proven "actual human" shape (closed the Aidan $2k deal). Free
         # listen is delivered ON a booked call — work only happens with a call
         # locked (Fading Emerald rule: no pass-then-ghost window).
-        subject = "the actual human this time"
         # Mixer observation stamped by the local personalizer (nurture_personalize.py
         # on the Mac) — a grounded sonic read of THEIR top track, same generator as
         # the daily outreach. Present → lead hears we actually listened; absent →
         # the generic (still proven) copy below.
-        # Voice pass 2026-08-15 (per ALEXANDER_VOICE.md): all lowercase like he
-        # actually types, no em dashes, spoken rhythm, scoped personal claims.
-        # Only the first letter of the observation is lowercased so proper nouns
-        # inside it survive.
+        # Owner spec 2026-08-15: normal capitals, no bold, his real Gmail
+        # signature, and a personalized subject fusing name + track + him.
+        # Falls back to the proven generic subject when there's no track or no
+        # usable name. nurture-reply-sync.js matches BOTH subject shapes.
         pers = (lead.get("metadata") or {}).get("personalization") or {}
         obs = (pers.get("observation") or "").strip()
         obs_track = (pers.get("track") or "").strip()
+        if obs and obs_track and v["greet"] != "there":
+            subject = f"{v['greet']}, I listened to {obs_track}. It's Alexander, the human this time"
+        else:
+            subject = "the actual human this time"
         if obs:
-            obs = obs[:1].lower() + obs[1:]
+            obs = obs[:1].upper() + obs[1:]
             listened = (
-                f"<p>before writing this i pulled up "
+                f"<p>Before writing this I pulled up "
                 f"{obs_track if obs_track else 'your music'}. "
                 f"{obs}</p>"
-                f"<p>that's the kind of thing i'd dig into properly on a free pass at "
-                f"your track. what i'd do with it, what's holding it back, whether it "
+                f"<p>That's the kind of thing I'd dig into properly on a free pass at "
+                f"your track. What I'd do with it, what's holding it back, whether it "
                 f"even needs what you priced out.</p>"
             )
         else:
             listened = (
-                "<p>so here's a no strings offer while you decide. i'll take a real pass "
-                "at your track. what i'd do with it, what's holding it back, whether it "
-                "even needs what you priced out. free.</p>"
+                "<p>So here's a no strings offer while you decide. I'll take a real pass "
+                "at your track. What I'd do with it, what's holding it back, whether it "
+                "even needs what you priced out. Free.</p>"
             )
         # No <strong>/bold anywhere in the human-typed touches (owner 2026-08-15)
         plain_project = f"a {svc} project" if svc else "a project"
         body = f"""
-          <p>hey {v['greet']}, alexander here. the actual human this time, not the
+          <p>Hey {v['greet']}, Alexander here. The actual human this time, not the
              quote machine.</p>
-          <p>i saw you priced out {plain_project}{for_artist} but didn't end up booking.
-             i get it. the song's probably still moving, or the timing isn't there yet.</p>
+          <p>I saw you priced out {plain_project}{for_artist} but didn't end up booking.
+             I get it. The song's probably still moving, or the timing isn't there yet.</p>
           {listened}
-          <p>two steps if you want it:</p>
-          <p>1. drop your track here: <a href="{DROPBOX_REQUEST_URL}">{DROPBOX_REQUEST_URL}</a><br>
-             2. grab a slot on my calendar: <a href="{CAL_BOOKING_URL}">{CAL_BOOKING_URL}</a></p>
-          <p>i do the listen and walk you through it live on the call. no card, nothing
-             owed after.</p>
-          <p>alexander<br>
-             <span style="color:#888">(917) 286-7324<br>
-             <a href="https://www.instagram.com/alexanderalmgren/" style="color:#888">@alexanderalmgren</a>
-             · <a href="https://freshlybakedstudios.com" style="color:#888">freshlybakedstudios.com</a></span></p>
+          <p>Two steps if you want it:</p>
+          <p>1. Drop your track here: <a href="{DROPBOX_REQUEST_URL}">{DROPBOX_REQUEST_URL}</a><br>
+             2. Grab a slot on my calendar: <a href="{CAL_BOOKING_URL}">{CAL_BOOKING_URL}</a></p>
+          <p>I do the listen and walk you through it live on the call. It also means I
+             can quote you properly. The calculator gets close, but the real number
+             comes from hearing the actual files. No card, nothing owed after.</p>
+          {OWNER_SIGNATURE_HTML}
         """
 
     if touch == 1:
