@@ -343,7 +343,11 @@ def build_touch(lead: dict, touch: int):
             if len(similar) == 2 else ""
         )
         if obs:
-            obs = obs[:1].upper() + obs[1:]
+            # The observation generator writes in lowercase style; sentence-case
+            # it so it sits naturally in the capitalized email.
+            import re as _re
+            obs = _re.sub(r"(^|[.!?]\s+)([a-z])",
+                          lambda m: m.group(1) + m.group(2).upper(), obs)
             listened = (
                 f"<p>Before writing this I pulled up "
                 f"{obs_track if obs_track else 'your music'}. "
