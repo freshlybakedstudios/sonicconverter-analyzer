@@ -321,7 +321,7 @@ def build_touch(lead: dict, touch: int):
             obs = obs[:1].lower() + obs[1:]
             listened = (
                 f"<p>before writing this i pulled up "
-                f"{'<strong>' + obs_track + '</strong>' if obs_track else 'your music'}. "
+                f"{obs_track if obs_track else 'your music'}. "
                 f"{obs}</p>"
                 f"<p>that's the kind of thing i'd dig into properly on a free pass at "
                 f"your track. what i'd do with it, what's holding it back, whether it "
@@ -333,10 +333,12 @@ def build_touch(lead: dict, touch: int):
                 "at your track. what i'd do with it, what's holding it back, whether it "
                 "even needs what you priced out. free.</p>"
             )
+        # No <strong>/bold anywhere in the human-typed touches (owner 2026-08-15)
+        plain_project = f"a {svc} project" if svc else "a project"
         body = f"""
           <p>hey {v['greet']}, alexander here. the actual human this time, not the
              quote machine.</p>
-          <p>i saw you priced out {project_phrase}{for_artist} but didn't end up booking.
+          <p>i saw you priced out {plain_project}{for_artist} but didn't end up booking.
              i get it. the song's probably still moving, or the timing isn't there yet.</p>
           {listened}
           <p>two steps if you want it:</p>
