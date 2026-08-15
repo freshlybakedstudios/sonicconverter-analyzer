@@ -416,7 +416,9 @@ def _html_and_plain(html: str):
 # --- Gmail API rail (2026-07-20) -------------------------------------------
 # Evidence: SendGrid nurture to a lead was never seen (spam/promotions) while
 # the owner's personal Gmail to the SAME lead got a reply in hours. Lead-facing
-# mail now rides the owner's Gmail (same rail as outreach, 9.4% reply rate);
+# NURTURE mail now rides the owner's Gmail. (NOTE: the daily outreach senders
+# in atomic-crm ride SENDGRID, tuned anti-Promotions, ~9% replies — do not
+# read this comment as "outreach uses Gmail"; it doesn't. Audited 2026-08-15.);
 # SendGrid remains the fallback and still carries owner digests if Gmail creds
 # are absent. Configure on Railway: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET,
 # GMAIL_REFRESH_TOKEN. From: NURTURE_GMAIL_FROM (Gmail silently rewrites to the
