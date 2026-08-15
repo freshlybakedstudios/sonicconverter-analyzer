@@ -244,7 +244,9 @@ def build_touch(lead: dict, touch: int):
     # UTM-tagged so nurture clicks classify as Email in GA4 instead of Direct
     # (2026-07-29 audit: the Email channel showed literally zero sessions).
     rates = f"{FRONTEND_URL}/rates?utm_source=nurture&utm_medium=email&utm_campaign=touch{touch}"
-    for_artist = f" for {v['artist']}" if v["artist"] else ""
+    # Skip "for <artist>" when the greeting already IS the artist name —
+    # "hey TeeMoneyyy ... a project for TeeMoneyyy" reads robotic (2026-08-15).
+    for_artist = f" for {v['artist']}" if v["artist"] and v["artist"] != v["greet"] else ""
     price = f" — ${v['value']:,}" if isinstance(v["value"], (int, float)) and v["value"] else ""
     svc = v["service_str"]
     # Adapt the sentence whether or not we know the specific services.
