@@ -334,12 +334,20 @@ def build_touch(lead: dict, touch: int):
             subject = f"{v['greet']}, I listened to {obs_track}. It's Alexander, the human this time"
         else:
             subject = "the actual human this time"
+        # Sonic reference artists (2026-08-15): stamped by nurture_personalize
+        # via the analyzer's hardened matcher (lane + clash vetoes). Exactly 2
+        # names or nothing — never rendered unless both survived the gates.
+        similar = pers.get("similar") or []
+        refs_line = (
+            f" Sits somewhere between {similar[0]} and {similar[1]} to my ear."
+            if len(similar) == 2 else ""
+        )
         if obs:
             obs = obs[:1].upper() + obs[1:]
             listened = (
                 f"<p>Before writing this I pulled up "
                 f"{obs_track if obs_track else 'your music'}. "
-                f"{obs}</p>"
+                f"{obs}{refs_line}</p>"
                 f"<p>That's the kind of thing I'd dig into properly on a free pass at "
                 f"your track. What I'd do with it, what's holding it back, whether it "
                 f"even needs what you priced out.</p>"
