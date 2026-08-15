@@ -276,19 +276,27 @@ def build_touch(lead: dict, touch: int):
         # button). Advice-with-no-ask + the evergreen listen offer. Streams
         # figure must stay "3.3B+" (12.3B Muso number is disputed mislinks).
         subject = "closing your file (for real)"
+        # Voice pass + price-structure paragraph 2026-08-15. The flex line names
+        # STRUCTURAL options only (scope, installments, $250 reserve — all live
+        # on the checkout), never a discount; it shows only to leads already
+        # silent after 3 touches, so full-price buyers never see it.
         body = f"""
-          <p>Hey {v['greet']} — last one from me, promise.</p>
-          <p>Your quote's saved if the record comes back around:
-             <a href="{rates}">{FRONTEND_URL}/rates</a>. And the listen offer from my
-             last email doesn't expire — the drop link
+          <p>hey {v['greet']}, last one from me, promise.</p>
+          <p>your quote's saved if the record comes back around:
+             <a href="{rates}">{FRONTEND_URL}/rates</a>. and the listen offer from my
+             last email doesn't expire. the drop link
              (<a href="{DROPBOX_REQUEST_URL}">here</a>) and
              <a href="{CAL_BOOKING_URL}">my calendar</a> both work months from now.</p>
-          <p>One thing before I go quiet: whoever you end up trusting with
+          <p>also, if the number was the blocker, just say so. there's usually a way in.
+             fewer songs to start, splitting the payments, or locking it in for $250 now
+             and starting when the record's ready. i'd rather shape the deal than lose
+             the song.</p>
+          <p>one thing before i go quiet: whoever you end up trusting with
              {project_phrase2}{for_artist}, make them play you something they mixed in your
-             genre first. That one ask filters out most of the bad experiences in this
+             genre first. that one ask filters out most of the bad experiences in this
              business.</p>
-          <p>Rooting for the record either way.</p>
-          <p>Alexander<br>
+          <p>rooting for the record either way.</p>
+          <p>alexander<br>
              <span style="color:#888">(917) 286-7324<br>
              <a href="https://www.instagram.com/alexanderalmgren/" style="color:#888">@alexanderalmgren</a>
              · <a href="https://freshlybakedstudios.com" style="color:#888">freshlybakedstudios.com</a></span></p>
