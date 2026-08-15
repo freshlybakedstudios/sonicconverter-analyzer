@@ -251,6 +251,7 @@ def build_touch(lead: dict, touch: int):
     # UTM-tagged so nurture clicks classify as Email in GA4 instead of Direct
     # (2026-07-29 audit: the Email channel showed literally zero sessions).
     rates = f"{FRONTEND_URL}/rates?utm_source=nurture&utm_medium=email&utm_campaign=touch{touch}"
+    reviews = f"{FRONTEND_URL}/reviews?utm_source=nurture&utm_medium=email&utm_campaign=touch{touch}"
     # Skip "for <artist>" when the greeting already IS the artist name —
     # "hey TeeMoneyyy ... a project for TeeMoneyyy" reads robotic (2026-08-15).
     for_artist = f" for {v['artist']}" if v["artist"] and v["artist"] != v["greet"] else ""
@@ -275,6 +276,14 @@ def build_touch(lead: dict, touch: int):
                font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
                See my pricing</a>
           </p>
+          <p style="color:#ccc">Nothing's locked in yet, to be clear. The quote is a bookmark,
+             not a commitment. Booking only happens when you pick a payment option on the
+             rates page, and if the record isn't finished there's a $250 reserve that
+             holds your slot until it is.</p>
+          <p style="color:#ccc">If you'd rather hear how this goes for other artists first,
+             the <a href="{reviews}" style="color:#D8E166">reviews page</a> is all real
+             clients, most of them independent artists who came in exactly where you are
+             now.</p>
           <p style="color:#ccc">And if something's holding you back — budget, timeline, a question
              about the deal — just hit reply. It comes straight to my phone, not a
              support inbox.</p>
