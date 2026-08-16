@@ -6449,8 +6449,8 @@ async def analyzer_upgrade_status(session_id: str, token: str):
                 supabase.table('users').update({
                     'fresh_capture': True,
                     'full_enrichment': True,
-                    # Paid Pro = 50 scans (owner 2026-08-15; beta free-Pro = 10)
-                    'max_scans': max(int(lead.get('max_scans') or 3), 50),
+                    # Paid Pro = 25 scans (owner 2026-08-15; beta free-Pro = 10)
+                    'max_scans': max(int(lead.get('max_scans') or 3), 25),
                 }).eq('id', lead['id']).execute()
                 print(f"Analyzer upgrade: user {lead['id']} unlocked (session {session_id[:12]})")
                 try:
