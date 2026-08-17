@@ -1593,6 +1593,7 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             'dev_alignment': dev_alignment,
             'pronoun': (x.get('pronoun_title') or '').strip(),
             'non_native': _cand_non_native(x),
+            'tag_aff': x.get('_tag_aff', 0.0),
         })
     if not scored: return []
 
@@ -1653,6 +1654,10 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
         # a Malaysian comp in a US pitch deck is a weaker proof point).
         if not user_non_native and c.get('non_native'):
             c['combined_score'] = round(c['combined_score'] - 0.02, 3)
+        # Rarity-weighted tag affinity (parity with similar/trajectory):
+        # sharing the user's rare subgenres makes a genre-truer comp.
+        if c.get('tag_aff'):
+            c['combined_score'] = round(c['combined_score'] + c['tag_aff'], 3)
     qualified.sort(key=lambda c: -c['combined_score'])
     return qualified[:n]
 
@@ -2723,14 +2728,21 @@ async def analyze(
         else:
             artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
             seen, tags = set(), []
-            for g in artist_parts:
-                lg = g.lower()
-                if lg in seen:
-                    continue
-                if _genre_families(g):
-                    tags.append(g); seen.add(lg)
+            # Two passes: specific tags first, contentless 'alternative'
+            # variants only if nothing specific resolves (parity with URL path).
+            for allow_umbrella in (False, True):
+                for g in artist_parts:
                     if len(tags) >= 2:
                         break
+                    lg = g.lower()
+                    if lg in seen:
+                        continue
+                    if umbrella_lane_tag(g) and not allow_umbrella:
+                        continue
+                    if _genre_families(g):
+                        tags.append(g); seen.add(lg)
+                if tags:
+                    break
             user_families = user_lane_families(*tags) if tags else set()
 
         print(f"  Upload lane (heavy-weight dropdown): {user_families} | "
@@ -2816,10 +2828,16 @@ async def analyze(
                 print(f"  Country boost: {boosted_count} matches from {boost_code2} boosted +{COUNTRY_BOOST*100:.0f}%")
 
         # Ordering nudges on Similar Artists (parity with URL path):
-        # faith-first tiering + pronoun affinity. Displayed similarity
-        # untouched, only rank shifts.
+        # faith-first tiering + pronoun affinity + rarity-weighted tag
+        # affinity. Displayed similarity untouched, only rank shifts.
+        _upload_aff_tags = matcher.affinity_tag_set(artist_genre or '',
+                                                    dropdown_genre or '',
+                                                    lane=user_families)
+        for m in all_matches:
+            m['_tag_aff'] = matcher.tag_affinity_bonus(_upload_aff_tags, m)
         all_matches.sort(key=lambda x: ((1.0 if (_upload_faith_filter and is_faith_world(x)) else 0.0)
                                         + x.get('similarity', 0)
+                                        + x.get('_tag_aff', 0.0)
                                         + (0.02 if (user_pronoun and (x.get('pronoun_title') or '') == user_pronoun) else 0.0)),
                          reverse=True)
 
@@ -2930,7 +2948,7 @@ async def analyze(
                 if user_pronoun and cand_pronoun and cand_pronoun == user_pronoun:
                     pronoun_boost = 0.035  # 3.5% boost for matching pronouns
 
-                total_boost = genre_boost + pronoun_boost
+                total_boost = genre_boost + pronoun_boost + m.get('_tag_aff', 0.0)
                 # Aesthetic-clash veto (parity with URL-path trajectory).
                 if aesthetic_clash(m, upload_aggr_ctx):
                     continue
@@ -5017,9 +5035,17 @@ async def analyze_url(
     # ABOVE the genre-matched secular fill — the 1.0 term dominates every
     # similarity/nudge difference, so ordering inside each block stays the
     # normal nudged-sonic ranking.
+    # Rarity-weighted tag affinity (ordering only, displayed sim untouched):
+    # stamped once per match so the flattery loop and comparables reuse it.
+    _user_aff_tags = matcher.affinity_tag_set(artist_genre or '', track_genre or '',
+                                              genre or '', dropdown_genre or '',
+                                              lane=track_user_families)
+    for m in all_found:
+        m['_tag_aff'] = matcher.tag_affinity_bonus(_user_aff_tags, m)
     all_found.sort(key=lambda m: ((1.0 if (_faith_filter and is_faith_world(m)) else
                                    0.0 if _faith_filter else 0.0)
                                   + m.get('similarity', 0)
+                                  + m.get('_tag_aff', 0.0)
                                   - (NON_NATIVE_TRAJECTORY_PENALTY
                                      if (not user_non_native and _cand_non_native(m)) else 0.0)
                                   - _retro_penalty(m)
@@ -5121,7 +5147,8 @@ async def analyze_url(
             # Slight market penalty: nudge foreign-market targets down so they
             # interleave with same-market peers instead of stacking on top.
             nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _cand_non_native(m)) else 0.0
-            score = m.get('similarity', 0) + total_boost - nn_penalty - _retro_penalty(m)
+            score = (m.get('similarity', 0) + total_boost + m.get('_tag_aff', 0.0)
+                     - nn_penalty - _retro_penalty(m))
             # Faith-first tiering: faith-world targets lead the trajectory
             # for faith-world users; genre-matched secular follow.
             faith_rank = 1 if (_faith_filter and is_faith_world(m)) else 0
