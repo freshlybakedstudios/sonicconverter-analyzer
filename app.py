@@ -1499,6 +1499,30 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     if len(found_matches) < 5 or len(high_converter_gems) < 10:
         return []
 
+    # Energy-world gate (2026-08-17, owner: "the song could be on an
+    # aggressive lens" — Better Man captures hot at 0.42 energy, above the
+    # metal envelope's p95, yet spectrally-similar ballads passed because
+    # the similarity energy penalty starts at 0.15 distance and climbs
+    # gently). A pitch comp must live in the same energy world as the
+    # track: per-track, tag-free — a hot scan draws gritty comps, a soft
+    # scan draws soft ones. Skipped when it would starve the pool (<12) or
+    # when the candidate row has no energy value (sparse data passes).
+    _u_energy = (user_features or {}).get('energy')
+    if _u_energy is not None:
+        def _energy_dist(x):
+            row = gems_by_isrc.get(x.get('isrc')) or {}
+            v = row.get('energy')
+            try:
+                return abs(float(v) - float(_u_energy))
+            except (TypeError, ValueError):
+                return None
+        _close = [x for x in found_matches
+                  if (_energy_dist(x) is None or _energy_dist(x) <= 0.12)]
+        if len(_close) >= 12:
+            print(f"  Pitch comparables: energy-world gate {len(found_matches)} -> "
+                  f"{len(_close)} (user energy {float(_u_energy):.2f} +/-0.12)")
+            found_matches = _close
+
     # Pool-adaptive weighting (2026-08-17, owner: comps felt sonically far
     # removed; superstar pools run thinner than mid-tier). Keyed off the
     # MEASURED qualified-pool depth, not the tier label — depth is the thing
