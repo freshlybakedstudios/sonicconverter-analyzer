@@ -3055,11 +3055,14 @@ document.addEventListener('DOMContentLoaded', initFloatingPies);
 // Five stages of the journey. Cards keep their own show/hide logic; tabs only
 // toggle .tab-hide (display:none !important) on cards outside the active tab.
 const RESULT_TABS = {
+  // 2026-08-17 (owner): Trajectory tab dissolved into Your Peers; A&R pitch
+  // comparables lives under Sonic Quadrant on Your Sound.
   sound: ['sonic-breakdown-card', 'freq-balance-card', 'emotion-card',
-          'sonic-originality-card', 'sonic-quadrant-card'],
-  peers: ['similar-artists-card', 'audience-match-card', 'conversion-card'],
-  trajectory: ['flattery-card', 'track-momentum'],
-  pitch: ['pitch-comparables-card', 'editorial-playlists-card',
+          'sonic-originality-card', 'sonic-quadrant-card',
+          'pitch-comparables-card'],
+  peers: ['similar-artists-card', 'audience-match-card', 'conversion-card',
+          'flattery-card', 'track-momentum'],
+  pitch: ['editorial-playlists-card',
           'all-playlists-card', 'curator-emails-card', 'credits-card'],
   production: ['production-recs-card', 'campaign-forecast-card'],
 };

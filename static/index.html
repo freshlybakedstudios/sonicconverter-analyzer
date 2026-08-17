@@ -407,7 +407,6 @@
         <button class="results-tab active" data-tab="sound">Your Sound</button>
         <button class="results-tab" data-tab="peers">Your Peers</button>
         <button class="results-tab" data-tab="production">Production Notes</button>
-        <button class="results-tab" data-tab="trajectory">Trajectory</button>
         <button class="results-tab" data-tab="pitch">Pitch Kit <span class="tab-lock" id="pitch-tab-lock">🔒</span></button>
       </nav>
 
@@ -437,13 +436,6 @@
       </div>
 
       <!-- 5. Trajectory Targets -->
-      <div class="result-card hidden" id="flattery-card">
-        <h3>Trajectory Targets</h3>
-        <p class="card-sub">Higher-tier artists that match your sonic profile</p>
-        <div id="flattery-list"></div>
-      </div>
-
-      <!-- 6. Audience Match (double-validated via CM Related Artists) -->
       <div class="result-card hidden" id="audience-match-card">
         <h3>Audience Match</h3>
         <p class="card-sub">Artists with confirmed audience overlap — sonic similarity + Chartmetric Related Artists</p>
@@ -471,6 +463,13 @@
 
         <!-- Track-level momentum panel (shown when scanned track is in our universe
              OR live-fetched from Spotify/Chartmetric on cache miss). -->
+      <div class="result-card hidden" id="flattery-card">
+        <h3>Trajectory Targets</h3>
+        <p class="card-sub">Higher-tier artists that match your sonic profile</p>
+        <div id="flattery-list"></div>
+      </div>
+
+      <!-- 6. Audience Match (double-validated via CM Related Artists) -->
         <div class="track-momentum hidden" id="track-momentum">
           <div class="track-momentum-title">Where Your Track Stands <span class="track-momentum-sub" id="tm-peer-count"></span></div>
           <p class="track-momentum-tagline">How this song is performing right now, compared to tracks that sound like yours.</p>
