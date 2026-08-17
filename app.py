@@ -59,7 +59,7 @@ from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
                            candidate_lane_families, user_lane_families,
                            resolve_scan_lane, primary_in_lane,
                            track_tags_contradict, aggressive_lane_context,
-                           aesthetic_clash, EXCLUSIVE_FAMILIES, is_faith_world,
+                           aesthetic_clash, EXCLUSIVE_FAMILIES, is_faith_world, faith_dominant,
                            isrc_year)
 
 # ---------------------------------------------------------------------------
@@ -2740,7 +2740,7 @@ async def analyze(
         # dropped the styling families from the collapsed lane.
         _upload_faith_filter = False
         _u_probe = user_families | user_lane_families(artist_genre or '')
-        if 'gospel' in _u_probe:
+        if 'gospel' in _u_probe and faith_dominant(dropdown_genre or '', artist_genre or ''):
             _u_raw = set()
             for _gs in (dropdown_genre or '', artist_genre or ''):
                 for _t in _gs.split(','):
@@ -4902,7 +4902,9 @@ async def analyze_url(
     # only, no styling) keep the gospel lane unchanged.
     _faith_filter = False
     _faith_probe = track_user_families | user_lane_families(artist_genre or '')
-    if 'gospel' in _faith_probe:
+    # faith_dominant guard (2026-08-17): one souvenir 'gospel' tag must not
+    # flip a rock band's scan into the faith market.
+    if 'gospel' in _faith_probe and faith_dominant(_lane_track_src, artist_genre or ''):
         # Styling must come from the RAW tag soup — dominance voting may
         # have already dropped the styling families before we get here
         # (Jon Keith: genre pick 'christian hip-hop, gospel' voted gospel-

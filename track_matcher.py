@@ -713,6 +713,32 @@ def aesthetic_clash(m: Dict, aggressive_ctx: bool) -> bool:
 # lane carries 'gospel' PLUS a real styling family, the styling is the lane
 # and faith becomes a candidate-side membership test — match the actual
 # genre styling within the Christian lens (owner's framing).
+def faith_dominant(*genre_strings: str) -> bool:
+    """True when faith is a DOMINANT part of the artist's identity, not a
+    souvenir tag (2026-08-17, The Black Crowes scan: one 'gospel' tag among
+    'alternative rock, gospel, hard rock' flipped the whole scan into the
+    faith market). Dominant = 2+ faith-family tokens, or faith is at least
+    40% of the mapped tokens. Jon Keith ('christian hip-hop, gospel') stays
+    dominant; a rock band with gospel influences does not."""
+    faith = total = 0
+    for gs in genre_strings:
+        if not gs:
+            continue
+        for t in gs.replace('/', ',').split(','):
+            t = t.strip()
+            if not t:
+                continue
+            fams = _genre_families(t)
+            if not fams:
+                continue
+            total += 1
+            if 'gospel' in fams:
+                faith += 1
+    if faith == 0:
+        return False
+    return faith >= 2 or (faith / max(total, 1)) >= 0.4
+
+
 def is_faith_world(m: Dict) -> bool:
     """True when the candidate belongs to the faith market (any of their
     tags resolves into the gospel family — the mapping gives 'gospel' to
