@@ -4,6 +4,7 @@ Adapted from final_sonic_matcher.py - runs entirely from the pre-built cache.
 """
 
 import json
+import math
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -410,6 +411,37 @@ def umbrella_lane_tag(genre: str) -> bool:
         if lg.startswith(prefix) and lg[len(prefix):].strip() == 'alternative':
             return True
     return lg.endswith(' alternative')  # 'north american alternative' etc.
+
+
+# --- Rarity-weighted tag affinity (2026-08-17, owner: comps/similar should be
+# genre-right first with sonics breaking ties). ORDERING-ONLY bonus, same
+# family as the pronoun/retro/foreign-market nudges: for every specific tag a
+# candidate shares with the user's own profile, add a weight inversely
+# proportional (log-scaled) to how many universe artists carry that tag —
+# sharing 'jangle pop' (49 artists) means a lot, sharing 'rock' (35k) means
+# almost nothing. Umbrella 'alternative' variants get no weight; regional
+# prefixes collapse onto their base tag so 'us rock' can't masquerade as rare;
+# near-unique tags are df-floored (a one-off tag is as likely vendor noise as
+# identity). Total is capped so sonics always dominate — this reorders
+# neighbors, it can never catapult. Candidates sharing nothing keep their pure
+# sonic rank (no penalty side).
+AFFINITY_TOTAL_CAP = 0.035
+AFFINITY_TAG_CAP = 0.018
+_AFFINITY_K = 0.002
+_AFFINITY_DF_FLOOR = 10
+
+
+def _affinity_base_tag(genre: str) -> str:
+    """Normalize a tag for affinity counting/matching: lowercase, regional
+    prefix stripped, umbrella 'alternative' variants dropped ('')."""
+    lg = (genre or '').strip().lower()
+    if not lg or umbrella_lane_tag(lg):
+        return ''
+    for prefix in _REGION_PREFIXES:
+        if lg.startswith(prefix):
+            lg = lg[len(prefix):].strip()
+            break
+    return '' if lg == 'alternative' else lg
 
 
 def user_lane_families(*genre_strings: str) -> Set[str]:
@@ -849,6 +881,8 @@ class TrackMatcher:
         self._tiers = {}
         self._emotion_index = {}
         self._cand_cache = {}
+        self._tag_df = {}
+        self._n_artist_records = 1
 
     def load_cache(self):
         """Load the 1.2 GB universe cache into memory."""
@@ -915,8 +949,66 @@ class TrackMatcher:
                 ),
             }
 
+        # Tag document frequency over ARTIST records (how many artists carry
+        # each normalized tag) — powers the rarity-weighted affinity nudge.
+        self._tag_df = {}
+        for _adata in self._artists.values():
+            _seen_tags = set()
+            for _t in _parse_track_genres(_adata.get('genres', '') or ''):
+                _bt = _affinity_base_tag(_t)
+                if _bt:
+                    _seen_tags.add(_bt)
+            for _bt in _seen_tags:
+                self._tag_df[_bt] = self._tag_df.get(_bt, 0) + 1
+        self._n_artist_records = max(1, len(self._artists))
+
         stats = self.cache.get('stats', {})
-        print(f"  Loaded in {elapsed:.1f}s — {stats.get('total_gems', 0):,} GEMS records, {enriched:,} enriched with conversion_rate, {len(self._cand_cache):,} candidate profiles precomputed")
+        print(f"  Loaded in {elapsed:.1f}s — {stats.get('total_gems', 0):,} GEMS records, {enriched:,} enriched with conversion_rate, {len(self._cand_cache):,} candidate profiles precomputed, {len(self._tag_df):,} affinity tags counted")
+
+    def affinity_tag_set(self, *genre_sources, lane: Optional[Set[str]] = None) -> Set[str]:
+        """Normalized specific-tag set for the USER side of the affinity
+        nudge. Accepts comma-strings or lists; umbrella/empty tags drop.
+        With a lane, vendor-noise tags whose families are exclusively foreign
+        to it get no say (Slow Pulp's souvenir 'us metal' must not grant
+        affinity credit to metal-adjacent acts)."""
+        out = set()
+        for gs in genre_sources:
+            if not gs:
+                continue
+            parts = gs if isinstance(gs, (list, tuple, set)) else str(gs).split(',')
+            for t in parts:
+                bt = _affinity_base_tag(t)
+                if not bt:
+                    continue
+                if lane:
+                    fams = _genre_families(bt)
+                    if fams and fams <= EXCLUSIVE_FAMILIES and not (fams & lane):
+                        continue
+                out.add(bt)
+        return out
+
+    def tag_affinity_bonus(self, user_tags: Set[str], m: Dict) -> float:
+        """Rarity-weighted ordering bonus in [0, AFFINITY_TOTAL_CAP] for the
+        specific tags this candidate shares with the user's profile. Ordering
+        only — never added to displayed similarity."""
+        if not user_tags:
+            return 0.0
+        cand = [m.get('primary_genre'), m.get('secondary_genre')]
+        cand.extend(m.get('artist_genres') or [])
+        cand.extend(m.get('track_genres') or [])
+        seen, total = set(), 0.0
+        for t in cand:
+            bt = _affinity_base_tag(t) if t else ''
+            if not bt or bt in seen:
+                continue
+            seen.add(bt)
+            if bt in user_tags:
+                df = max(self._tag_df.get(bt, _AFFINITY_DF_FLOOR), _AFFINITY_DF_FLOOR)
+                w = _AFFINITY_K * math.log(self._n_artist_records / df)
+                total += min(max(w, 0.0), AFFINITY_TAG_CAP)
+                if total >= AFFINITY_TOTAL_CAP:
+                    return AFFINITY_TOTAL_CAP
+        return total
 
     def _build_profile(self, row: Dict) -> Dict:
         """Convert a GEMS cache row into a normalized profile dict."""
