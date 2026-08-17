@@ -61,7 +61,7 @@ from track_matcher import (TrackMatcher, _genre_families, umbrella_lane_tag,
                            resolve_scan_lane, primary_in_lane,
                            track_tags_contradict, aggressive_lane_context,
                            aesthetic_clash, EXCLUSIVE_FAMILIES, is_faith_world, faith_dominant,
-                           isrc_year)
+                           isrc_year, sparse_identity_penalty)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -2834,7 +2834,8 @@ async def analyze(
                                                     dropdown_genre or '',
                                                     lane=user_families)
         for m in all_matches:
-            m['_tag_aff'] = matcher.tag_affinity_bonus(_upload_aff_tags, m)
+            m['_tag_aff'] = (matcher.tag_affinity_bonus(_upload_aff_tags, m)
+                             - sparse_identity_penalty(m))
         all_matches.sort(key=lambda x: ((1.0 if (_upload_faith_filter and is_faith_world(x)) else 0.0)
                                         + x.get('similarity', 0)
                                         + x.get('_tag_aff', 0.0)
@@ -5041,7 +5042,8 @@ async def analyze_url(
                                               genre or '', dropdown_genre or '',
                                               lane=track_user_families)
     for m in all_found:
-        m['_tag_aff'] = matcher.tag_affinity_bonus(_user_aff_tags, m)
+        m['_tag_aff'] = (matcher.tag_affinity_bonus(_user_aff_tags, m)
+                         - sparse_identity_penalty(m))
     all_found.sort(key=lambda m: ((1.0 if (_faith_filter and is_faith_world(m)) else
                                    0.0 if _faith_filter else 0.0)
                                   + m.get('similarity', 0)

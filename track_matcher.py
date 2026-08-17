@@ -425,9 +425,9 @@ def umbrella_lane_tag(genre: str) -> bool:
 # identity). Total is capped so sonics always dominate — this reorders
 # neighbors, it can never catapult. Candidates sharing nothing keep their pure
 # sonic rank (no penalty side).
-AFFINITY_TOTAL_CAP = 0.035
-AFFINITY_TAG_CAP = 0.018
-_AFFINITY_K = 0.002
+AFFINITY_TOTAL_CAP = 0.05   # 2026-08-17 owner: "a little more weight" (was 0.035)
+AFFINITY_TAG_CAP = 0.022    # was 0.018
+_AFFINITY_K = 0.003         # was 0.002
 _AFFINITY_DF_FLOOR = 10
 
 
@@ -442,6 +442,31 @@ def _affinity_base_tag(genre: str) -> str:
             lg = lg[len(prefix):].strip()
             break
     return '' if lg == 'alternative' else lg
+
+
+SPARSE_IDENTITY_PENALTY = 0.012
+
+
+def sparse_identity_penalty(m: Dict) -> float:
+    """Ordering penalty for candidates with almost no verifiable genre
+    identity (2026-08-17, DWP/Currents on the Slow Pulp card: metalcore
+    bands whose vendor rows carry one bare 'rock' tag or nothing — no gate
+    can place them, and their captured features measure inside the soft
+    envelope, so tags are the only witness and the witness is absent).
+    Symmetric with the rarity bonus: rich verified identity earns rank,
+    absent identity costs it. Ordering only, universal across genres."""
+    tags = set()
+    for t in ([m.get('primary_genre'), m.get('secondary_genre')]
+              + list(m.get('artist_genres') or [])
+              + list(m.get('track_genres') or [])):
+        bt = _affinity_base_tag(t) if t else ''
+        if bt:
+            tags.add(bt)
+    if not tags:
+        return 2 * SPARSE_IDENTITY_PENALTY
+    if len(tags) == 1:
+        return SPARSE_IDENTITY_PENALTY
+    return 0.0
 
 
 def user_lane_families(*genre_strings: str) -> Set[str]:
