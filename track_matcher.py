@@ -5,6 +5,7 @@ Adapted from final_sonic_matcher.py - runs entirely from the pre-built cache.
 
 import json
 import math
+import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -759,11 +760,36 @@ SOFT_AESTHETIC_TOKENS = (
 
 def aggressive_lane_context(lane: Set[str], *user_genre_strings) -> bool:
     """True when the scan's identity is aggressive-lane: punk/metal in the
-    resolved lane, or an aggressive token anywhere in the user's own tags."""
+    resolved lane, or DOMINANT aggressive presence in the user's own tags.
+    Dominance guard (2026-08-17, Slow Pulp: one souvenir 'us metal' tag in a
+    13-tag jangle/dream soup flipped the scan aggressive, and the soft-act
+    veto started dropping the user's own dreamy peers — same disease
+    faith_dominant cured for gospel): one noise token is not an identity.
+    2+ aggressive-reading tags, or aggressive tags = 40%+ of the soup."""
     if lane & {'punk', 'metal'}:
         return True
-    blob = ' '.join(g for g in user_genre_strings if g).lower()
-    return any(t in blob for t in AGGRESSIVE_CONTEXT_TOKENS)
+    tags = []
+    for gs in user_genre_strings:
+        if gs:
+            tags.extend(t.strip().lower() for t in str(gs).split(',') if t.strip())
+    if not tags:
+        return False
+
+    def _tag_aggressive(tag):
+        # Word-boundary matching: 'bubblegrunge' must NOT hit on 'grunge'
+        # (it's a soft indie microgenre), while 'pop punk', 'post-hardcore'
+        # and 'metalcore' still hit. Multi-word tokens phrase-match.
+        words = set(re.split(r'[^a-z&]+', tag))
+        for tok in AGGRESSIVE_CONTEXT_TOKENS:
+            if ' ' in tok or '-' in tok:
+                if tok in tag:
+                    return True
+            elif tok in words:
+                return True
+        return False
+
+    hits = sum(1 for t in tags if _tag_aggressive(t))
+    return hits >= 2 or hits / len(tags) >= 0.4
 
 
 def aesthetic_clash(m: Dict, aggressive_ctx: bool) -> bool:
