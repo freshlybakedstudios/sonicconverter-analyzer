@@ -4503,8 +4503,11 @@ async def analyze_url(
         # Cache-first (same 30d Supabase read-through the deal calculator uses,
         # ~4-5s saved per scan on known artists); live Chartmetric only on miss.
         track_artist_cm_data = _cached_artist_lookup(artist_spotify_url)
-        if track_artist_cm_data and not (track_artist_cm_data.get('genres') or '').strip():
-            # Cache row exists but carries NO genres (2026-08-09, Jon Keith:
+        if track_artist_cm_data and len([g for g in (track_artist_cm_data.get('genres') or '').split(',') if g.strip()]) < 2:
+            # Cache row is genre-less OR thin (<2 tags). 2026-08-09 Jon Keith:
+            # empty genres collapsed identity. 2026-08-17 Slow Pulp: a single
+            # 'art pop' tag starved the lane the same way — indie kin unreachable.
+            # Original note (2026-08-09, Jon Keith:
             # artists-table row had listeners history but genres=None — the
             # cache hit short-circuited live CM, identity collapsed, lane
             # emptied, 3,998-match free-for-all). Genres are the identity
