@@ -1499,6 +1499,26 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     if len(found_matches) < 5 or len(high_converter_gems) < 10:
         return []
 
+    # Pool-adaptive weighting (2026-08-17, owner: comps felt sonically far
+    # removed; superstar pools run thinner than mid-tier). Keyed off the
+    # MEASURED qualified-pool depth, not the tier label — depth is the thing
+    # that actually varies. Deep pool → be picky: raise the sonic floor to
+    # 0.75 and let sonics lead the combined score. Mid pool → sonics edge
+    # ahead. Thin pool → keep the original balanced needle-mover weighting
+    # so the card never starves (it returns [] below 5 rather than padding).
+    pool_75 = [m for m in found_matches if (m.get('similarity') or 0) >= 0.75]
+    if len(pool_75) >= 25:
+        found_matches = pool_75
+        w_sim, w_perf, w_orig = 0.45, 0.275, 0.275
+        _w_profile = f'deep (n={len(pool_75)} @0.75 floor)'
+    elif len(found_matches) >= 12:
+        w_sim, w_perf, w_orig = 0.40, 0.30, 0.30
+        _w_profile = f'mid (n={len(found_matches)})'
+    else:
+        w_sim, w_perf, w_orig = 0.30, 0.35, 0.35
+        _w_profile = f'thin (n={len(found_matches)})'
+    print(f"  Pitch comparables: weight profile {_w_profile} -> sim={w_sim}")
+
     # Cohort centroid in z-space (same construction _compute_originality uses)
     centroid, stds = {}, {}
     for feat in PRODUCTION_FEATURES:
@@ -1633,15 +1653,14 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             soft_qualified = [c for c in scored if c['perf_pct'] >= p_floor and c['orig_score'] >= o_floor]
             qualified = soft_qualified if len(soft_qualified) >= n else scored
 
-    # Reweight combined score to favor perf + orig over raw similarity.
-    # Pitch comparables are A&R proof points — "moving the needle" matters
-    # at least as much as sonic similarity. Bump perf + orig from 0.30 each
-    # to 0.35 each; drop similarity from 0.40 to 0.30.
+    # Combined score uses the pool-adaptive weights chosen above: deep pools
+    # let sonics lead (a comp must survive the A&R's ear test first), thin
+    # pools keep the balanced needle-mover weighting.
     for c in qualified:
         c['combined_score'] = round(
-            0.30 * c['similarity']
-            + 0.35 * c['perf_pct']
-            + 0.35 * (c['orig_score'] / 100),
+            w_sim * c['similarity']
+            + w_perf * c['perf_pct']
+            + w_orig * (c['orig_score'] / 100),
             3,
         )
         # Pronoun-affinity nudge (2026-08-09, owner: "more julias than
