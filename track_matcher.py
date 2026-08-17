@@ -266,6 +266,25 @@ _REGION_PREFIXES = (
 )
 
 
+# Multi-family subgenres (2026-08-17, the Slow Pulp scan): dreamy/jangly pop
+# subgenres are sonically INDIE kin — mapping them only to 'pop' fenced them
+# out of indie-rock lanes, leaving those scans matching against generic rock
+# (incl. mis-tagged metalcore). These tags now carry BOTH families, so they
+# are in-lane for indie/rock artists AND still reachable from pop lanes.
+_MULTI_FAMILY_OVERRIDES: Dict[str, Set[str]] = {
+    'dream pop': {'pop', 'indie'},
+    'jangle pop': {'pop', 'indie'},
+    'jangle': {'pop', 'indie'},
+    'bedroom pop': {'pop', 'indie'},
+    'chamber pop': {'pop', 'indie'},
+    'noise pop': {'pop', 'indie'},
+    'indie pop': {'pop', 'indie'},
+    'shoegaze': {'indie', 'rock'},
+    'slowcore': {'indie', 'rock'},
+    'indie rock': {'rock', 'indie'},
+}
+
+
 def _genre_families(*genre_strings: str) -> Set[str]:
     """Resolve genre families from raw genre strings using the comprehensive mapping.
 
@@ -283,12 +302,18 @@ def _genre_families(*genre_strings: str) -> Set[str]:
             continue
         # Step 1: try the full input phrase first
         full = gs.strip().lower()
+        if full in _MULTI_FAMILY_OVERRIDES:
+            families.update(_MULTI_FAMILY_OVERRIDES[full])
+            continue
         if full in _GENRE_FAMILY_MAP:
             families.add(_GENRE_FAMILY_MAP[full])
             continue
         # Step 2: split on comma OR slash (handles multi-tag strings)
         terms = [t.strip().lower() for t in gs.replace('/', ',').split(',') if t.strip()]
         for term in terms:
+            if term in _MULTI_FAMILY_OVERRIDES:
+                families.update(_MULTI_FAMILY_OVERRIDES[term])
+                continue
             if term in _GENRE_FAMILY_MAP:
                 families.add(_GENRE_FAMILY_MAP[term])
                 continue
