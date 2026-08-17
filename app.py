@@ -1530,18 +1530,28 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     # 0.75 and let sonics lead the combined score. Mid pool → sonics edge
     # ahead. Thin pool → keep the original balanced needle-mover weighting
     # so the card never starves (it returns [] below 5 rather than padding).
+    # Each profile also sets the QUALIFICATION bar (q_perf percentile /
+    # q_orig score). The strict Signature-of-Success bar (0.75/75) made the
+    # winners pre-decide the card and the sonic weights just rearranged
+    # leftovers — the sonically-closest act sat 4th while the best performer
+    # topped it at 0.78 sim (2026-08-17, owner unconvinced three rounds
+    # running). Deep pools can demand close-AND-winning: bar drops to
+    # above-median performance (still converting) and sonics genuinely lead.
     pool_75 = [m for m in found_matches if (m.get('similarity') or 0) >= 0.75]
     if len(pool_75) >= 25:
         found_matches = pool_75
-        w_sim, w_perf, w_orig = 0.45, 0.275, 0.275
+        w_sim, w_perf, w_orig = 0.65, 0.175, 0.175
+        q_perf, q_orig = 0.50, 60
         _w_profile = f'deep (n={len(pool_75)} @0.75 floor)'
     elif len(found_matches) >= 12:
-        w_sim, w_perf, w_orig = 0.40, 0.30, 0.30
+        w_sim, w_perf, w_orig = 0.45, 0.275, 0.275
+        q_perf, q_orig = 0.65, 70
         _w_profile = f'mid (n={len(found_matches)})'
     else:
         w_sim, w_perf, w_orig = 0.30, 0.35, 0.35
+        q_perf, q_orig = 0.75, 75
         _w_profile = f'thin (n={len(found_matches)})'
-    print(f"  Pitch comparables: weight profile {_w_profile} -> sim={w_sim}")
+    print(f"  Pitch comparables: weight profile {_w_profile} -> sim={w_sim}, bar perf>={q_perf}/orig>={q_orig}")
 
     # Cohort centroid in z-space (same construction _compute_originality uses)
     centroid, stds = {}, {}
@@ -1662,11 +1672,11 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     scored = [c for c in scored if _direction_ok(c)]
     if not scored: return []
 
-    sos_peers = [c for c in scored if c['perf_pct'] >= 0.75 and c['orig_score'] >= 75]
+    sos_peers = [c for c in scored if c['perf_pct'] >= q_perf and c['orig_score'] >= q_orig]
     if len(sos_peers) >= n:
         qualified = sos_peers
     else:
-        winning_or_distinctive = [c for c in scored if c['perf_pct'] >= 0.75 or c['orig_score'] >= 75]
+        winning_or_distinctive = [c for c in scored if c['perf_pct'] >= q_perf or c['orig_score'] >= q_orig]
         if len(winning_or_distinctive) >= n:
             qualified = winning_or_distinctive
         else:
