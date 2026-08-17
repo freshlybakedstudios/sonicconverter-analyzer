@@ -3233,8 +3233,21 @@ async def analyze(
             # filter — same source of truth (user's detected/declared genres).
             _file_upload_user_fams = user_lane_families(genre or '')
             _file_upload_user_primary = _primary_genre_family(genre or '')
+            # Multi-tier comps pool with recognizability floor (parity with
+            # the URL path — tier-locking starved the card). Upload users may
+            # be unreleased, so the floor scales off their listeners when
+            # known, else the 25k minimum.
+            _u_comp_floor = min(max(float(user_monthly or 0) * 0.10, 25_000), 250_000)
+            _u_comps_pool = [m for m in all_matches
+                             if float(m.get('listeners') or 0) >= _u_comp_floor]
+            if len(_u_comps_pool) < 25:
+                _u_comps_pool = matches
+                print(f"  Pitch comparables (upload): floor starved pool — tier-filtered fallback")
+            else:
+                print(f"  Pitch comparables (upload): multi-tier pool {len(_u_comps_pool)} "
+                      f"(floor {int(_u_comp_floor):,})")
             user_profile['pitch_comparables'] = _compute_pitch_comparables(
-                matches, high_converter_gems, matcher._gems_by_isrc,
+                _u_comps_pool, high_converter_gems, matcher._gems_by_isrc,
                 user_families=_file_upload_user_fams,
                 user_primary_family=_file_upload_user_primary,
                 user_features=features,
@@ -5354,17 +5367,31 @@ async def analyze_url(
                 track_momentum.get('composite_percentile'),
             )
 
-        # Pitch comparables — A&R-ready list. Pool is found_matches (same tier,
-        # already genre-family-filtered by the matcher). Pass user_families +
-        # primary family so the alignment + primary-share filters can scope
-        # to the user's dominant lane (catches hybrid-vs-hybrid false positives).
+        # Pitch comparables — A&R-ready list. Pool was found_matches (same
+        # tier) but that tier-locked the card: a superstar scan's qualified
+        # pool collapsed to ~11 names and the card served the same five every
+        # time (2026-08-17, owner: "still pulling the same people"). Now the
+        # pool is the FULL multi-tier hero pool with a recognizability floor —
+        # a comp must be a name an A&R could recognize, scaled to the user
+        # (10% of their listeners, clamped 25k-250k). If the floor starves
+        # the pool below 25, it falls back to the tier-filtered pool.
         # Corrected lane (post exclusive-collapse veto) — not the raw
         # `genre` pick, which is what lied in the Solya case.
         _url_user_fams = set(track_user_families) if track_user_families else user_lane_families(genre or '')
         _url_user_primary = None if _lane_vetoed else _primary_genre_family(genre or '')
+        _comp_floor = min(max((float(user_monthly or 0)) * 0.10, 25_000), 250_000)
+        comps_pool = [m for m in hero_pool_all_tiers
+                      if float(m.get('listeners') or 0) >= _comp_floor]
+        if len(comps_pool) < 25:
+            comps_pool = found_matches
+            print(f"  Pitch comparables: floor {int(_comp_floor):,} starved pool "
+                  f"({len(comps_pool)} fallback to tier-filtered)")
+        else:
+            print(f"  Pitch comparables: multi-tier pool {len(comps_pool)} "
+                  f"(floor {int(_comp_floor):,} listeners)")
         # (_url_user_pronoun resolved earlier, shared by all three surfaces)
         pitch_comparables = _compute_pitch_comparables(
-            found_matches, high_converter_gems_url, matcher._gems_by_isrc,
+            comps_pool, high_converter_gems_url, matcher._gems_by_isrc,
             user_families=_url_user_fams,
             user_primary_family=_url_user_primary,
             user_features=features,
