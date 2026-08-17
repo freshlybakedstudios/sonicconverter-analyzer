@@ -395,6 +395,23 @@ def lane_strong_foreign(allowed: Set[str]) -> Set[str]:
     return strong
 
 
+def umbrella_lane_tag(genre: str) -> bool:
+    """True for lane-contentless tags: 'alternative' and its regional variants
+    map to the rock family but carry no lane identity — a shoegaze band and a
+    metalcore band both wear them (2026-08-17, Slow Pulp: CM track tags were
+    ONLY alternative variants, so the lane collapsed to bare {rock}, flooded
+    with tag-poor rock acts, and excluded the whole jangle/dream/shoegaze
+    cluster whose families are {indie, pop}). Callers skip these during lane
+    seeding whenever any specific tag resolves elsewhere in the soup."""
+    lg = (genre or '').strip().lower()
+    if lg == 'alternative':
+        return True
+    for prefix in _REGION_PREFIXES:
+        if lg.startswith(prefix) and lg[len(prefix):].strip() == 'alternative':
+            return True
+    return lg.endswith(' alternative')  # 'north american alternative' etc.
+
+
 def user_lane_families(*genre_strings: str) -> Set[str]:
     """Build the USER's lane from their genre tags, with exclusive-family
     narrowing (2026-08-07, the Dark Funeral scan: tags 'rock, metal, black

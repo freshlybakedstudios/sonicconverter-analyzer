@@ -55,7 +55,8 @@ from chartmetric_lookup import (
 )
 from email_sender import send_results_email
 from job_manager import JobManager
-from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
+from track_matcher import (TrackMatcher, _genre_families, umbrella_lane_tag,
+                           match_in_lane,
                            candidate_lane_families, user_lane_families,
                            resolve_scan_lane, primary_in_lane,
                            track_tags_contradict, aggressive_lane_context,
@@ -4657,26 +4658,28 @@ async def analyze_url(
             candidate = [g for g in track_parts if g.lower() in artist_lc]
         else:
             candidate = track_parts
+
         seen, tags = set(), []
-        for g in candidate:
-            lg = g.lower()
-            if lg in seen:
-                continue
-            if _genre_families(g):
-                tags.append(g); seen.add(lg)
+
+        def _take(parts, allow_umbrella):
+            for g in parts:
                 if len(tags) >= 2:
-                    break
-        # If we don't have 2 yet, supplement from the artist tags (still
-        # CM-ordered: position 1 = artist primary, etc.).
-        if len(tags) < 2:
-            for g in artist_parts:
+                    return
                 lg = g.lower()
-                if lg in seen:
+                if lg in seen or not _genre_families(g):
                     continue
-                if _genre_families(g):
-                    tags.append(g); seen.add(lg)
-                    if len(tags) >= 2:
-                        break
+                if umbrella_lane_tag(g) and not allow_umbrella:
+                    continue
+                tags.append(g); seen.add(lg)
+
+        # Specific tags first (track positions 1+2, then artist supplement —
+        # still CM-ordered: position 1 = primary), umbrella tags only as a
+        # last resort in the same order (see umbrella_lane_tag: 'alternative'
+        # variants are lane-contentless).
+        _take(candidate, False)
+        _take(artist_parts, False)
+        _take(candidate, True)
+        _take(artist_parts, True)
         # Umbrella deepening: if our positions 1+2 resolve to an umbrella family
         # ONLY (currently just 'electronic' — the family that covers dance,
         # edm, house, techno, dubstep, trance, idm... too broad to define a
@@ -4852,7 +4855,19 @@ async def analyze_url(
     # never reached the lane). user_lane_families dominance-votes the soup,
     # so noise tags can't hijack; dropdown still overrides via `genre`.
     _lane_track_src = dropdown_genre or track_genre or genre or ''
-    track_user_families = resolve_scan_lane(user_lane_families(_lane_track_src),
+    # Umbrella-only track soup ('alternative' variants) carries no lane
+    # identity — filter those tags so a contentless track falls through
+    # resolve_scan_lane's silent-track rule to the artist's real identity.
+    # Dropdown is the user's explicit word and is never filtered.
+    _lane_track_eff = _lane_track_src
+    if not dropdown_genre:
+        _specific_tags = [t.strip() for t in _lane_track_src.split(',')
+                          if t.strip() and not umbrella_lane_tag(t)]
+        _lane_track_eff = ', '.join(_specific_tags)
+        if _lane_track_eff != _lane_track_src:
+            print(f"  Lane source: umbrella tags filtered "
+                  f"('{_lane_track_src}' -> '{_lane_track_eff or '(artist fallback)'}')")
+    track_user_families = resolve_scan_lane(user_lane_families(_lane_track_eff),
                                             user_lane_families(artist_genre or ''))
 
     # Exclusive-collapse corroboration (2026-08-09, Solya: CM tagged an
@@ -5706,19 +5721,27 @@ async def deal_lookup(
             # fallback, electronic umbrella deepening — mirrors the URL path.
             deal_lane = set()
             track_tags = [t for t in (features.get('primary_genre'),
-                                      features.get('secondary_genre')) if t]
+                                      features.get('secondary_genre'))
+                          if t and not umbrella_lane_tag(t)]
             if track_tags:
                 deal_lane = user_lane_families(*track_tags)
             if not deal_lane and genres_str:
                 seen_tags, lane_tags = set(), []
-                for g in (p.strip() for p in genres_str.split(',') if p.strip()):
-                    lg = g.lower()
-                    if lg in seen_tags:
-                        continue
-                    if _genre_families(g):
-                        lane_tags.append(g); seen_tags.add(lg)
+                # Two passes: specific tags first, contentless 'alternative'
+                # variants only if nothing specific resolves.
+                for allow_umbrella in (False, True):
+                    for g in (p.strip() for p in genres_str.split(',') if p.strip()):
                         if len(lane_tags) >= 2:
                             break
+                        lg = g.lower()
+                        if lg in seen_tags:
+                            continue
+                        if umbrella_lane_tag(g) and not allow_umbrella:
+                            continue
+                        if _genre_families(g):
+                            lane_tags.append(g); seen_tags.add(lg)
+                    if lane_tags:
+                        break
                 deal_lane = user_lane_families(*lane_tags) if lane_tags else set()
             if deal_lane == {'electronic'} and genres_str:
                 from track_matcher import ELECTRONIC_SUBGENRES
