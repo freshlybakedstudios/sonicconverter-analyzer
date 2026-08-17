@@ -36,7 +36,9 @@ load_dotenv()
 POLL_INTERVAL = 5  # seconds
 SAMPLE_RATE = 48000
 SAMPLE_DURATION = 4  # seconds per sample point
-RETRY_WINDOW = 120  # seconds — retry failed jobs created within this window
+RETRY_WINDOW = 900  # seconds — retry failed jobs created within this window
+# (was 120 — 2026-08-17: a wedged-CoreAudio self-restart takes ~60-90s to get
+# fresh devices, so 120s expired mid-recovery and burned the job as 'error')
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
@@ -1021,8 +1023,22 @@ def main():
             # Re-validate loopback device before every job
             loopback_device = _ensure_loopback(loopback_device)
             if loopback_device is None:
-                print(f"[{job['id'][:8]}] No audio device — marking error")
-                update_job(job['id'], 'error')
+                # Device mid-recovery (fresh restart after a CoreAudio wedge):
+                # requeue the job instead of burning it, as long as it's young
+                # enough that the retry poller will still pick it up.
+                from datetime import datetime as _dt, timezone as _tz
+                _age = 1e9
+                try:
+                    _created = _dt.fromisoformat(job['created_at'].replace('Z', '+00:00'))
+                    _age = (_dt.now(_tz.utc) - _created).total_seconds()
+                except Exception:
+                    pass
+                if _age < RETRY_WINDOW:
+                    print(f"[{job['id'][:8]}] No audio device yet — requeueing (job age {_age:.0f}s)")
+                    update_job(job['id'], 'pending_features')
+                else:
+                    print(f"[{job['id'][:8]}] No audio device and job too old — marking error")
+                    update_job(job['id'], 'error')
                 # Keep trying to recover the device
                 time.sleep(10)
                 loopback_device = _find_loopback_device()
