@@ -693,6 +693,15 @@ function updateEnrichmentProgress(type, value) {
 // -------------------------------------------------------
 // Results Rendering
 // -------------------------------------------------------
+// Displayed Match % = sonic similarity + the genre-affinity term the ranking
+// uses (2026-08-18: with the rarity-affinity weights, raw-sonic display made
+// the table's percentages read out of order — an 89.5% below an 88.1%).
+// Number and order now tell the same story. Small residual inversions from
+// the pronoun/market/era ordering nudges remain by design.
+function matchPct(m) {
+  return Math.min(0.99, Math.max(0, (m.similarity || 0) + (m._tag_aff || 0)));
+}
+
 const EMOTION_LABELS = {
   power: 'Power', nostalgia: 'Nostalgia', tension: 'Tension',
   aggressive: 'Aggression', intense: 'Intensity', dark: 'Darkness',
@@ -1606,7 +1615,7 @@ function renderResults(data) {
         const artistLink = m.spotify_url
           ? `<a href="${m.spotify_url}" target="_blank" rel="noopener">${m.name}</a>`
           : m.name;
-        const sim = (m.similarity * 100).toFixed(1);
+        const sim = (matchPct(m) * 100).toFixed(1);
         const tier = (m.tier || '').charAt(0).toUpperCase() + (m.tier || '').slice(1);
         const listeners = m.listeners ? Math.round(m.listeners).toLocaleString() : '';
         const listenerStr = listeners ? `<span class="flattery-listeners">${listeners} listeners</span>` : '';
@@ -1951,7 +1960,7 @@ function renderMatchRows(matchSlice, startIdx) {
     tr.innerHTML = `
       <td>${idx + 1}</td>
       <td class="match-artist">${artistLink}</td>
-      <td class="match-sim">${(m.similarity * 100).toFixed(1)}%</td>
+      <td class="match-sim">${(matchPct(m) * 100).toFixed(1)}%</td>
       <td class="match-conversion">${convRate}</td>
       <td class="match-tier">${m.tier || '-'}</td>
       <td class="match-genre">${genreStr}</td>
@@ -2324,7 +2333,7 @@ function renderConfidenceBadges(confidenceMap) {
 
     if (dvMatches.length > 0) {
       // Sort by similarity descending
-      dvMatches.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+      dvMatches.sort((a, b) => matchPct(b) - matchPct(a));
 
       audienceList.innerHTML = '';
       dvMatches.forEach((m, i) => {
@@ -2348,7 +2357,7 @@ function renderConfidenceBadges(confidenceMap) {
           <div class="audience-match-info">
             <div class="audience-match-name">${artistLink} <span class="audience-match-tier">${m.tier || ''}</span></div>
             <div class="audience-match-meta">
-              ${(m.similarity * 100).toFixed(1)}% sonic match
+              ${(matchPct(m) * 100).toFixed(1)}% match
               ${listeners ? ` · ${listeners} listeners` : ''}
               ${genreStr ? ` · ${genreStr}` : ''}
             </div>
