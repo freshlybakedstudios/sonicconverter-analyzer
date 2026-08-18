@@ -52,7 +52,7 @@ function _authSuccess(data) {
   accessToken = data.token;
   localStorage.setItem('sc_token', data.token);
   localStorage.setItem('sc_name', data.name || '');
-  _updateScans(data.scans_remaining);
+  _updateScans(data.scans_remaining, data);
   hide($('#auth-section'));
   hide($('#hero'));
   show($('#upload-section'));
@@ -60,19 +60,27 @@ function _authSuccess(data) {
   if (typeof setInputMode === 'function') setInputMode('url');
 }
 
-function _updateScans(remaining) {
+function _updateScans(remaining, info) {
   const badge = $('#scans-badge');
   if (!badge) return;
-  if (remaining == null || remaining >= 999) {
+  // Signed-in identity strip: "Name · PRO · N scans remaining"
+  const bits = [];
+  if (info && info.name) bits.push(info.name);
+  if (info && info.pro) bits.push('PRO');
+  const showCount = remaining != null && remaining < 999;
+  if (!showCount && !bits.length) {
     badge.classList.add('hidden');
     badge.textContent = '';
     return;
   }
   badge.classList.remove('hidden');
-  if (remaining <= 0) {
-    badge.innerHTML = '0 scans remaining — <a href="mailto:almgren@freshlybakedstudios.com" style="color:#4ecdc4">contact us</a>';
+  const prefix = bits.length ? bits.join(' · ') + (showCount ? ' · ' : '') : '';
+  if (showCount && remaining <= 0) {
+    badge.innerHTML = prefix + '0 scans remaining — <a href="mailto:almgren@freshlybakedstudios.com" style="color:#4ecdc4">contact us</a>';
+  } else if (showCount) {
+    badge.textContent = `${prefix}${remaining} scans remaining`;
   } else {
-    badge.textContent = `${remaining} scans remaining`;
+    badge.textContent = bits.join(' · ');
   }
 }
 
@@ -139,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => {
         accessToken = savedToken;
-        _updateScans(data.scans_remaining);
+        _updateScans(data.scans_remaining, data);
         hide($('#auth-section'));
         hide($('#hero'));
         show($('#upload-section'));

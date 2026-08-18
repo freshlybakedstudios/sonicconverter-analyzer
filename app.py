@@ -2216,6 +2216,16 @@ def _validate_session(token: str) -> dict:
     if expires < datetime.now(timezone.utc):
         supabase.table('sessions').delete().eq('token', token).execute()
         raise HTTPException(401, "Session expired. Please log in again.")
+    # Sliding window: any use with <29 days left rolls the session back out
+    # to 30 days (at most one write per day per session).
+    try:
+        from datetime import timedelta as _td
+        if (expires - datetime.now(timezone.utc)) < _td(days=29):
+            supabase.table('sessions').update({
+                'expires_at': (datetime.now(timezone.utc) + _td(days=30)).isoformat()
+            }).eq('token', token).execute()
+    except Exception:
+        pass
 
     user_resp = supabase.table('users').select('*').eq('id', session['user_id']).execute()
     if not user_resp.data:
@@ -2228,7 +2238,9 @@ def _create_session(user_id: str) -> str:
     """Create a new session token in Supabase. Returns the token."""
     token = secrets.token_urlsafe(32)
     from datetime import timezone, timedelta
-    expires = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    # 30-day sliding window: _validate_session rolls this forward on use, so
+    # active users never get dumped back to the login form.
+    expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
     supabase.table('sessions').insert({
         'token': token,
         'user_id': user_id,
@@ -2405,6 +2417,7 @@ async def login(
         "token": token,
         "name": user['name'],
         "scans_remaining": user['max_scans'] - user['scans_used'],
+        "pro": bool(user.get('full_enrichment')),
     }
 
 
@@ -2442,7 +2455,8 @@ async def me(token: str):
 
     # Legacy token
     if 'id' not in user:
-        return {"name": user.get('name', ''), "email": user.get('email', ''), "scans_remaining": 999}
+        return {"name": user.get('name', ''), "email": user.get('email', ''),
+                "scans_remaining": 999, "pro": True}
 
     return {
         "name": user['name'],
@@ -2450,6 +2464,7 @@ async def me(token: str):
         "scans_remaining": user['max_scans'] - user['scans_used'],
         "scans_used": user['scans_used'],
         "max_scans": user['max_scans'],
+        "pro": bool(user.get('full_enrichment')),
     }
 
 
@@ -4568,13 +4583,18 @@ async def restore_latest_analysis(token: str):
     from datetime import timedelta, timezone
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
-        res = supabase.table('analysis_jobs') \
+        q = supabase.table('analysis_jobs') \
             .select('id,status,spotify_url,created_at,result_json') \
-            .eq('token', token) \
             .not_.is_('result_json', 'null') \
             .gte('created_at', cutoff) \
             .order('created_at', desc=True) \
-            .limit(1).execute()
+            .limit(1)
+        # History follows the ACCOUNT, not the session token — a re-login or
+        # a second device still finds your scans. Token match is the fallback
+        # for legacy sessions with no email.
+        _email = (lead.get('email') or '').strip()
+        q = q.eq('user_email', _email) if _email else q.eq('token', token)
+        res = q.execute()
         rows = res.data or []
     except Exception as e:
         print(f"restore: lookup failed: {e}")
