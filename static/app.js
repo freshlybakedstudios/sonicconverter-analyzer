@@ -2522,9 +2522,9 @@ function buildCuratorPitch(curator) {
   if (ref) {
     const poss = ref.endsWith('s') ? `${ref}'` : `${ref}'s`;
     const anchor = refTrack ? `${poss} ${refTrack}` : ref;
-    lines.push(pct
-      ? `You already have ${anchor} on ${pl} — our track ${track} is a ${pct}% sonic match to it. Same energy, same production world.`
-      : `You already have ${anchor} on ${pl} — our track ${track} sits sonically right next to it.`);
+    // No naked percentages — a curator has no idea what measured it
+    // (owner, 2026-08-18). The claim stays, the fake precision goes.
+    lines.push(`You already have ${anchor} on ${pl} — our track ${track} is a direct sonic match to it. Same energy, same production world.`);
   } else {
     lines.push(`${track} belongs on ${pl}.`);
   }
