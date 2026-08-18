@@ -2512,26 +2512,30 @@ function buildCuratorPitch(curator) {
   const fullName = curator.curator_name || curator.name || '';
   const who = fullName ? fullName.split(' ')[0] : 'there';
 
+  // Owner's shape (2026-08-18): lead with what they ALREADY have on the
+  // playlist, then the match — and close assumptively. No easy out.
   const subject = ref
-    ? `${pl} — ${track} by ${artist} (for fans of ${ref})`
-    : `${pl} — ${track} by ${artist}`;
+    ? `You have ${ref} on ${pl} — ${track} is a sonic match`
+    : `${track} by ${artist} for ${pl}`;
 
   const lines = [`Hi ${who},`, ''];
-  lines.push(`I'm ${artist} — I think ${track} could be a fit for ${pl}.`);
   if (ref) {
     const poss = ref.endsWith('s') ? `${ref}'` : `${ref}'s`;
     const anchor = refTrack ? `${poss} ${refTrack}` : ref;
-    lines.push('');
     lines.push(pct
-      ? `Why I'm writing to you specifically: a sonic analysis matched my track ${pct}% to ${anchor}, which you have on the playlist — same energy and production world, not just the same genre tag.`
-      : `Why I'm writing to you specifically: my track sits sonically right next to ${anchor}, which you have on the playlist.`);
+      ? `You already have ${anchor} on ${pl} — our track ${track} is a ${pct}% sonic match to it. Same energy, same production world.`
+      : `You already have ${anchor} on ${pl} — our track ${track} sits sonically right next to it.`);
+  } else {
+    lines.push(`${track} belongs on ${pl}.`);
   }
   if (ctx.url) {
     lines.push('');
     lines.push(`Listen here: ${ctx.url}`);
   }
   lines.push('');
-  lines.push(`If it's not right for the playlist, no worries at all — thanks for listening either way.`);
+  lines.push(ref
+    ? `It'll sit right next to it on the playlist. Thanks for the add!`
+    : `Thanks for the add!`);
   lines.push('');
   lines.push(artist);
   return { subject, body: lines.join('\n') };
