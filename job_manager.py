@@ -118,6 +118,9 @@ class JobManager:
                 for key, val in kwargs.items():
                     if key in ('status', 'spotify_url'):
                         row[key] = val
+                    elif key == 'result_json':
+                        # Full trimmed scan result — powers restore-on-refresh.
+                        row[key] = json.dumps(val)
                     elif key == 'progress':
                         # Merge progress into existing
                         existing = self._mem.get(job_id, {}).get('progress', {})

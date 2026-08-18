@@ -144,6 +144,27 @@ document.addEventListener('DOMContentLoaded', () => {
         hide($('#hero'));
         show($('#upload-section'));
         if (typeof setInputMode === 'function') setInputMode('url');
+        // Restore-on-refresh (2026-08-18): re-render the session's newest
+        // scan instead of a blank form. The SSE catch-up replay refills
+        // every enrichment card; "Analyze Another Track" resets as usual.
+        return fetch(`${API_URL}/api/analysis/restore?token=${savedToken}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(res => {
+            if (!res || !res.found || !res.result) return;
+            if (res.spotify_url && $('#spotify-track-url') && !$('#spotify-track-url').value) {
+              $('#spotify-track-url').value = res.spotify_url;
+            }
+            currentJobId = res.job_id;
+            renderResults(res.result);
+            hide($('#loading-section'));
+            show($('#results-section'));
+            show($('#floating-cta'));
+            if (res.result.pro === false) {
+              renderPitchLockedBlock((res.result.matches || []).length);
+            }
+            if (currentJobId) startSSE(currentJobId);
+          })
+          .catch(() => {});
       })
       .catch(() => {
         localStorage.removeItem('sc_token');
