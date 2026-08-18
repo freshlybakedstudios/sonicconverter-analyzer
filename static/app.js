@@ -714,10 +714,14 @@ function renderResults(data) {
   const f = data.features || {};
   const matches = data.matches || [];
   // Pitch-pack context: who is pitching what (used by buildCuratorPitch).
+  // releaseDate + privateLink (upload form, optional) switch the pitch into
+  // pre-release mode: pitch before the drop, adds land in the first 24h.
   window._pitchCtx = {
     artist: (data.source && data.source.artist_name) || '',
     track: (data.source && data.source.track_name) || '',
     url: ($('#spotify-track-url') && $('#spotify-track-url').value.trim()) || '',
+    releaseDate: ($('#release-date-input') && $('#release-date-input').value) || '',
+    privateLink: ($('#private-link-input') && $('#private-link-input').value.trim()) || '',
   };
   const recs = data.recommendations || [];
   const genreAlignment = data.genre_alignment || null;
@@ -2528,9 +2532,29 @@ function buildCuratorPitch(curator) {
   } else {
     lines.push(`${track} belongs on ${pl}.`);
   }
-  if (ctx.url) {
+  // Pre-release mode: a release date (today or later) flips the pitch to
+  // "add it day one" — the pitch goes out early, the add lands in the
+  // first 24 hours when the algorithm is watching hardest.
+  let dateStr = '';
+  if (ctx.releaseDate) {
+    const [y, mo, d] = ctx.releaseDate.split('-').map(Number);
+    if (y && mo && d) {
+      const rd = new Date(y, mo - 1, d);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      if (rd >= today) {
+        dateStr = rd.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+      }
+    }
+  }
+  const listenLink = ctx.privateLink || ctx.url;
+  if (dateStr) {
     lines.push('');
-    lines.push(`Listen here: ${ctx.url}`);
+    lines.push(`It releases ${dateStr}.${listenLink ? ` Private listen before it drops: ${listenLink}` : ''}`);
+    lines.push('');
+    lines.push(`I'm lining up placements for release day — an early add catches the first 24 hours, when the algorithm is watching hardest.`);
+  } else if (listenLink) {
+    lines.push('');
+    lines.push(`Listen here: ${listenLink}`);
   }
   lines.push('');
   lines.push(ref
