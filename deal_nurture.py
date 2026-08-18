@@ -372,16 +372,20 @@ def build_touch(lead: dict, touch: int):
           <p>Hey {v['greet']}, Alexander here. The actual human this time, not the
              quote machine.</p>
           <p>I saw you priced out {plain_project}{for_artist} but didn't end up booking.
-             I get it. The song's probably still moving, or the timing isn't there yet.</p>
+             I get it. The song's probably still moving, or the timing isn't there yet.
+             For what it's worth, running the numbers before you commit is the right
+             order to do this in. It usually means you're taking the music seriously.</p>
           {listened}
           <p>Two steps if you want it:</p>
           <p>1. Drop your track here: <a href="{DROPBOX_REQUEST_URL}">{DROPBOX_REQUEST_URL}</a><br>
              2. Grab a slot on my calendar: <a href="{CAL_BOOKING_URL}">{CAL_BOOKING_URL}</a></p>
           <p>I do the listen and walk you through it live on the call. It also means I
              can quote you properly. The calculator gets close, but the real number
-             comes from hearing the actual files. No card, nothing owed after.</p>
-          <p>And honestly, quote or no quote, I'd love to hear about the record.
-             Where's it at, and what's the vision once it's done?</p>
+             comes from hearing the actual files. No card, nothing owed after. The
+             last artist who took this exact offer came in on the fence, and we ended
+             up making his record together.</p>
+          <p>Either way, I'd love to hear about the record. Where's it at, and what
+             do you want it to do once it's out?</p>
           {OWNER_SIGNATURE_HTML}
         """
 
