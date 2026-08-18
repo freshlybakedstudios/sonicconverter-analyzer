@@ -421,6 +421,7 @@ def _find_loopback_device(retry_coreaudio=True) -> int | None:
 # stream-open failures so the job loop can exit and let pm2 restart us with a
 # freshly enumerated device list. Silent captures do NOT count — silence
 # usually means Spotify wasn't playing, which a restart can't fix.
+_WEDGED_RESTART = False  # set by capture thread on CoreAudio wedge; main thread exits
 _stream_errors = 0
 
 
@@ -823,8 +824,14 @@ def process_job(job: dict, loopback_device: int):
         print(f"[{job_id[:8]}] All samples failed — no audio captured")
         update_job(job_id, 'capture_failed')
         if _stream_errors >= 3:
-            print("Audio input stream is wedged (stale CoreAudio device) — exiting so pm2 restarts us with fresh devices")
-            sys.exit(1)
+            # sys.exit(1) here NEVER worked: capture runs in a daemon thread
+            # (JOB_TIMEOUT wrapper) and SystemExit only kills the thread, so
+            # the process kept living with the wedged PortAudio state and
+            # every later capture failed too (2026-08-18, the Shot In The
+            # Dark scan). Set the flag; the MAIN thread exits after cleanup.
+            global _WEDGED_RESTART
+            _WEDGED_RESTART = True
+            print("Audio input stream is wedged (stale CoreAudio device) — flagging for restart after cleanup")
         return
 
     # Use highest-energy sample
@@ -981,6 +988,12 @@ def main():
                 pass
 
         _resume_local_scripts(paused)
+        if _WEDGED_RESTART:
+            # Real process exit from the MAIN thread — pm2 restarts us with
+            # fresh CoreAudio devices; the backend's retry poller requeues
+            # young jobs. gems/discovery were just resumed above.
+            print("Restarting worker for fresh CoreAudio devices (wedge flagged by capture thread)")
+            sys.exit(1)
         return success
 
     def job_mgr_check(job_id):
