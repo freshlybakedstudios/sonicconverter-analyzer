@@ -331,6 +331,14 @@
         <p class="genre-hint">If this track is by a different artist than the one on your account, paste their Spotify URL here so we can pull their genre lane.</p>
       </div>
 
+      <div class="form-group" id="prerelease-group">
+        <label for="release-date-input">Release date <span class="optional-hint">(optional — powers pre-release curator pitches)</span></label>
+        <input type="date" id="release-date-input" autocomplete="off">
+        <label for="private-link-input" style="margin-top:8px">Private listen link <span class="optional-hint">(optional — Disco, private SoundCloud, etc.)</span></label>
+        <input type="url" id="private-link-input" placeholder="https://..." autocomplete="off">
+        <p class="genre-hint">Pitching before release day means playlist adds land in the first 24 hours — when the algorithm is watching hardest.</p>
+      </div>
+
       <div class="genre-picker">
         <label for="genre-select">Genre</label>
         <p class="genre-hint">Required. The dropdown sets the lane; artist genres (if URL above) only supplement it.</p>
