@@ -3453,6 +3453,13 @@ async def analyze(
         )
 
         _use_scan(lead)
+        # Persist trimmed result for restore-on-refresh (parity with URL path).
+        try:
+            enrichment_pool.submit(job_mgr.update_job, job_id,
+                                   result_json={k: v for k, v in result.items()
+                                                if k != 'all_matches'})
+        except Exception as _e:
+            print(f"  result_json persist skipped: {_e}")
         return result
 
     finally:
@@ -4352,6 +4359,44 @@ async def stream_enrichment(job_id: str):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Restore-on-refresh: the session's most recent scan, full payload
+# ---------------------------------------------------------------------------
+@app.get("/api/analysis/restore")
+async def restore_latest_analysis(token: str):
+    """Return the newest scan result for this session so a page refresh (or a
+    return visit) lands back on the results instead of a blank form. The
+    frontend re-renders the payload and reopens the SSE stream, whose catch-up
+    replay refills every enrichment card from the job row."""
+    lead = _validate_session(token)
+    from datetime import timedelta, timezone
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+        res = supabase.table('analysis_jobs') \
+            .select('id,status,spotify_url,created_at,result_json') \
+            .eq('token', token) \
+            .not_.is_('result_json', 'null') \
+            .gte('created_at', cutoff) \
+            .order('created_at', desc=True) \
+            .limit(1).execute()
+        rows = res.data or []
+    except Exception as e:
+        print(f"restore: lookup failed: {e}")
+        rows = []
+    if not rows:
+        return {'found': False}
+    row = rows[0]
+    result = row.get('result_json')
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except Exception:
+            return {'found': False}
+    return {'found': True, 'job_id': row['id'], 'status': row.get('status'),
+            'spotify_url': row.get('spotify_url'), 'created_at': row.get('created_at'),
+            'result': result}
 
 
 # ---------------------------------------------------------------------------
@@ -5557,6 +5602,16 @@ async def analyze_url(
     )
 
     _use_scan(lead)
+    # Persist the trimmed result payload for restore-on-refresh (2026-08-18:
+    # enrichment now completes unattended, but a page refresh lost the whole
+    # scan — worst funnel behavior for free users). all_matches is the only
+    # heavyweight key (5000 entries) and is re-derivable; drop it.
+    try:
+        enrichment_pool.submit(job_mgr.update_job, new_job_id,
+                               result_json={k: v for k, v in result.items()
+                                            if k != 'all_matches'})
+    except Exception as _e:
+        print(f"  result_json persist skipped: {_e}")
     return result
 
 
