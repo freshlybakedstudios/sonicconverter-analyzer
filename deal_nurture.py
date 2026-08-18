@@ -286,7 +286,8 @@ def build_touch(lead: dict, touch: int):
              now.</p>
           <p style="color:#ccc">And if something's holding you back — budget, timeline, a question
              about the deal — just hit reply. It comes straight to my phone, not a
-             support inbox.</p>
+             support inbox. Even if you're nowhere near booking, I'd love to hear
+             what you're making. What's the vision for the record?</p>
           <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
         """
     elif touch == 3:
@@ -305,10 +306,13 @@ def build_touch(lead: dict, touch: int):
              last email doesn't expire. The drop link
              (<a href="{DROPBOX_REQUEST_URL}">here</a>) and
              <a href="{CAL_BOOKING_URL}">my calendar</a> both work months from now.</p>
-          <p>Also, if the number was the blocker, just say so. There's usually a way in.
-             Fewer songs to start, splitting the payments, or locking it in for $250 now
-             and starting when the record's ready. I'd rather shape the deal than lose
-             the song.</p>
+          <p>Also, if the number was the blocker, just say so. Most artists who hesitate
+             at a quote tell me later it wasn't really the number, it was not knowing
+             exactly what they'd get for it. That's half of what the free listen is for.
+             And there's usually a way in on the number too: fewer songs to start,
+             splitting the payments, or locking it in for $250 now and starting when the
+             record's ready. I'd rather shape the deal than lose the song. What would
+             make it work for you?</p>
           <p>One thing before I go quiet: whoever ends up mixing this record, ask them
              to play you something they've done in your genre first. That one question
              filters out most of the bad experiences in this business.</p>
@@ -376,6 +380,8 @@ def build_touch(lead: dict, touch: int):
           <p>I do the listen and walk you through it live on the call. It also means I
              can quote you properly. The calculator gets close, but the real number
              comes from hearing the actual files. No card, nothing owed after.</p>
+          <p>And honestly, quote or no quote, I'd love to hear about the record.
+             Where's it at, and what's the vision once it's done?</p>
           {OWNER_SIGNATURE_HTML}
         """
 
