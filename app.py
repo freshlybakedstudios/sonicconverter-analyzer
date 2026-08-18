@@ -4064,9 +4064,13 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                 print(f"Enrichment [{job_id[:8]}]: Batch {batch_start//BATCH_SIZE+1} — resolving {len(batch_curators)} curators...")
 
             curators_checked = 0
-            for curator_info in batch_curators:
+            _cc_lock = threading.Lock()
+
+            def _resolve_one(curator_info):
+                nonlocal curator_count, curators_checked
                 try:
-                    curators_checked += 1
+                    with _cc_lock:
+                        curators_checked += 1
                     # (Tab-closed abort removed 2026-08-17: all runs complete
                     # unattended; curator resolve only happens on Pro runs.)
 
@@ -4187,15 +4191,30 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     if not has_contact:
                         print(f"Enrichment [{job_id[:8]}]: No contact info for curator '{curator_info.get('name', '?')}' (cm_id={cm_cid}) — skipped")
                     if has_contact:
-                        curator_count += 1
+                        with _cc_lock:
+                            curator_count += 1
+                            _count_now = curator_count
                         job_mgr.update_job(job_id,
                                            curator_emails={curator_info['name']: curator_info})
                         _sse_publish(job_id, 'curator_emails', {
                             'curator': curator_info,
-                            'progress': f'{curator_count} curators',
+                            'progress': f'{_count_now} curators',
                         })
                 except Exception as e:
                     print(f"Enrichment [{job_id[:8]}]: Curator failed for {curator_info.get('name', '?')}: {e}")
+
+            # Parallel resolve: each curator is an independent network round-trip
+            # (CM lookup / local cache / scraper), so a small pool multiplies
+            # throughput until Chartmetric's own rate cap becomes the ceiling.
+            # 429s are retried with backoff inside the CM fetch layer.
+            _workers = max(1, int(os.getenv('CURATOR_RESOLVE_WORKERS', '4') or 4))
+            if _workers > 1 and len(batch_curators) > 3:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=_workers) as _cpool:
+                    list(_cpool.map(_resolve_one, batch_curators))
+            else:
+                for _ci in batch_curators:
+                    _resolve_one(_ci)
 
             batch_num = batch_start // BATCH_SIZE + 1
             total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
