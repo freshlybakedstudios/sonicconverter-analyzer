@@ -4526,6 +4526,17 @@ async def analyze_url(
         if cached_feats:
             features = cached_feats
             features_source = 'universe_cache'
+            # Cache rows carry only the loudest-window LUFS; the rig's fresh
+            # captures average 3 samples into lufs_integrated_est and the UI
+            # prefers that. Stamp the same estimate here from the window
+            # features (2026-08-17, Holy Roller: card showed the -12.1 window
+            # value while the owner's meter read -9.1 integrated; the
+            # estimator projects -9.7 from this exact row).
+            if features.get('lufs_integrated_est') is None:
+                _est = _est_integrated_from_gems_row(features)
+                if _est is not None:
+                    features['lufs_integrated_est'] = round(_est, 2)
+                    print(f"  URL analysis: integrated LUFS est from window features: {_est:.1f}")
             print(f"  URL analysis: features from universe cache (ISRC {track_isrc}) — no capture needed")
         else:
             print(f"  URL analysis: ISRC {track_isrc!r} not in universe cache "
