@@ -1877,6 +1877,21 @@ body {
   background: rgba(255,255,255,0.18);
   color: #fff;
 }
+.pitch-copy-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--accent, #7ac142);
+  background: transparent;
+  color: var(--accent, #7ac142);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.pitch-copy-btn:hover {
+  background: var(--accent, #7ac142);
+  color: #111;
+}
 .social-groover {
   background: rgba(108, 92, 231, 0.2);
   color: #a29bfe;

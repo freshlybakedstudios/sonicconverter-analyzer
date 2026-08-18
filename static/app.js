@@ -713,6 +713,12 @@ const EMOTION_LABELS = {
 function renderResults(data) {
   const f = data.features || {};
   const matches = data.matches || [];
+  // Pitch-pack context: who is pitching what (used by buildCuratorPitch).
+  window._pitchCtx = {
+    artist: (data.source && data.source.artist_name) || '',
+    track: (data.source && data.source.track_name) || '',
+    url: ($('#spotify-track-url') && $('#spotify-track-url').value.trim()) || '',
+  };
   const recs = data.recommendations || [];
   const genreAlignment = data.genre_alignment || null;
   const userProfile = data.user_profile || null;
@@ -2491,6 +2497,46 @@ function renderPitchLockedBlock(matchCount, curatorCount) {
 
 const seenCurators = new Set();
 const curatorRows = [];  // accumulate for CSV export
+
+// One tailored pitch per curator, built from data the scan already proved:
+// the curator's own playlist, the matched artist on it, and the sonic-match
+// number. Professional artist-voice template — receipts, no hype, easy no.
+function buildCuratorPitch(curator) {
+  const ctx = window._pitchCtx || {};
+  const artist = ctx.artist || 'an independent artist';
+  const track = ctx.track ? `"${ctx.track}"` : 'my new track';
+  const pl = curator.playlist_name || 'your playlist';
+  const ref = curator.sonic_match || '';
+  const refTrack = curator.track_name ? `"${curator.track_name}"` : '';
+  const pct = curator.sonic_match_pct ? Math.round(curator.sonic_match_pct * 100) : null;
+  const fullName = curator.curator_name || curator.name || '';
+  const who = fullName ? fullName.split(' ')[0] : 'there';
+
+  const subject = ref
+    ? `${pl} — ${track} by ${artist} (for fans of ${ref})`
+    : `${pl} — ${track} by ${artist}`;
+
+  const lines = [`Hi ${who},`, ''];
+  lines.push(`I'm ${artist} — I think ${track} could be a fit for ${pl}.`);
+  if (ref) {
+    const poss = ref.endsWith('s') ? `${ref}'` : `${ref}'s`;
+    const anchor = refTrack ? `${poss} ${refTrack}` : ref;
+    lines.push('');
+    lines.push(pct
+      ? `Why I'm writing to you specifically: a sonic analysis matched my track ${pct}% to ${anchor}, which you have on the playlist — same energy and production world, not just the same genre tag.`
+      : `Why I'm writing to you specifically: my track sits sonically right next to ${anchor}, which you have on the playlist.`);
+  }
+  if (ctx.url) {
+    lines.push('');
+    lines.push(`Listen here: ${ctx.url}`);
+  }
+  lines.push('');
+  lines.push(`If it's not right for the playlist, no worries at all — thanks for listening either way.`);
+  lines.push('');
+  lines.push(artist);
+  return { subject, body: lines.join('\n') };
+}
+
 function appendCuratorEmail(data) {
   const container = $('#curator-emails-body');
   const card = $('#curator-emails-card');
@@ -2522,8 +2568,12 @@ function appendCuratorEmail(data) {
   if (curator.submission_url) links.push(`<a href="${curator.submission_url}" target="_blank" rel="noopener" title="Submission" class="social-link social-submit">Submit</a>`);
   if (curator.twitter_url) links.push(`<a href="${curator.twitter_url}" target="_blank" rel="noopener" title="X / Twitter" class="social-link">X</a>`);
 
+  // Prefilled pitch: mailto carries subject+body when we have the address;
+  // the Pitch button copies the same draft for pasting anywhere (Groover,
+  // SubmitHub message box, IG DM).
+  const pitch = buildCuratorPitch(curator);
   const emailCell = curator.email
-    ? `<a href="mailto:${curator.email}">${curator.email}</a>`
+    ? `<a href="mailto:${curator.email}?subject=${encodeURIComponent(pitch.subject)}&body=${encodeURIComponent(pitch.body)}">${curator.email}</a>`
     : '<span class="no-email">—</span>';
 
   // Reference artist/track that appeared on this playlist
@@ -2541,7 +2591,19 @@ function appendCuratorEmail(data) {
     <td>${(curator.followers || 0).toLocaleString()}</td>
     <td>${emailCell}</td>
     <td class="social-links-cell">${links.join(' ') || '—'}</td>
+    <td><button class="pitch-copy-btn" type="button" title="Copy a pitch written for this curator">Pitch</button></td>
   `;
+  const pitchBtn = tr.querySelector('.pitch-copy-btn');
+  if (pitchBtn) {
+    pitchBtn.addEventListener('click', () => {
+      const text = `Subject: ${pitch.subject}\n\n${pitch.body}`;
+      navigator.clipboard.writeText(text).then(() => {
+        pitchBtn.textContent = 'Copied';
+        if (typeof gtag === 'function') gtag('event', 'pitch_copied', { curator: curator.name || '' });
+        setTimeout(() => { pitchBtn.textContent = 'Pitch'; }, 1600);
+      }).catch(() => { pitchBtn.textContent = 'Error'; });
+    });
+  }
   container.appendChild(tr);
 }
 
