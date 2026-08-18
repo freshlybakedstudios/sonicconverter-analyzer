@@ -160,7 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
             show($('#results-section'));
             show($('#floating-cta'));
             if (res.result.pro === false) {
-              renderPitchLockedBlock((res.result.matches || []).length);
+              renderPitchLockedBlock((res.result.matches || []).length, null, res.result.deep_capped);
             }
             if (currentJobId) startSSE(currentJobId);
           })
@@ -588,7 +588,7 @@ async function analyzeTrack() {
     // the upsell with the real number. The static locked block still paints
     // first so the pitch tab is never blank while the slice streams in.
     if (data.pro === false) {
-      renderPitchLockedBlock((data.matches || []).length);
+      renderPitchLockedBlock((data.matches || []).length, null, data.deep_capped);
     }
     if (currentJobId) {
       startSSE(currentJobId);
@@ -2488,7 +2488,7 @@ function renderCuratorsLockedBlock(count) {
 //    sells the whole pitch list (playlists + curators) built from N matches.
 //  - curator mode (curatorCount): legacy/edge — enrichment ran but contacts
 //    were withheld; sells contacts with the exact found count.
-function renderPitchLockedBlock(matchCount, curatorCount) {
+function renderPitchLockedBlock(matchCount, curatorCount, deepCapped) {
   const card = $('#curator-emails-card');
   if (!card) return;
   card.classList.remove('hidden');
@@ -2505,6 +2505,19 @@ function renderPitchLockedBlock(matchCount, curatorCount) {
     locked.id = 'curators-locked-block';
     locked.style.cssText = 'text-align:center;padding:28px 20px;border:1px dashed rgba(255,255,255,0.25);border-radius:12px;margin-top:8px';
     card.appendChild(locked);
+  }
+  if (window._deepCapped && !deepCapped) return; // capped message wins over live upsell counts
+  if (deepCapped) {
+    window._deepCapped = true;
+    // Pro user, but today's one full curator sweep is already spent — this
+    // scan ran the light pass. No upsell button; they already pay.
+    locked.innerHTML =
+      `<div style="font-size:28px;margin-bottom:6px">⏳</div>` +
+      `<div style="font-size:17px;font-weight:600;margin-bottom:6px">Today's deep scan is already in the books</div>` +
+      `<div style="opacity:0.75">Pro includes one full curator sweep per day (it's a heavy scan against playlist data). ` +
+      `This scan ran the light pass. Your next full pitch-list build unlocks in under 24 hours, ` +
+      `and we email it to you when it's done.</div>`;
+    return;
   }
   const headline = curatorCount
     ? `${curatorCount} playlist curators found in your lane`

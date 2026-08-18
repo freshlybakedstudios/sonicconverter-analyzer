@@ -3444,7 +3444,13 @@ async def analyze(
         # 25-match slice with curators counted-but-locked. (Upload is
         # Pro-only in the UI anyway — this is the defensive backend mirror.)
         _full = bool(lead.get('full_enrichment')) or not lead.get('id')
+        _deep_capped = False
+        if _full and not _deep_scan_available(lead):
+            _full = False
+            _deep_capped = True
+            print(f"Deep-scan daily cap: {lead.get('email')} — light slice for this scan")
         result['pro'] = _full
+        result['deep_capped'] = _deep_capped
         _enrich_cap = 200 if _full else 25
         enrichment_pool.submit(
             _run_background_enrichment,
@@ -3699,6 +3705,40 @@ def _compute_playlist_score(sonic_similarity: float, followers: int,
 # ---------------------------------------------------------------------------
 # Background enrichment
 # ---------------------------------------------------------------------------
+_DEEP_SCAN_EXEMPT = {
+    e.strip().lower() for e in os.getenv(
+        'DEEP_SCAN_EXEMPT',
+        'freshlybakedstudios@gmail.com,almgren@freshlybakedstudios.com,'
+        'scantest-20260719@freshlybakedstudios.com'
+    ).split(',') if e.strip()
+}
+
+
+def _deep_scan_available(lead) -> bool:
+    """One full (200-match + curator) enrichment per user per rolling 24h;
+    repeat scans the same day run the light slice instead. The deep pass is
+    the resource hog (hundreds of rate-limited CM calls) and would let one
+    user starve everyone else. Owner/test emails exempt; errored runs don't
+    burn the slot; lookup failures fail OPEN so a paying user is never
+    blocked by our own outage."""
+    email = (lead.get('email') or '').strip().lower()
+    if not email or email in _DEEP_SCAN_EXEMPT:
+        return True
+    try:
+        from datetime import timedelta, timezone as _tz
+        cutoff = (datetime.now(_tz.utc) - timedelta(hours=24)).isoformat()
+        r = supabase.table('analysis_jobs').select('id,status') \
+            .eq('user_email', email) \
+            .gte('created_at', cutoff) \
+            .filter('progress->>deep_run', 'eq', 'true') \
+            .neq('status', 'error') \
+            .limit(1).execute()
+        return not (r.data or [])
+    except Exception as e:
+        print(f"deep-scan cap check failed (fail open): {e}")
+        return True
+
+
 def _send_curator_report_email(job_id: str, curator_count: int):
     """IG-receipt-style completion email for Pro runs: the curator list is
     ready, here's the top of it, open the pitch screen or grab the CSV.
@@ -3812,6 +3852,13 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
     """
     matches = (matches or [])[:max_matches]
     global _last_api_activity
+    if include_curators:
+        # Stamp the job as a deep run so the one-per-user-per-day cap can
+        # count it (progress->>deep_run filter in _deep_scan_available).
+        try:
+            job_mgr.update_job(job_id, progress={'deep_run': True})
+        except Exception:
+            pass
     try:
         refresh_token = os.getenv('REFRESH_TOKEN')
         if not refresh_token:
@@ -5733,7 +5780,13 @@ async def analyze_url(
     # (related artists → audience match, capped playlists) with curators
     # counted-but-locked as the upsell. Free cost ≈ 25 matches × ~2 CM calls.
     _full = bool(lead.get('full_enrichment')) or not lead.get('id')
+    _deep_capped = False
+    if _full and not _deep_scan_available(lead):
+        _full = False
+        _deep_capped = True
+        print(f"Deep-scan daily cap: {lead.get('email')} — light slice for this scan")
     result['pro'] = _full
+    result['deep_capped'] = _deep_capped
     # Displayed matches FIRST, then wider pool, so every visible match
     # gets playlist data
     displayed_ids = {str(m.get('artist_id', '')) for m in found_matches}
