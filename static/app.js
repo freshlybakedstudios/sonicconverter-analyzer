@@ -561,15 +561,15 @@ async function analyzeTrack() {
     show($('#floating-cta'));
     $('#results-section').scrollIntoView({ behavior: 'smooth' });
 
-    // Free tier (2026-08-08): no background enrichment runs at all — the
-    // pitch list (playlists + curators) is the Pro product. Show the locked
-    // block immediately instead of opening SSE for work that won't happen.
+    // Every scan streams enrichment now (2026-08-17 free-slice surgery):
+    // free gets the 25-match slice (audience match, capped playlists) with
+    // curators counted-but-locked — the curators_locked SSE event renders
+    // the upsell with the real number. The static locked block still paints
+    // first so the pitch tab is never blank while the slice streams in.
     if (data.pro === false) {
       renderPitchLockedBlock((data.matches || []).length);
-      const enrichEl = $('#enrichment-status');
-      if (enrichEl) hide(enrichEl);
-    } else if (currentJobId) {
-      // Pro/legacy: full enrichment streams in as before
+    }
+    if (currentJobId) {
       startSSE(currentJobId);
     }
 
