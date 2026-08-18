@@ -3563,7 +3563,7 @@ def _lookup_curator_local(cm_curator_id: int) -> dict | None:
             f"?cm_curator_id=eq.{cm_curator_id}"
             f"&select=cm_curator_id,curator_name,submission_email,"
             f"instagram_url,facebook_url,website_url,twitter_url,"
-            f"groover_url,submithub_url,spotify_url,total_followers",
+            f"groover_url,submithub_url,spotify_url,total_followers,updated_at",
             headers=headers, timeout=10,
         )
         if resp.status_code == 200:
@@ -3580,6 +3580,9 @@ def _lookup_curator_local(cm_curator_id: int) -> dict | None:
                     'submithub_url': row.get('submithub_url') or '',
                     'spotify_url': row.get('spotify_url') or '',
                     'total_followers': row.get('total_followers') or 0,
+                    # Internal marker (stripped before UI): when the row was
+                    # last written — powers the negative-contact cache.
+                    '_row_updated_at': row.get('updated_at') or '',
                 }
     except Exception as e:
         print(f"Local curator lookup failed for {cm_curator_id}: {e}")
@@ -3609,6 +3612,10 @@ def _upsert_curator(cm_curator_id: int, curator_data: dict):
         # Map 'email' to 'submission_email' if present
         if curator_data.get('email') and 'submission_email' not in payload:
             payload['submission_email'] = curator_data['email']
+        # Stamp check time so contactless rows work as a negative cache
+        # (skip re-asking CM for 90 days).
+        from datetime import timezone as _tz
+        payload['updated_at'] = datetime.now(_tz.utc).isoformat()
         requests.post(
             f"{supa_url}/rest/v1/curators",
             json=payload, headers=headers, timeout=10,
@@ -3692,6 +3699,103 @@ def _compute_playlist_score(sonic_similarity: float, followers: int,
 # ---------------------------------------------------------------------------
 # Background enrichment
 # ---------------------------------------------------------------------------
+def _send_curator_report_email(job_id: str, curator_count: int):
+    """IG-receipt-style completion email for Pro runs: the curator list is
+    ready, here's the top of it, open the pitch screen or grab the CSV.
+    Rides the Gmail rail from deal_nurture (lands in Primary). Fire-and-forget;
+    caller wraps in try/except."""
+    row = supabase.table('analysis_jobs') \
+        .select('user_email,track_name,artist_name,curator_emails') \
+        .eq('id', job_id).limit(1).execute()
+    job = (row.data or [{}])[0]
+    to_email = (job.get('user_email') or '').strip()
+    if not to_email or '@' not in to_email:
+        print(f"Enrichment [{job_id[:8]}]: no user_email on job, skipping report email")
+        return
+    track = job.get('track_name') or 'your track'
+    curators = job.get('curator_emails') or {}
+    if isinstance(curators, str):
+        try:
+            curators = json.loads(curators)
+        except Exception:
+            curators = {}
+
+    def _best_contact(c):
+        for key, label in (('email', None), ('instagram_url', 'Instagram'),
+                           ('facebook_url', 'Facebook'), ('website_url', 'Website'),
+                           ('submithub_url', 'SubmitHub'), ('groover_url', 'Groover')):
+            v = (c.get(key) or '').strip()
+            if v:
+                return (v, label or v)
+        return ('', '')
+
+    top = sorted(curators.values(),
+                 key=lambda c: c.get('followers', 0) or 0, reverse=True)[:10]
+    site_url = 'https://analyze.freshlybakedstudios.com'
+    csv_url = f'{site_url}/api/analysis/{job_id}/csv'
+
+    rows_html = ''
+    for c in top:
+        contact_val, contact_label = _best_contact(c)
+        if contact_label and contact_label != contact_val:
+            contact_html = f'<a href="{contact_val}" style="color:#b45309;">{contact_label}</a>'
+        else:
+            contact_html = contact_val
+        rows_html += (
+            '<tr>'
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;">{c.get("name", "")}</td>'
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;">{c.get("playlist_name", "")}</td>'
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">{(c.get("followers", 0) or 0):,}</td>'
+            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;">{contact_html}</td>'
+            '</tr>'
+        )
+
+    btn = ('display:inline-block;padding:11px 20px;border-radius:8px;'
+           'text-decoration:none;font-weight:bold;margin-right:10px;')
+    html = f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#1a1a1a;">
+      <p>Hey,</p>
+      <p>The deep scan on &ldquo;{track}&rdquo; just finished. <b>{curator_count} curators
+      with real contact info</b>, pulled from playlists that are already running songs
+      that sound like yours. Every one of them comes with a ready-to-send pitch on
+      your results page.</p>
+      <p style="margin:22px 0;">
+        <a href="{site_url}" style="{btn}background:#b45309;color:#fff;">Open my pitch screen</a>
+        <a href="{csv_url}" style="{btn}background:#f3f4f6;color:#1a1a1a;border:1px solid #ddd;">Download the sheet (CSV)</a>
+      </p>
+      <p style="margin-bottom:6px;"><b>Top of the list:</b></p>
+      <table style="border-collapse:collapse;width:100%;font-size:13px;">
+        <tr>
+          <th style="text-align:left;padding:6px 10px;border-bottom:2px solid #1a1a1a;">Curator</th>
+          <th style="text-align:left;padding:6px 10px;border-bottom:2px solid #1a1a1a;">Playlist</th>
+          <th style="text-align:right;padding:6px 10px;border-bottom:2px solid #1a1a1a;">Followers</th>
+          <th style="text-align:left;padding:6px 10px;border-bottom:2px solid #1a1a1a;">Contact</th>
+        </tr>
+        {rows_html}
+      </table>
+      <p style="margin-top:22px;">Your results stay live on the site for two weeks.
+      Which playlist are you going after first?</p>
+      <p>Alexander<br>Freshly Baked Studios</p>
+    </div>
+    """
+    plain = (
+        f"The deep scan on \"{track}\" just finished. {curator_count} curators with "
+        f"real contact info, pulled from playlists already running songs that sound "
+        f"like yours.\n\nOpen your pitch screen: {site_url}\nDownload the sheet (CSV): "
+        f"{csv_url}\n\nYour results stay live for two weeks. Which playlist are you "
+        f"going after first?\n\nAlexander\nFreshly Baked Studios"
+    )
+    subject = f'Your curator list is ready. {curator_count} contacts for "{track}"'
+    try:
+        from deal_nurture import _send_via_gmail
+        ok = _send_via_gmail(to_email, subject, html, plain)
+    except Exception as e:
+        print(f"Enrichment [{job_id[:8]}]: gmail rail unavailable ({e})")
+        ok = False
+    print(f"Enrichment [{job_id[:8]}]: curator report email to {to_email}: "
+          f"{'sent' if ok else 'FAILED'}")
+
+
 def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = None,
                                max_matches: int = 200, include_curators: bool = True):
     """
@@ -3980,7 +4084,8 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     if cm_cid:
                         local = _lookup_curator_local(cm_cid)
                         if local:
-                            curator_info.update({k: v for k, v in local.items() if v})
+                            curator_info.update({k: v for k, v in local.items()
+                                                 if v and not k.startswith('_')})
                             print(f"Enrichment [{job_id[:8]}]: LOCAL curator {cm_cid} ({curator_info['name']}): "
                                   f"email={'yes' if local.get('email') else 'no'}, "
                                   f"ig={'yes' if local.get('instagram_url') else 'no'}, "
@@ -3992,7 +4097,22 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                     curator_info.get('instagram_url') or
                                     curator_info.get('facebook_url') or
                                     curator_info.get('website_url'))
-                    if cm_cid and not has_any_local:
+                    # Negative cache: a local row that exists but is contactless
+                    # means a previous scan already asked CM and found nothing —
+                    # don't burn a rate-limited API call again for 90 days.
+                    _neg_cached = False
+                    if cm_cid and not has_any_local and local is not None:
+                        try:
+                            from datetime import timezone as _tz
+                            _ts = str(local.get('_row_updated_at') or '')
+                            _dt = datetime.fromisoformat(_ts.replace('Z', '+00:00'))
+                            _neg_cached = (datetime.now(_tz.utc) - _dt).days < 90
+                        except Exception:
+                            _neg_cached = False
+                    if _neg_cached:
+                        print(f"Enrichment [{job_id[:8]}]: Negative cache — curator {cm_cid} "
+                              f"({curator_info.get('name', '?')}) checked <90d ago, no contacts; skipping CM call")
+                    if cm_cid and not has_any_local and not _neg_cached:
                         contact = _fetch_curator_contact(token, cm_cid)
                         if contact:
                             curator_info.update(contact)
@@ -4273,6 +4393,13 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                           'curators_locked': curators_locked})
         print(f"Enrichment [{job_id[:8]}]: Complete"
               + (f" — {curators_locked} curators locked behind Pro" if curators_locked else ""))
+        # Pro runs with contactable curators: email the finished list (the run
+        # completes unattended, so this is how the user learns it's ready).
+        if include_curators and curator_count > 0:
+            try:
+                _send_curator_report_email(job_id, curator_count)
+            except Exception as _mail_err:
+                print(f"Enrichment [{job_id[:8]}]: report email failed: {_mail_err}")
         # Notify resource-switcher that we're done — local scripts can resume
         _notify_local_pipeline('user_idle')
 
