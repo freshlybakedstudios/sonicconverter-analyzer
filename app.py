@@ -3439,19 +3439,18 @@ async def analyze(
         enrichment_matches = enrichment_matches[:200]  # Cap total
         # Resume enrichment gate — user-facing CM calls are done
         _resume_enrichment()
-        # Same tiering as analyze-url (2026-08-08): free = NO enrichment, the
-        # pitch list is the Pro product. (Upload is Pro-only in the UI now
-        # anyway — this is the defensive backend mirror.)
+        # Same tiering as analyze-url (2026-08-17 free-slice surgery): every
+        # scan gets enrichment — Pro the full 200 + curators/credits, free a
+        # 25-match slice with curators counted-but-locked. (Upload is
+        # Pro-only in the UI anyway — this is the defensive backend mirror.)
         _full = bool(lead.get('full_enrichment')) or not lead.get('id')
         result['pro'] = _full
-        if _full:
-            enrichment_pool.submit(
-                _run_background_enrichment,
-                job_id, enrichment_matches, user_cm_id,
-                200, True,
-            )
-        else:
-            job_mgr.update_job(job_id, status='complete')
+        _enrich_cap = 200 if _full else 25
+        enrichment_pool.submit(
+            _run_background_enrichment,
+            job_id, enrichment_matches[:_enrich_cap], user_cm_id,
+            _enrich_cap, _full,
+        )
 
         _use_scan(lead)
         return result
@@ -3770,30 +3769,14 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             'curators_found': 0, 'phase': 'playlists',
         })
 
-        _no_subscriber_since = None  # Track when subscribers disappeared
-        # Paid enrichment runs to completion UNATTENDED (2026-08-09): the
-        # stale cutoff is a free-tier cost-saver — a Pro customer who paid
-        # for the full pitch list gets it even if they close the laptop.
-        # include_curators is the paid gate (Phase C), so it doubles as the
-        # paid marker here.
-        _paid_run = bool(include_curators)
+        # ALL enrichment runs to completion UNATTENDED (2026-08-17 free-slice
+        # surgery; supersedes the 2026-08-09 free-tier stale cutoff). Free
+        # runs are cost-bounded by the 25-match cap + no curators + no
+        # credits (~2 CM calls per match); Pro runs were already unattended
+        # (bought and paid for). Results persist to the job row either way,
+        # so a closed tab picks them up via the SSE catch-up replay.
 
         for batch_start in range(0, total, BATCH_SIZE):
-            # Stop enrichment if no one is listening (tab closed) — 30s grace for reconnects
-            if not _paid_run and (job_id not in sse_subscribers or not sse_subscribers[job_id]):
-                if _no_subscriber_since is None:
-                    _no_subscriber_since = time.time()
-                    print(f"Enrichment [{job_id[:8]}]: No SSE subscribers — waiting 30s for reconnect")
-                elif time.time() - _no_subscriber_since > 30:
-                    print(f"Enrichment [{job_id[:8]}]: No SSE subscribers for 30s — stopping (tab closed)")
-                    job_mgr.update_job(job_id, status='stale')
-                    _notify_local_pipeline('user_idle')
-                    return
-            elif _paid_run:
-                pass
-            else:
-                _no_subscriber_since = None
-
             # Keep activity alive so resource-switcher doesn't resume GEMS mid-enrichment
             _last_api_activity = time.time()
 
@@ -3843,17 +3826,21 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                         track_name=m.get('track_name', ''),
                     )
 
-                    try:
-                        credits = _extract_track_credits(token, cm_track_id)
-                        if credits and (credits.get('producers') or credits.get('writers')):
-                            job_mgr.update_job(job_id, credits={match_key: credits})
-                            _sse_publish(job_id, 'credits', {
-                                'match_key': match_key,
-                                'artist_name': m.get('name', ''),
-                                'credits': credits,
-                            })
-                    except Exception as e:
-                        print(f"Enrichment [{job_id[:8]}]: Credits failed for {isrc}: {e}")
+                    # Credits are Pro-only (2026-08-17 free-slice surgery):
+                    # an extra CM call per match, and the credits card is
+                    # part of the paid pitch kit.
+                    if include_curators:
+                        try:
+                            credits = _extract_track_credits(token, cm_track_id)
+                            if credits and (credits.get('producers') or credits.get('writers')):
+                                job_mgr.update_job(job_id, credits={match_key: credits})
+                                _sse_publish(job_id, 'credits', {
+                                    'match_key': match_key,
+                                    'artist_name': m.get('name', ''),
+                                    'credits': credits,
+                                })
+                        except Exception as e:
+                            print(f"Enrichment [{job_id[:8]}]: Credits failed for {isrc}: {e}")
 
                     print(f"Enrichment [{job_id[:8]}]:   -> {len(playlists) if playlists else 0} playlists for {artist_name}")
                     if playlists:
@@ -3969,20 +3956,8 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             for curator_info in batch_curators:
                 try:
                     curators_checked += 1
-
-                    # Check for tab closed every 10 curators (free runs only —
-                    # paid runs complete unattended)
-                    if not _paid_run and curators_checked % 10 == 0:
-                        if job_id not in sse_subscribers or not sse_subscribers[job_id]:
-                            if _no_subscriber_since is None:
-                                _no_subscriber_since = time.time()
-                            elif time.time() - _no_subscriber_since > 30:
-                                print(f"Enrichment [{job_id[:8]}]: No SSE subscribers for 30s (during curator resolve) — stopping")
-                                job_mgr.update_job(job_id, status='stale')
-                                _notify_local_pipeline('user_idle')
-                                return
-                        else:
-                            _no_subscriber_since = None
+                    # (Tab-closed abort removed 2026-08-17: all runs complete
+                    # unattended; curator resolve only happens on Pro runs.)
 
                     cm_cid = curator_info.get('cm_curator_id')
                     # Live status so UI doesn't look frozen
@@ -5550,28 +5525,25 @@ async def analyze_url(
 
     # Resume enrichment gate — user-facing CM calls are done
     _resume_enrichment()
-    # Tier: paid (full_enrichment) or legacy/owner sessions get the full
-    # 200-match pass with curator contacts. Free accounts get NO enrichment at
-    # all (2026-08-08, owner): the pitch list (playlists + curators) IS the Pro
-    # product, and the playlist tail was the entire Chartmetric cost + the
-    # multi-user pileup risk. Free scans now cost ~2 CM calls and finish at
-    # scan time; the frontend shows the locked Pro block instead of a stream.
+    # Tier (2026-08-17 free-slice surgery, supersedes 2026-08-08 "free = NO
+    # enrichment"): every scan gets enrichment — Pro/legacy the full 200-match
+    # pass with curator contacts + credits + forecast; free a 25-match slice
+    # (related artists → audience match, capped playlists) with curators
+    # counted-but-locked as the upsell. Free cost ≈ 25 matches × ~2 CM calls.
     _full = bool(lead.get('full_enrichment')) or not lead.get('id')
     result['pro'] = _full
-    if _full:
-        # Displayed matches FIRST, then wider pool, so every visible match
-        # gets playlist data
-        displayed_ids = {str(m.get('artist_id', '')) for m in found_matches}
-        wider_pool = sorted(all_found, key=lambda m: m.get('similarity', 0), reverse=True)
-        wider_extra = [m for m in wider_pool if str(m.get('artist_id', '')) not in displayed_ids]
-        enrichment_matches = (found_matches + wider_extra)[:200]
-        enrichment_pool.submit(
-            _run_background_enrichment,
-            new_job_id, enrichment_matches, user_cm_id,
-            200, True,
-        )
-    else:
-        job_mgr.update_job(new_job_id, status='complete')
+    # Displayed matches FIRST, then wider pool, so every visible match
+    # gets playlist data
+    displayed_ids = {str(m.get('artist_id', '')) for m in found_matches}
+    wider_pool = sorted(all_found, key=lambda m: m.get('similarity', 0), reverse=True)
+    wider_extra = [m for m in wider_pool if str(m.get('artist_id', '')) not in displayed_ids]
+    _enrich_cap = 200 if _full else 25
+    enrichment_matches = (found_matches + wider_extra)[:_enrich_cap]
+    enrichment_pool.submit(
+        _run_background_enrichment,
+        new_job_id, enrichment_matches, user_cm_id,
+        _enrich_cap, _full,
+    )
 
     _use_scan(lead)
     return result
