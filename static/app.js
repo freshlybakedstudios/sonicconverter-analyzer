@@ -2616,6 +2616,11 @@ function appendCuratorEmail(data) {
   curatorRows.push(curator);
   const csvBtn = $('#curator-csv-btn');
   if (csvBtn) csvBtn.classList.remove('hidden');
+  const reportBtn = $('#curator-report-btn');
+  if (reportBtn && currentJobId) {
+    reportBtn.classList.remove('hidden');
+    reportBtn.onclick = () => window.open(`${API_URL}/report/${currentJobId}`, '_blank');
+  }
 
   const countEl = $('#curator-contacts-count');
   if (countEl && data.progress) countEl.textContent = data.progress;

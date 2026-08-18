@@ -3773,6 +3773,7 @@ def _send_curator_report_email(job_id: str, curator_count: int):
                  key=lambda c: c.get('followers', 0) or 0, reverse=True)[:10]
     site_url = 'https://analyze.freshlybakedstudios.com'
     csv_url = f'{site_url}/api/analysis/{job_id}/csv'
+    report_url = f'{site_url}/report/{job_id}'
 
     rows_html = ''
     for c in top:
@@ -3800,7 +3801,7 @@ def _send_curator_report_email(job_id: str, curator_count: int):
       that sound like yours. Every one of them comes with a ready-to-send pitch on
       your results page.</p>
       <p style="margin:22px 0;">
-        <a href="{site_url}" style="{btn}background:#b45309;color:#fff;">Open my pitch screen</a>
+        <a href="{report_url}" style="{btn}background:#b45309;color:#fff;">Open your curator report</a>
         <a href="{csv_url}" style="{btn}background:#f3f4f6;color:#1a1a1a;border:1px solid #ddd;">Download the sheet (CSV)</a>
       </p>
       <p style="margin-bottom:6px;"><b>Top of the list:</b></p>
@@ -3821,7 +3822,7 @@ def _send_curator_report_email(job_id: str, curator_count: int):
     plain = (
         f"The deep scan on \"{track}\" just finished. {curator_count} curators with "
         f"real contact info, pulled from playlists already running songs that sound "
-        f"like yours.\n\nOpen your pitch screen: {site_url}\nDownload the sheet (CSV): "
+        f"like yours.\n\nOpen your curator report: {report_url}\nDownload the sheet (CSV): "
         f"{csv_url}\n\nYour results stay live for two weeks. Which playlist are you "
         f"going after first?\n\nAlexander\nFreshly Baked Studios"
     )
@@ -4590,6 +4591,156 @@ async def restore_latest_analysis(token: str):
     return {'found': True, 'job_id': row['id'], 'status': row.get('status'),
             'spotify_url': row.get('spotify_url'), 'created_at': row.get('created_at'),
             'result': result}
+
+
+# ---------------------------------------------------------------------------
+# Standalone curator report page — the shareable "sheet". Linked from the
+# pitch screen and the completion email; the job UUID is the capability.
+# ---------------------------------------------------------------------------
+@app.get("/report/{job_id}")
+async def curator_report_page(job_id: str):
+    import html as _html
+    from fastapi.responses import HTMLResponse
+    try:
+        res = supabase.table('analysis_jobs') \
+            .select('track_name,artist_name,spotify_url,created_at,curator_emails') \
+            .eq('id', job_id).limit(1).execute()
+        job = (res.data or [None])[0]
+    except Exception:
+        job = None
+    if not job:
+        raise HTTPException(404, "Report not found")
+    curators = job.get('curator_emails') or {}
+    if isinstance(curators, str):
+        try:
+            curators = json.loads(curators)
+        except Exception:
+            curators = {}
+    rows = sorted(curators.values(),
+                  key=lambda c: c.get('followers', 0) or 0, reverse=True)
+    track = job.get('track_name') or 'your track'
+    artist = job.get('artist_name') or ''
+    scan_date = (job.get('created_at') or '')[:10]
+    esc = _html.escape
+
+    def _contact_links(c):
+        out = []
+        email = (c.get('email') or '').strip()
+        if email:
+            out.append(f'<a href="mailto:{esc(email)}">{esc(email)}</a>')
+        for key, label in (('instagram_url', 'Instagram'), ('facebook_url', 'Facebook'),
+                           ('website_url', 'Website'), ('submithub_url', 'SubmitHub'),
+                           ('groover_url', 'Groover'), ('submission_url', 'Submit')):
+            v = (c.get(key) or '').strip()
+            if v:
+                out.append(f'<a href="{esc(v)}" target="_blank" rel="noopener">{label}</a>')
+        return ' &middot; '.join(out) or '&mdash;'
+
+    body_rows = ''
+    for i, c in enumerate(rows):
+        pl_name = esc(c.get('playlist_name') or '')
+        pl_link = (c.get('playlist_link') or '').strip()
+        pl_html = (f'<a href="{esc(pl_link)}" target="_blank" rel="noopener">{pl_name}</a>'
+                   if pl_link else pl_name)
+        anchor = esc(c.get('sonic_match') or '')
+        anchor_track = esc(c.get('track_name') or '')
+        anchor_html = f'{anchor}{" &middot; " + anchor_track if anchor_track else ""}' if anchor else '&mdash;'
+        body_rows += f"""
+        <tr>
+          <td><b>{esc(c.get('name') or '?')}</b></td>
+          <td>{pl_html}</td>
+          <td class="num">{(c.get('followers', 0) or 0):,}</td>
+          <td>{anchor_html}</td>
+          <td>{_contact_links(c)}</td>
+          <td><button class="pitch-btn" data-i="{i}">Copy pitch</button></td>
+        </tr>"""
+
+    curators_json = json.dumps([
+        {'name': c.get('name') or '', 'playlist_name': c.get('playlist_name') or '',
+         'sonic_match': c.get('sonic_match') or '', 'track_name': c.get('track_name') or '',
+         'email': c.get('email') or ''} for c in rows
+    ])
+    ctx_json = json.dumps({'artist': artist, 'track': track,
+                           'url': job.get('spotify_url') or ''})
+
+    page = f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Curator Report &mdash; {esc(track)}</title>
+<style>
+  body {{ background:#0a0a0a; color:#eee; font-family:-apple-system,Segoe UI,Arial,sans-serif; margin:0; padding:24px; }}
+  .wrap {{ max-width:1100px; margin:0 auto; }}
+  .card {{ background:#161616; border:1px solid #2a2a2a; border-radius:14px; padding:22px 26px; margin-bottom:18px; }}
+  h1 {{ font-size:22px; margin:0 0 4px; }}
+  .sub {{ opacity:.65; font-size:14px; }}
+  .stat {{ color:#22c55e; font-weight:700; }}
+  table {{ border-collapse:collapse; width:100%; font-size:14px; }}
+  th {{ text-align:left; padding:9px 12px; border-bottom:2px solid #333; white-space:nowrap; }}
+  td {{ padding:9px 12px; border-bottom:1px solid #242424; vertical-align:top; }}
+  td.num {{ text-align:right; white-space:nowrap; }}
+  a {{ color:#f59e0b; text-decoration:none; }}
+  a:hover {{ text-decoration:underline; }}
+  .pitch-btn {{ background:#262626; color:#eee; border:1px solid #3a3a3a; border-radius:7px; padding:6px 12px; cursor:pointer; white-space:nowrap; }}
+  .pitch-btn:hover {{ background:#333; }}
+  .dl {{ display:inline-block; background:#22c55e; color:#0a0a0a; font-weight:700; border-radius:8px; padding:10px 18px; margin-top:10px; }}
+  .tablewrap {{ overflow-x:auto; }}
+</style></head><body><div class="wrap">
+  <div class="card">
+    <h1>Curator Report &mdash; &ldquo;{esc(track)}&rdquo;{' by ' + esc(artist) if artist else ''}</h1>
+    <div class="sub">Scanned {esc(scan_date)} &middot; <span class="stat">{len(rows)} contactable curators</span>
+    &middot; every row has a ready-to-send pitch</div>
+    <a class="dl" href="/api/analysis/{esc(job_id)}/csv">Download the sheet (CSV)</a>
+  </div>
+  <div class="card tablewrap">
+    <table>
+      <tr><th>Curator</th><th>Playlist</th><th>Followers</th><th>They already run</th><th>Contact</th><th></th></tr>
+      {body_rows}
+    </table>
+  </div>
+</div>
+<script>
+const CURATORS = {curators_json};
+const CTX = {ctx_json};
+function buildPitch(c) {{
+  const track = CTX.track ? '"' + CTX.track + '"' : 'my new track';
+  const artist = CTX.artist || 'an independent artist';
+  const pl = c.playlist_name || 'your playlist';
+  const ref = c.sonic_match || '';
+  const refTrack = c.track_name ? '"' + c.track_name + '"' : '';
+  const who = (c.name || '').split(' ')[0] || 'there';
+  const lines = ['Hi ' + who + ',', ''];
+  if (ref) {{
+    const poss = ref.endsWith('s') ? ref + "'" : ref + "'s";
+    const anchor = refTrack ? poss + ' ' + refTrack : ref;
+    lines.push('You already have ' + anchor + ' on ' + pl + ' — our track ' + track +
+               ' is a direct sonic match to it. Same energy, same production world.');
+  }} else {{
+    lines.push(track + ' belongs on ' + pl + '.');
+  }}
+  if (CTX.url) {{ lines.push(''); lines.push('Listen here: ' + CTX.url); }}
+  lines.push('');
+  lines.push(ref ? "It'll sit right next to it on the playlist. Thanks for the add!" : 'Thanks for the add!');
+  lines.push('');
+  lines.push(artist);
+  return lines.join('\\n');
+}}
+document.querySelectorAll('.pitch-btn').forEach(btn => {{
+  btn.addEventListener('click', () => {{
+    const text = buildPitch(CURATORS[parseInt(btn.dataset.i, 10)] || {{}});
+    const done = () => {{ btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy pitch', 1600); }};
+    if (navigator.clipboard && navigator.clipboard.writeText) {{
+      navigator.clipboard.writeText(text).then(done).catch(() => fallback(text, done));
+    }} else fallback(text, done);
+  }});
+}});
+function fallback(text, done) {{
+  const ta = document.createElement('textarea');
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  try {{ document.execCommand('copy'); done(); }} catch (e) {{}}
+  ta.remove();
+}}
+</script></body></html>"""
+    return HTMLResponse(page)
 
 
 # ---------------------------------------------------------------------------
