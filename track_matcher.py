@@ -453,6 +453,13 @@ SPARSE_IDENTITY_PENALTY = 0.025  # 2026-08-19 owner call (Buckethead on the
 # system: three shared lane tags plus sonics beats sonics alone.
 
 
+_GENERIC_ONLY_TAGS = {
+    'rock', 'pop', 'hip hop', 'hip-hop', 'rap', 'electronic', 'dance',
+    'edm', 'country', 'metal', 'r&b', 'soul', 'folk', 'jazz', 'house',
+    'alternative',
+}
+
+
 def sparse_identity_penalty(m: Dict) -> float:
     """Ordering penalty for candidates with almost no verifiable genre
     identity (2026-08-17, DWP/Currents on the Slow Pulp card: metalcore
@@ -471,6 +478,14 @@ def sparse_identity_penalty(m: Dict) -> float:
     if not tags:
         return 2 * SPARSE_IDENTITY_PENALTY
     if len(tags) == 1:
+        # A lone ULTRA-GENERIC tag verifies nothing (2026-08-19: Carlos
+        # Pérez at #2 on the Girl Tones card with 'us rock' as his entire
+        # stored identity — post region-strip that's bare 'rock', the least
+        # informative word in the database). Costs the same as taglessness.
+        # A lone SPECIFIC tag ('indie', 'shoegaze') is a real lane marker
+        # and keeps the half penalty — Nick Wagen ('indie') stays ranked.
+        if next(iter(tags)) in _GENERIC_ONLY_TAGS:
+            return 2 * SPARSE_IDENTITY_PENALTY
         return SPARSE_IDENTITY_PENALTY
     return 0.0
 
