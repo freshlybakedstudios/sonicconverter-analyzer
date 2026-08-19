@@ -1707,7 +1707,7 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
         # stronger story in a pitch deck. Nudge, not gate — reorders
         # near-ties, can't push an unqualified candidate into the list.
         if user_pronoun and c['pronoun'] and c['pronoun'] == user_pronoun:
-            c['combined_score'] = round(c['combined_score'] + 0.025, 3)
+            c['combined_score'] = round(c['combined_score'] + 0.05, 3)  # doubled 2026-08-19 (owner: comps should look like the artist)
         # Foreign-market interleave nudge (parity with trajectory/similar —
         # a Malaysian comp in a US pitch deck is a weaker proof point).
         if not user_non_native and c.get('non_native'):
@@ -2953,7 +2953,7 @@ async def analyze(
         all_matches.sort(key=lambda x: ((1.0 if (_upload_faith_filter and is_faith_world(x)) else 0.0)
                                         + x.get('similarity', 0)
                                         + x.get('_tag_aff', 0.0)
-                                        + (0.02 if (user_pronoun and (x.get('pronoun_title') or '') == user_pronoun) else 0.0)),
+                                        + (0.035 if (user_pronoun and (x.get('pronoun_title') or '') == user_pronoun) else 0.0)),
                          reverse=True)
 
         # Debug: show top 40 matches with genre families
@@ -3061,7 +3061,7 @@ async def analyze(
                 pronoun_boost = 0
                 cand_pronoun = m.get('pronoun_title', '')
                 if user_pronoun and cand_pronoun and cand_pronoun == user_pronoun:
-                    pronoun_boost = 0.035  # 3.5% boost for matching pronouns
+                    pronoun_boost = 0.05  # doubled-ish 2026-08-19, owner: trajectory should mirror the artist
 
                 total_boost = genre_boost + pronoun_boost + m.get('_tag_aff', 0.0)
                 # Aesthetic-clash veto (parity with URL-path trajectory).
