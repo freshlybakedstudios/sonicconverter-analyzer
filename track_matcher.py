@@ -445,7 +445,12 @@ def _affinity_base_tag(genre: str) -> str:
     return '' if lg == 'alternative' else lg
 
 
-SPARSE_IDENTITY_PENALTY = 0.012
+SPARSE_IDENTITY_PENALTY = 0.025  # 2026-08-19 owner call (Buckethead on the
+# Girl Tones card: tagless artist at 0.92 sonic rode above three-tag lane
+# peers; the old ±1.2/2.4% nudge couldn't reorder him). Tagless now costs
+# 5%, one-bare-tag costs 2.5% — lane-verified multi-tag artists win the
+# ordering when sonics are close, which is the whole point of the rarity
+# system: three shared lane tags plus sonics beats sonics alone.
 
 
 def sparse_identity_penalty(m: Dict) -> float:
