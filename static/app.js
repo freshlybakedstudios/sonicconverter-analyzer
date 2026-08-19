@@ -114,6 +114,12 @@ function _pollQueueChip(jobId) {
       }
       const stEl = chip.querySelector('.qchip-status');
       if (s.status === 'complete' && s.has_result) {
+        if (window._autoOpenJob === jobId) {
+          // Original behavior (owner, 2026-08-19): the scan you just started
+          // shows its results itself — the queue is plumbing, not a detour.
+          window._autoOpenJob = null;
+          viewQueuedScan(jobId);
+        }
         chip.style.borderColor = 'rgba(34,197,94,0.45)';
         chip.style.background = 'rgba(34,197,94,0.07)';
         if (stEl) {
@@ -139,9 +145,11 @@ function _pollQueueChip(jobId) {
       if (stEl) stEl.textContent = (_QUEUE_LABELS[s.status] || s.status) +
         ' — you can leave, it keeps going';
     } catch (e) { /* transient — keep polling */ }
-    setTimeout(tick, 12000);
+    chip.dataset.polls = (parseInt(chip.dataset.polls || '0', 10) + 1);
+    // fast polls early (cached scans finish in seconds), settle to 12s
+    setTimeout(tick, chip.dataset.polls < 12 ? 3500 : 12000);
   };
-  setTimeout(tick, 5000);
+  setTimeout(tick, 2500);
 }
 
 async function viewQueuedScan(jobId) {
@@ -640,6 +648,7 @@ async function analyzeTrack() {
         return;
       }
       const qData = await qRes.json();
+      window._autoOpenJob = qData.job_id; // newest scan auto-opens when done
       addQueueChip(qData.job_id, urlVal);
       $('#spotify-track-url').value = '';
       if (typeof gtag === 'function') {
