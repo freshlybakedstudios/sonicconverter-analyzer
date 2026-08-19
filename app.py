@@ -1652,6 +1652,7 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             'non_native': _cand_non_native(x),
             'code2': (x.get('code2') or '').upper(),
             'identity_poor': _sparse_pen(x) >= 2 * _SPARSE_PEN_UNIT,
+            'stale': x.get('_stale', 0.0),
             'tag_aff': x.get('_tag_aff', 0.0),
         })
     if not scored: return []
@@ -1716,6 +1717,10 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
         # sharing the user's rare subgenres makes a genre-truer comp.
         if c.get('tag_aff'):
             c['combined_score'] = round(c['combined_score'] + c['tag_aff'], 3)
+        # Recency (parity with matches/trajectory): a comp whose last era was
+        # years ago is a weaker pitch-deck proof point today.
+        if c.get('stale'):
+            c['combined_score'] = round(c['combined_score'] - c['stale'], 3)
     qualified.sort(key=lambda c: -c['combined_score'])
     # Market coherence (owner, 2026-08-19: Thai/Russian comps on a US pitch
     # card are noise, not proof). Principle, not a hack: comps should come
@@ -2052,6 +2057,43 @@ def _unify_lufs_est(features: dict):
             features['lufs_integrated_est'] = round(float(_proj), 2)
     except Exception:
         pass
+
+
+def _stamp_release_staleness(matches: list, top_n: int = 400):
+    """Recency nudge, ordering only (owner, 2026-08-19: Paola's last track is
+    years old and shouldn't outrank active artists). Fetches release years
+    from tracks.isrc (52% of the universe joins); missing or garbage dates
+    have ZERO effect, the whole step is best-effort, and displayed match %
+    is untouched — this only reorders near-ties toward artists whose sound
+    is from the same era as the scan."""
+    try:
+        from datetime import timezone as _tz
+        now_y = datetime.now(_tz.utc).year
+        pool = [m for m in matches[:top_n] if m.get('isrc')]
+        isrcs = list({m['isrc'] for m in pool})
+        years = {}
+        for i in range(0, len(isrcs), 300):
+            rows = supabase.table('tracks').select('isrc,release_date') \
+                .in_('isrc', isrcs[i:i + 300]) \
+                .not_.is_('release_date', 'null').execute().data or []
+            for r in rows:
+                try:
+                    y = int(str(r['release_date'])[:4])
+                    if 1900 <= y <= now_y + 1:
+                        years[r['isrc']] = y
+                except Exception:
+                    pass
+        for m in pool:
+            y = years.get(m['isrc'])
+            if y is None:
+                continue
+            age = now_y - y
+            m['_stale'] = (0.0 if age <= 2 else
+                           0.01 if age <= 4 else
+                           0.02 if age <= 7 else 0.03)
+        print(f"  recency: {len(years)}/{len(isrcs)} candidates dated")
+    except Exception as e:
+        print(f"  recency stamp skipped: {e}")
 
 
 def _est_integrated_from_gems_row(row: dict):
@@ -2950,9 +2992,11 @@ async def analyze(
         for m in all_matches:
             m['_tag_aff'] = (matcher.tag_affinity_bonus(_upload_aff_tags, m)
                              - sparse_identity_penalty(m))
+        _stamp_release_staleness(all_matches)
         all_matches.sort(key=lambda x: ((1.0 if (_upload_faith_filter and is_faith_world(x)) else 0.0)
                                         + x.get('similarity', 0)
                                         + x.get('_tag_aff', 0.0)
+                                        - x.get('_stale', 0.0)
                                         + (0.035 if (user_pronoun and (x.get('pronoun_title') or '') == user_pronoun) else 0.0)),
                          reverse=True)
 
@@ -3063,7 +3107,7 @@ async def analyze(
                 if user_pronoun and cand_pronoun and cand_pronoun == user_pronoun:
                     pronoun_boost = 0.05  # doubled-ish 2026-08-19, owner: trajectory should mirror the artist
 
-                total_boost = genre_boost + pronoun_boost + m.get('_tag_aff', 0.0)
+                total_boost = genre_boost + pronoun_boost + m.get('_tag_aff', 0.0) - m.get('_stale', 0.0)
                 # Aesthetic-clash veto (parity with URL-path trajectory).
                 if aesthetic_clash(m, upload_aggr_ctx):
                     continue
@@ -5804,10 +5848,12 @@ async def analyze_url(
     for m in all_found:
         m['_tag_aff'] = (matcher.tag_affinity_bonus(_user_aff_tags, m)
                          - sparse_identity_penalty(m))
+    _stamp_release_staleness(all_found)
     all_found.sort(key=lambda m: ((1.0 if (_faith_filter and is_faith_world(m)) else
                                    0.0 if _faith_filter else 0.0)
                                   + m.get('similarity', 0)
                                   + m.get('_tag_aff', 0.0)
+                                  - m.get('_stale', 0.0)
                                   - (NON_NATIVE_TRAJECTORY_PENALTY
                                      if (not user_non_native and _cand_non_native(m)) else 0.0)
                                   - _retro_penalty(m)
