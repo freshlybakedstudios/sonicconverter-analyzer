@@ -4640,11 +4640,15 @@ async def analyze_url_queue(
     job_mgr._mem[jid] = {'id': jid, 'status': 'queued', 'spotify_url': spotify_url,
                          'token': token}
 
-    async def _run_queued():
+    def _run_queued_thread():
+        # Dedicated thread with its own event loop: the pipeline body is
+        # blocking-heavy (matching CPU, sync HTTP), so running it as a task on
+        # the server's main loop froze ALL requests — including this
+        # endpoint's own response — until the scan finished.
         try:
             job_mgr.update_job(jid, status='matching')
-            await analyze_url(spotify_url=spotify_url, token=token, genre=genre,
-                              queued_job_id=jid)
+            asyncio.run(analyze_url(spotify_url=spotify_url, token=token,
+                                    genre=genre, queued_job_id=jid))
             print(f"Queued scan [{jid[:8]}]: pipeline finished")
         except HTTPException as he:
             print(f"Queued scan [{jid[:8]}]: failed: {he.detail}")
@@ -4660,7 +4664,8 @@ async def analyze_url_queue(
             except Exception:
                 pass
 
-    asyncio.get_event_loop().create_task(_run_queued())
+    threading.Thread(target=_run_queued_thread, daemon=True,
+                     name=f'queued-scan-{jid[:8]}').start()
     return {'job_id': jid, 'queued': True}
 
 
