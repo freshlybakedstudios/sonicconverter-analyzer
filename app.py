@@ -4614,6 +4614,90 @@ async def restore_latest_analysis(token: str):
 
 
 # ---------------------------------------------------------------------------
+# My Scans — per-account scan history. Every scan is saved; this page is the
+# shelf. Linked from the signed-in header; running scans show status chips
+# and the page refreshes itself until they land.
+# ---------------------------------------------------------------------------
+@app.get("/scans")
+async def my_scans_page(token: str):
+    import html as _html
+    from fastapi.responses import HTMLResponse
+    lead = _validate_session(token)
+    email = (lead.get('email') or '').strip()
+    esc = _html.escape
+    try:
+        q = supabase.table('analysis_jobs') \
+            .select('id,status,track_name,artist_name,spotify_url,created_at,result_json') \
+            .order('created_at', desc=True).limit(50)
+        q = q.eq('user_email', email) if email else q.eq('token', token)
+        rows = q.execute().data or []
+    except Exception as e:
+        print(f"scans page: lookup failed: {e}")
+        rows = []
+
+    STATUS_CHIP = {
+        'complete': ('done', '#22c55e'),
+        'error': ('failed', '#ef4444'),
+        'enriching': ('building your list', '#f59e0b'),
+        'matching': ('analyzing', '#f59e0b'),
+        'pending_features': ('queued', '#f59e0b'),
+        'features_ready': ('analyzing', '#f59e0b'),
+    }
+    any_running = False
+    body_rows = ''
+    for r in rows:
+        st = r.get('status') or '?'
+        label, color = STATUS_CHIP.get(st, (st, '#888'))
+        if st not in ('complete', 'error'):
+            any_running = True
+        name = r.get('track_name') or ''
+        artist = r.get('artist_name') or ''
+        title = f'&ldquo;{esc(name)}&rdquo;' if name else esc((r.get('spotify_url') or 'Scan')[:60])
+        if artist:
+            title += f' <span style="opacity:.6">by {esc(artist)}</span>'
+        date = esc((r.get('created_at') or '')[:16].replace('T', ' '))
+        has_result = bool(r.get('result_json'))
+        link = (f'<a href="/report/{esc(r["id"])}">open report &rarr;</a>'
+                if st == 'complete' and has_result else '')
+        body_rows += f"""
+        <tr>
+          <td>{title}</td>
+          <td class="date">{date}</td>
+          <td><span class="chip" style="border-color:{color};color:{color};">{label}</span></td>
+          <td>{link}</td>
+        </tr>"""
+    if not rows:
+        body_rows = '<tr><td colspan="4" style="opacity:.6;padding:26px;">No scans yet — run your first one and it lands here.</td></tr>'
+
+    refresh_tag = '<meta http-equiv="refresh" content="45">' if any_running else ''
+    page = f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">{refresh_tag}
+<title>My Scans &mdash; Sonic Analyzer</title>
+<style>
+  body {{ background:#0a0a0a; color:#eee; font-family:-apple-system,Segoe UI,Arial,sans-serif; margin:0; padding:24px; }}
+  .wrap {{ max-width:900px; margin:0 auto; }}
+  .card {{ background:#161616; border:1px solid #2a2a2a; border-radius:14px; padding:22px 26px; }}
+  h1 {{ font-size:22px; margin:0 0 4px; }}
+  .sub {{ opacity:.65; font-size:14px; margin-bottom:14px; }}
+  table {{ border-collapse:collapse; width:100%; font-size:14px; }}
+  td {{ padding:11px 12px; border-bottom:1px solid #242424; vertical-align:middle; }}
+  td.date {{ opacity:.55; white-space:nowrap; }}
+  .chip {{ border:1px solid; border-radius:999px; padding:3px 10px; font-size:12px; white-space:nowrap; }}
+  a {{ color:#f59e0b; text-decoration:none; }}
+  a:hover {{ text-decoration:underline; }}
+</style></head><body><div class="wrap">
+  <div class="card">
+    <h1>My Scans</h1>
+    <div class="sub">Every scan you run is saved here{' &middot; this page refreshes itself while a scan is running' if any_running else ''}.
+    &middot; <a href="https://analyze.freshlybakedstudios.com">scan another track</a></div>
+    <table>{body_rows}</table>
+  </div>
+</div></body></html>"""
+    return HTMLResponse(page)
+
+
+# ---------------------------------------------------------------------------
 # Standalone curator report page — the shareable "sheet". Linked from the
 # pitch screen and the completion email; the job UUID is the capability.
 # ---------------------------------------------------------------------------

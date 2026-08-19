@@ -61,6 +61,8 @@ function _authSuccess(data) {
 }
 
 function _updateScans(remaining, info) {
+  const myScans = $('#my-scans-btn');
+  if (myScans && accessToken) myScans.href = `${API_URL}/scans?token=${accessToken}`;
   const badge = $('#scans-badge');
   if (!badge) return;
   // Signed-in identity strip: "Name · PRO · N scans remaining"
