@@ -24,14 +24,18 @@ class JobManager:
         self._supabase = client
 
     def create_job(self, token: str, features: dict, matches: list,
-                   all_matches: list = None, identity: dict = None) -> str:
+                   all_matches: list = None, identity: dict = None,
+                   job_id: str = None) -> str:
         """Create a new analysis job. Returns the job_id (UUID).
 
         identity: scan identity — {track_name, artist_name, spotify_url,
         user_email, scan_source}. Every scan must be auditable (2026-08-07:
         the Dark Funeral test scan was anonymous in the DB — the scan IS the
-        lead, so anonymous jobs are unacceptable)."""
-        job_id = str(uuid.uuid4())
+        lead, so anonymous jobs are unacceptable).
+
+        job_id: reuse an existing row (queued fire-and-forget scans create the
+        row up front so the whole scan lifecycle lives on one id)."""
+        job_id = job_id or str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
         identity = {k: v for k, v in (identity or {}).items()
                     if k in ('track_name', 'artist_name', 'spotify_url',
@@ -77,7 +81,9 @@ class JobManager:
                     'updated_at': now,
                     **identity,
                 }
-                self._supabase.table('analysis_jobs').insert(row).execute()
+                # Upsert: fire-and-forget scans pre-create the row as 'queued',
+                # so job-id reuse must update rather than collide.
+                self._supabase.table('analysis_jobs').upsert(row).execute()
             except Exception as e:
                 print(f"JobManager: Supabase insert failed, using in-memory: {e}")
 

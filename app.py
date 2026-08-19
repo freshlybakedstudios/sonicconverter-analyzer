@@ -3760,7 +3760,7 @@ def _send_curator_report_email(job_id: str, curator_count: int):
     Rides the Gmail rail from deal_nurture (lands in Primary). Fire-and-forget;
     caller wraps in try/except."""
     row = supabase.table('analysis_jobs') \
-        .select('user_email,track_name,artist_name,curator_emails') \
+        .select('user_email,track_name,artist_name,curator_emails,token') \
         .eq('id', job_id).limit(1).execute()
     job = (row.data or [{}])[0]
     to_email = (job.get('user_email') or '').strip()
@@ -3789,6 +3789,38 @@ def _send_curator_report_email(job_id: str, curator_count: int):
     site_url = 'https://analyze.freshlybakedstudios.com'
     csv_url = f'{site_url}/api/analysis/{job_id}/csv'
     report_url = f'{site_url}/report/{job_id}'
+    scans_url = f"{site_url}/scans?token={job.get('token') or ''}"
+
+    btn = ('display:inline-block;padding:11px 20px;border-radius:8px;'
+           'text-decoration:none;font-weight:bold;margin-right:10px;')
+    if curator_count <= 0:
+        # No curator sweep on this scan (light pass) — the deliverable is the
+        # saved result itself, reachable from My Scans.
+        html = f"""
+        <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#1a1a1a;">
+          <p>Hey,</p>
+          <p>Your scan of &ldquo;{track}&rdquo; just finished. The full breakdown is saved
+          to your account &mdash; sonic profile, matches, and playlists.</p>
+          <p style="margin:22px 0;">
+            <a href="{scans_url}" style="{btn}background:#b45309;color:#fff;">Open My Scans</a>
+          </p>
+          <p>Every scan you run stays saved there. What are you scanning next?</p>
+          <p>Alexander<br>Freshly Baked Studios</p>
+        </div>
+        """
+        plain = (f"Your scan of \"{track}\" just finished. The full breakdown is saved "
+                 f"to your account.\n\nOpen My Scans: {scans_url}\n\n"
+                 f"Alexander\nFreshly Baked Studios")
+        subject = f'Your scan of "{track}" is ready'
+        try:
+            from deal_nurture import _send_via_gmail
+            ok = _send_via_gmail(to_email, subject, html, plain)
+        except Exception as e:
+            print(f"Enrichment [{job_id[:8]}]: gmail rail unavailable ({e})")
+            ok = False
+        print(f"Enrichment [{job_id[:8]}]: scan-ready email to {to_email}: "
+              f"{'sent' if ok else 'FAILED'}")
+        return
 
     rows_html = ''
     for c in top:
@@ -4475,13 +4507,12 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                           'curators_locked': curators_locked})
         print(f"Enrichment [{job_id[:8]}]: Complete"
               + (f" — {curators_locked} curators locked behind Pro" if curators_locked else ""))
-        # Pro runs with contactable curators: email the finished list (the run
-        # completes unattended, so this is how the user learns it's ready).
-        if include_curators and curator_count > 0:
-            try:
-                _send_curator_report_email(job_id, curator_count)
-            except Exception as _mail_err:
-                print(f"Enrichment [{job_id[:8]}]: report email failed: {_mail_err}")
+        # Every scan announces itself when done (fire-and-forget delivery):
+        # Pro runs get the curator report, light runs get the scan-ready note.
+        try:
+            _send_curator_report_email(job_id, curator_count)
+        except Exception as _mail_err:
+            print(f"Enrichment [{job_id[:8]}]: report email failed: {_mail_err}")
         # Notify resource-switcher that we're done — local scripts can resume
         _notify_local_pipeline('user_idle')
 
@@ -4573,6 +4604,115 @@ async def stream_enrichment(job_id: str):
 # ---------------------------------------------------------------------------
 # Restore-on-refresh: the session's most recent scan, full payload
 # ---------------------------------------------------------------------------
+@app.post("/api/analyze-url-queue")
+async def analyze_url_queue(
+    spotify_url: str = Form(...),
+    token: str = Form(...),
+    genre: Optional[str] = Form(None),
+):
+    """Fire-and-forget scan: validate fast, create the job row, run the whole
+    pipeline as a server-side background task, return the job id immediately.
+    The scan survives tab close / navigation — delivery is My Scans, the
+    report page, and the completion email."""
+    lead = _validate_session(token)
+    _check_scan_cap(lead)
+    if 'open.spotify.com/track/' not in spotify_url and 'spotify:track:' not in spotify_url:
+        raise HTTPException(400, "Please provide a valid Spotify track URL")
+
+    import uuid as _uuid
+    jid = str(_uuid.uuid4())
+    from datetime import timezone as _tz
+    now = datetime.now(_tz.utc).isoformat()
+    try:
+        supabase.table('analysis_jobs').insert({
+            'id': jid, 'token': token, 'status': 'queued',
+            'spotify_url': spotify_url,
+            'user_email': lead.get('email'),
+            'scan_source': 'url_queued',
+            'features': '{}', 'matches': '[]', 'playlists': '{}',
+            'related_artists': '[]', 'credits': '{}', 'curator_emails': '{}',
+            'confidence_map': '{}', 'progress': '{}',
+            'created_at': now, 'updated_at': now,
+        }).execute()
+    except Exception as e:
+        print(f"queue scan: row create failed: {e}")
+        raise HTTPException(503, "Could not queue the scan — try again in a moment.")
+    job_mgr._mem[jid] = {'id': jid, 'status': 'queued', 'spotify_url': spotify_url,
+                         'token': token}
+
+    async def _run_queued():
+        try:
+            job_mgr.update_job(jid, status='matching')
+            await analyze_url(spotify_url=spotify_url, token=token, genre=genre,
+                              queued_job_id=jid)
+            print(f"Queued scan [{jid[:8]}]: pipeline finished")
+        except HTTPException as he:
+            print(f"Queued scan [{jid[:8]}]: failed: {he.detail}")
+            try:
+                job_mgr.update_job(jid, status='error',
+                                   progress={'error_message': str(he.detail)[:300]})
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"Queued scan [{jid[:8]}]: crashed: {e}")
+            try:
+                job_mgr.update_job(jid, status='error')
+            except Exception:
+                pass
+
+    asyncio.get_event_loop().create_task(_run_queued())
+    return {'job_id': jid, 'queued': True}
+
+
+@app.get("/api/analysis/{job_id}/state")
+async def analysis_state(job_id: str):
+    """Featherweight status for queue chips: status + names + result flag."""
+    try:
+        rows = supabase.table('analysis_jobs') \
+            .select('status,track_name,artist_name,result_json') \
+            .eq('id', job_id).limit(1).execute().data
+    except Exception:
+        rows = None
+    if not rows:
+        raise HTTPException(404, "Job not found")
+    r = rows[0]
+    return {'status': r.get('status'), 'track_name': r.get('track_name'),
+            'artist_name': r.get('artist_name'),
+            'has_result': bool(r.get('result_json'))}
+
+
+@app.get("/api/analysis/{job_id}/result")
+async def analysis_result(job_id: str, token: str):
+    """Full saved result for one specific scan — powers 'view here' on queue
+    chips and reopening any scan from history. Session must own the job
+    (same token or same account email)."""
+    lead = _validate_session(token)
+    try:
+        rows = supabase.table('analysis_jobs') \
+            .select('id,status,token,user_email,spotify_url,result_json') \
+            .eq('id', job_id).limit(1).execute().data
+    except Exception:
+        rows = None
+    if not rows:
+        raise HTTPException(404, "Scan not found")
+    row = rows[0]
+    _email = (lead.get('email') or '').strip().lower()
+    owns = (row.get('token') == token or
+            (_email and (row.get('user_email') or '').strip().lower() == _email))
+    if not owns:
+        raise HTTPException(403, "Not your scan")
+    result = row.get('result_json')
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except Exception:
+            result = None
+    if not result:
+        return {'found': False, 'status': row.get('status')}
+    return {'found': True, 'job_id': row['id'], 'status': row.get('status'),
+            'spotify_url': row.get('spotify_url'), 'result': result}
+
+
 @app.get("/api/analysis/restore")
 async def restore_latest_analysis(token: str):
     """Return the newest scan result for this session so a page refresh (or a
@@ -4638,6 +4778,7 @@ async def my_scans_page(token: str):
     STATUS_CHIP = {
         'complete': ('done', '#22c55e'),
         'error': ('failed', '#ef4444'),
+        'queued': ('queued', '#f59e0b'),
         'enriching': ('building your list', '#f59e0b'),
         'matching': ('analyzing', '#f59e0b'),
         'pending_features': ('queued', '#f59e0b'),
@@ -4923,15 +5064,29 @@ async def analyze_url(
     spotify_url: str = Form(...),
     token: str = Form(...),
     genre: Optional[str] = Form(None),
+    queued_job_id: Optional[str] = None,
 ):
     """
     Analyze a Spotify track by URL.
     Always full-quality capture via the Mac worker (Spotify desktop playback
     through Loopback). Spotify Web API is metadata-only — preview URLs are
     never used for analysis.
+
+    queued_job_id: internal — the fire-and-forget queue endpoint pre-creates
+    the job row and runs this whole pipeline as a background task on that id.
     """
     lead = _validate_session(token)
     _check_scan_cap(lead)
+    # Ownership guard: queued_job_id is reachable as a query param, so never
+    # trust it unless the row exists and belongs to this session.
+    if queued_job_id:
+        try:
+            _qrow = supabase.table('analysis_jobs').select('token') \
+                .eq('id', queued_job_id).limit(1).execute().data
+            if not _qrow or _qrow[0].get('token') != token:
+                queued_job_id = None
+        except Exception:
+            queued_job_id = None
 
     # Validate Spotify URL
     if 'open.spotify.com/track/' not in spotify_url and 'spotify:track:' not in spotify_url:
@@ -5283,7 +5438,7 @@ async def analyze_url(
 
     # Create job for Mac worker — insert directly as pending_features with spotify_url
     if not features:
-        job_id = str(__import__('uuid').uuid4())
+        job_id = queued_job_id or str(__import__('uuid').uuid4())
         now = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
 
         # Check queue position before creating job
@@ -5300,7 +5455,7 @@ async def analyze_url(
                 print(f"  URL analysis: {queue_ahead} job(s) ahead in queue")
 
             try:
-                job_mgr._supabase.table('analysis_jobs').insert({
+                job_mgr._supabase.table('analysis_jobs').upsert({
                     'id': job_id, 'token': token, 'status': 'pending_features',
                     'spotify_url': spotify_url,
                     'track_name': track_name[:200] if track_name else None,
@@ -5713,7 +5868,7 @@ async def analyze_url(
         for _, _, m, _ in flattery_candidates[:20]:
             flattery_matches.append(m)
 
-    new_job_id = job_mgr.create_job(token, features, found_matches, identity={
+    new_job_id = job_mgr.create_job(token, features, found_matches, job_id=(job_id or queued_job_id), identity={
         'track_name': track_name,
         'artist_name': artist_name,
         'spotify_url': spotify_url,

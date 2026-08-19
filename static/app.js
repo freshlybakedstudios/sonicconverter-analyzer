@@ -60,6 +60,111 @@ function _authSuccess(data) {
   if (typeof setInputMode === 'function') setInputMode('url');
 }
 
+// -------------------------------------------------------
+// Fire-and-forget scan queue: chips above the form
+// -------------------------------------------------------
+const _QUEUE_LABELS = {
+  queued: '⏳ queued',
+  pending_features: '🎧 capturing audio',
+  capturing: '🎧 capturing audio',
+  features_ready: '🔬 analyzing',
+  matching: '🔬 analyzing',
+  enriching: '📈 building your report',
+  complete: '✅ done',
+  error: '❌ failed',
+};
+
+function _queueStrip() {
+  let strip = document.getElementById('queue-strip');
+  if (!strip) {
+    strip = document.createElement('div');
+    strip.id = 'queue-strip';
+    strip.style.cssText = 'max-width:640px;margin:0 auto 16px;display:flex;flex-direction:column;gap:8px;';
+    const up = $('#upload-section');
+    if (up) up.insertBefore(strip, up.firstChild);
+  }
+  return strip;
+}
+
+function addQueueChip(jobId, label) {
+  const strip = _queueStrip();
+  const short = label.replace(/^https?:\/\/(open\.)?spotify\.com\/track\//, '').slice(0, 28);
+  const chip = document.createElement('div');
+  chip.id = `qchip-${jobId}`;
+  chip.style.cssText = 'background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.35);' +
+    'border-radius:10px;padding:9px 14px;font-size:14px;display:flex;justify-content:space-between;' +
+    'align-items:center;gap:10px;flex-wrap:wrap;';
+  chip.innerHTML = `<span class="qchip-name" style="opacity:.85">${short}</span>` +
+    `<span class="qchip-status">⏳ queued — results land in My Scans + your email</span>`;
+  strip.appendChild(chip);
+  _pollQueueChip(jobId);
+}
+
+function _pollQueueChip(jobId) {
+  const tick = async () => {
+    const chip = document.getElementById(`qchip-${jobId}`);
+    if (!chip) return;
+    try {
+      const r = await fetch(`${API_URL}/api/analysis/${jobId}/state`);
+      if (!r.ok) throw new Error();
+      const s = await r.json();
+      const nameEl = chip.querySelector('.qchip-name');
+      if (s.track_name && nameEl) {
+        nameEl.textContent = `"${s.track_name}"` + (s.artist_name ? ` — ${s.artist_name}` : '');
+      }
+      const stEl = chip.querySelector('.qchip-status');
+      if (s.status === 'complete' && s.has_result) {
+        chip.style.borderColor = 'rgba(34,197,94,0.45)';
+        chip.style.background = 'rgba(34,197,94,0.07)';
+        if (stEl) {
+          stEl.innerHTML = `✅ done · <a href="#" data-view="${jobId}" style="color:#22c55e;font-weight:600">view results</a>` +
+            ` · <a href="${API_URL}/report/${jobId}" target="_blank" rel="noopener" style="color:#22c55e;font-weight:600">report ↗</a>`;
+          stEl.querySelector(`[data-view="${jobId}"]`).addEventListener('click', (e) => {
+            e.preventDefault();
+            viewQueuedScan(jobId);
+          });
+        }
+        // refresh the scans-remaining badge
+        if (accessToken) {
+          fetch(`${API_URL}/api/me?token=${accessToken}`).then(r => r.ok ? r.json() : null)
+            .then(d => { if (d) _updateScans(d.scans_remaining, d); }).catch(() => {});
+        }
+        return; // stop polling
+      }
+      if (s.status === 'error') {
+        chip.style.borderColor = 'rgba(239,68,68,0.45)';
+        if (stEl) stEl.textContent = '❌ failed — try scanning it again';
+        return; // stop polling
+      }
+      if (stEl) stEl.textContent = (_QUEUE_LABELS[s.status] || s.status) +
+        ' — you can leave, it keeps going';
+    } catch (e) { /* transient — keep polling */ }
+    setTimeout(tick, 12000);
+  };
+  setTimeout(tick, 5000);
+}
+
+async function viewQueuedScan(jobId) {
+  try {
+    const r = await fetch(`${API_URL}/api/analysis/${jobId}/result?token=${accessToken}`);
+    if (!r.ok) return;
+    const res = await r.json();
+    if (!res.found || !res.result) return;
+    currentJobId = res.job_id;
+    renderResults(res.result);
+    window._analyzerIsPro = res.result.pro === true;
+    hide($('#loading-section'));
+    show($('#results-section'));
+    show($('#floating-cta'));
+    if (res.result.pro === false) {
+      renderPitchLockedBlock((res.result.matches || []).length, null, res.result.deep_capped);
+    }
+    if (currentJobId) startSSE(currentJobId);
+    const rs = $('#results-section');
+    if (rs) rs.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { /* ignore */ }
+}
+
 function _updateScans(remaining, info) {
   const myScans = $('#my-scans-btn');
   if (myScans && accessToken) myScans.href = `${API_URL}/scans?token=${accessToken}`;
@@ -516,6 +621,34 @@ async function analyzeTrack() {
       return;
     }
     // Genre is optional for URL mode — CM will provide it
+  }
+
+  // URL scans are fire-and-forget (owner call 2026-08-18): queue it, chip it,
+  // clear the input for the next one. The scan runs server-side and survives
+  // tab close; delivery = queue chip, My Scans, report page, email.
+  if (inputMode === 'url') {
+    const urlVal = $('#spotify-track-url').value.trim();
+    const qForm = new FormData();
+    qForm.append('spotify_url', urlVal);
+    qForm.append('token', accessToken);
+    if (genre) qForm.append('genre', genre);
+    try {
+      const qRes = await fetch(`${API_URL}/api/analyze-url-queue`, { method: 'POST', body: qForm });
+      if (!qRes.ok) {
+        const err = await qRes.json().catch(() => ({}));
+        alert((typeof err.detail === 'string' && err.detail) || 'Could not queue the scan — try again.');
+        return;
+      }
+      const qData = await qRes.json();
+      addQueueChip(qData.job_id, urlVal);
+      $('#spotify-track-url').value = '';
+      if (typeof gtag === 'function') {
+        gtag('event', 'scan_queued', { event_category: 'engagement' });
+      }
+    } catch (e) {
+      alert('Could not queue the scan — try again.');
+    }
+    return;
   }
 
   // Show loading
