@@ -473,6 +473,34 @@ def _gmail_access_token():
     return _gmail_tok["value"]
 
 
+_nurture_label_id = {"value": None}
+
+
+def _label_nurture_send(tok: str, msg_id: str):
+    """Tag every sent touch with the 'Rate Nurture' Gmail label so the owner
+    can browse the whole rail (touches + replies, threaded) from Gmail's
+    sidebar. Best-effort: a labeling failure never fails the send."""
+    if not msg_id:
+        return
+    import requests as _rq
+    try:
+        if not _nurture_label_id["value"]:
+            r = _rq.get(
+                "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+                headers={"Authorization": f"Bearer {tok}"}, timeout=15)
+            for lab in (r.json() or {}).get("labels", []):
+                if lab.get("name") == "Rate Nurture":
+                    _nurture_label_id["value"] = lab["id"]
+                    break
+        if _nurture_label_id["value"]:
+            _rq.post(
+                f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg_id}/modify",
+                headers={"Authorization": f"Bearer {tok}"},
+                json={"addLabelIds": [_nurture_label_id["value"]]}, timeout=15)
+    except Exception:
+        pass
+
+
 def _send_via_gmail(to_email: str, subject: str, html: str, plain: str) -> bool:
     import base64
     from email.mime.multipart import MIMEMultipart
@@ -496,6 +524,7 @@ def _send_via_gmail(to_email: str, subject: str, html: str, plain: str) -> bool:
         json={"raw": raw}, timeout=30,
     )
     if r.status_code in (200, 202):
+        _label_nurture_send(tok, (r.json() or {}).get("id"))
         return True
     print(f"[nurture] gmail send failed {r.status_code}: {r.text[:150]}")
     return False
