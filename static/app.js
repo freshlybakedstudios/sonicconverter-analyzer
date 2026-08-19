@@ -648,9 +648,42 @@ async function analyzeTrack() {
         return;
       }
       const qData = await qRes.json();
-      window._autoOpenJob = qData.job_id; // newest scan auto-opens when done
-      addQueueChip(qData.job_id, urlVal);
+      const jobId = qData.job_id;
+      window._autoOpenJob = jobId;
+      addQueueChip(jobId, urlVal); // background insurance if the tab closes
       $('#spotify-track-url').value = '';
+
+      // The ORIGINAL scan-page experience (owner, 2026-08-19: "the worrying
+      // was kinda good"): full loading theater, then results render on their
+      // own. The queue runs underneath purely as crash/close insurance.
+      hide($('#upload-section'));
+      show($('#loading-section'));
+      const statuses = ['Fetching track from Spotify', 'Recording from Spotify desktop', 'Extracting audio features', 'Matching against 210,000+ tracks', 'Generating recommendations'];
+      let si = 0;
+      const loaderEl = $('#loader-status');
+      if (loaderEl) loaderEl.textContent = statuses[0];
+      const carousel = setInterval(() => {
+        si = Math.min(si + 1, statuses.length - 1);
+        if (loaderEl) loaderEl.textContent = statuses[si];
+      }, 6000);
+      const watch = setInterval(async () => {
+        try {
+          const r = await fetch(`${API_URL}/api/analysis/${jobId}/state`);
+          if (!r.ok) return;
+          const st = await r.json();
+          if (st.status === 'complete' && st.has_result) {
+            clearInterval(carousel); clearInterval(watch);
+            window._autoOpenJob = null;
+            viewQueuedScan(jobId);
+          } else if (st.status === 'error') {
+            clearInterval(carousel); clearInterval(watch);
+            hide($('#loading-section'));
+            show($('#upload-section'));
+            alert('Scan failed — the capture rig may be busy. Try again in a minute.');
+          }
+        } catch (e) { /* transient */ }
+      }, 3000);
+
       if (typeof gtag === 'function') {
         gtag('event', 'scan_queued', { event_category: 'engagement' });
       }
