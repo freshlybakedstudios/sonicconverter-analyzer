@@ -113,7 +113,7 @@ function _pollQueueChip(jobId) {
         nameEl.textContent = `"${s.track_name}"` + (s.artist_name ? ` — ${s.artist_name}` : '');
       }
       const stEl = chip.querySelector('.qchip-status');
-      if (s.status === 'complete' && s.has_result) {
+      if (s.has_result && s.status !== 'error') {
         if (window._autoOpenJob === jobId) {
           // Original behavior (owner, 2026-08-19): the scan you just started
           // shows its results itself — the queue is plumbing, not a detour.
@@ -671,7 +671,11 @@ async function analyzeTrack() {
           const r = await fetch(`${API_URL}/api/analysis/${jobId}/state`);
           if (!r.ok) return;
           const st = await r.json();
-          if (st.status === 'complete' && st.has_result) {
+          // Reveal as soon as the scan result exists — 'complete' means the
+          // whole 40-min Pro enrichment finished, which is NOT the reveal
+          // moment (2026-08-19: owner sat on the loading page while his
+          // finished scan enriched curators in the background).
+          if (st.has_result && st.status !== 'error') {
             clearInterval(carousel); clearInterval(watch);
             window._autoOpenJob = null;
             viewQueuedScan(jobId);
