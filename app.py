@@ -11,6 +11,7 @@ import csv
 import io
 import json
 import math
+import numpy as np
 import os
 import requests
 import secrets
@@ -56,7 +57,8 @@ from chartmetric_lookup import (
 from email_sender import send_results_email
 from job_manager import JobManager
 from track_matcher import (TrackMatcher, _genre_families, umbrella_lane_tag,
-                           match_in_lane,
+                           match_in_lane, sparse_identity_penalty as _sparse_pen,
+                           SPARSE_IDENTITY_PENALTY as _SPARSE_PEN_UNIT,
                            candidate_lane_families, user_lane_families,
                            resolve_scan_lane, primary_in_lane,
                            track_tags_contradict, aggressive_lane_context,
@@ -1473,7 +1475,8 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
                                 user_primary_family: str = None,
                                 n: int = 5, user_features: dict = None,
                                 user_pronoun: str = None,
-                                user_non_native: bool = False) -> list:
+                                user_non_native: bool = False,
+                                user_code2: str = None) -> list:
     """Returns up to N candidates with name, listeners, similarity, performance
     percentile, originality score, plus a pitch_angle string. Empty if pool
     is too thin or no candidates qualify.
@@ -1647,6 +1650,8 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             'dev_alignment': dev_alignment,
             'pronoun': (x.get('pronoun_title') or '').strip(),
             'non_native': _cand_non_native(x),
+            'code2': (x.get('code2') or '').upper(),
+            'identity_poor': _sparse_pen(x) >= 2 * _SPARSE_PEN_UNIT,
             'tag_aff': x.get('_tag_aff', 0.0),
         })
     if not scored: return []
@@ -1712,6 +1717,31 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
         if c.get('tag_aff'):
             c['combined_score'] = round(c['combined_score'] + c['tag_aff'], 3)
     qualified.sort(key=lambda c: -c['combined_score'])
+    # Market coherence (owner, 2026-08-19: Thai/Russian comps on a US pitch
+    # card are noise, not proof). Principle, not a hack: comps should come
+    # from the USER'S market or the universal pitching markets. Only applies
+    # when the user is a native-market artist; unknown candidate markets are
+    # never punished; falls back to the full pool if it would starve.
+    _PITCH_MARKETS = {'US', 'GB', 'CA', 'AU', 'NZ', 'IE'}
+    def _foreign_comp(c):
+        if c.get('non_native'):
+            return True
+        cc = c.get('code2') or ''
+        if not cc:
+            return False
+        if user_code2 and cc == user_code2:
+            return False
+        return cc not in _PITCH_MARKETS
+    if not user_non_native:
+        _native = [c for c in qualified if not _foreign_comp(c)]
+        if len(_native) >= n:
+            qualified = _native
+    # Identity-poor candidates (tagless / lone-generic-tag) can rank in the
+    # wide match pool but don't belong on a five-name pitch card — the card
+    # is lane PROOF. Fallback keeps the card full on thin lanes.
+    _verified = [c for c in qualified if not c.get('identity_poor')]
+    if len(_verified) >= n:
+        qualified = _verified
     return qualified[:n]
 
 
@@ -2006,6 +2036,22 @@ _INT_EST_COEF = {'lufs': 0.959, 'corr': -3.771, 'crest': -0.050, 'dr': -0.004, '
 # (201k v3-era rows converted; universe median moved 19.78 → 25.6, now
 # matching the dB units the model was trained on).
 _INT_EST_MEDIANS = {'corr': 0.828, 'crest': 10.62, 'dr': 25.6, 'lra': 2.84}
+
+
+def _unify_lufs_est(features: dict):
+    """ONE loudness number everywhere (owner rule 2026-08-19): the projected
+    whole-track Integrated estimate, computed identically for cache hits and
+    fresh captures. Before this, the two paths showed different numbers for
+    the same song (capture: raw loudest-window average; cache: raw chunk
+    integrated) — and the projection estimator itself had NEVER run in
+    production because app.py lacked a numpy import and the NameError was
+    swallowed. Projection wins; existing estimate, then raw, as fallbacks."""
+    try:
+        _proj = _est_integrated_from_gems_row(features)
+        if _proj is not None:
+            features['lufs_integrated_est'] = round(float(_proj), 2)
+    except Exception:
+        pass
 
 
 def _est_integrated_from_gems_row(row: dict):
@@ -3032,6 +3078,14 @@ async def analyze(
             # Sort by tier (highest first), then market-weighted sonic similarity.
             flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
+            # Showcase lists are lane PROOF (owner, 2026-08-19: Paola with a
+            # lone 'us pop' tag surfacing as a trajectory artist): identity-poor
+            # candidates (tagless / lone-generic-tag) drop out whenever the
+            # list can afford it. Universal rule, not artist-specific.
+            _rich = [t for t in flattery_candidates if _sparse_pen(t[2]) < 2 * _SPARSE_PEN_UNIT]
+            if len(_rich) >= 8:
+                flattery_candidates = _rich
+
             # Debug: show top candidates with pronoun info
             if flattery_candidates:
                 print(f"  Flattery candidates (top 10):")
@@ -3302,6 +3356,7 @@ async def analyze(
                 user_features=features,
                 user_pronoun=user_pronoun or None,
                 user_non_native=_is_non_native_market(genre or '', artist_genre or ''),
+                user_code2=(user_code2 or '').upper() or None,
             )
             # Cohort scatter — every same-tier peer with both axes computed,
             # for the Sonic Quadrant background cloud.
@@ -6070,6 +6125,7 @@ async def analyze_url(
             user_features=features,
             user_pronoun=_url_user_pronoun or None,
             user_non_native=user_non_native,
+            user_code2=(((track_artist_cm_data or {}).get('code2') or '').upper() or None),
         )
         # Cohort scatter for the Sonic Quadrant background cloud
         cohort_scatter = _compute_cohort_scatter(
@@ -6106,6 +6162,7 @@ async def analyze_url(
           f"{len(all_found)} total genre-filtered for enrichment, "
           f"{len(flattery_matches)} flattery, {len(recs)} recs")
 
+    _unify_lufs_est(features)
     result = {
         'job_id': new_job_id,
         'total_match_count': total_match_count,
