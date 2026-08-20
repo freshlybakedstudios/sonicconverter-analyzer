@@ -658,7 +658,7 @@ async function analyzeTrack() {
       // own. The queue runs underneath purely as crash/close insurance.
       hide($('#upload-section'));
       show($('#loading-section'));
-      const statuses = ['Fetching track from Spotify', 'Recording from Spotify desktop', 'Extracting audio features', 'Matching against 210,000+ tracks', 'Generating recommendations'];
+      const statuses = ['Fetching track from Spotify', 'Recording from Spotify desktop', 'Extracting audio features', 'Matching against 300,000+ tracks', 'Generating recommendations'];
       let si = 0;
       const loaderEl = $('#loader-status');
       if (loaderEl) loaderEl.textContent = statuses[0];
@@ -702,8 +702,8 @@ async function analyzeTrack() {
   show($('#loading-section'));
 
   const statuses = inputMode === 'url'
-    ? ['Fetching track from Spotify', 'Recording from Spotify desktop', 'Extracting audio features', 'Matching against 210,000+ tracks', 'Generating recommendations']
-    : ['Extracting audio features', 'Analyzing frequency spectrum', 'Detecting emotional character', 'Matching against 210,000+ tracks', 'Generating recommendations'];
+    ? ['Fetching track from Spotify', 'Recording from Spotify desktop', 'Extracting audio features', 'Matching against 300,000+ tracks', 'Generating recommendations']
+    : ['Extracting audio features', 'Analyzing frequency spectrum', 'Detecting emotional character', 'Matching against 300,000+ tracks', 'Generating recommendations'];
   let statusIdx = 0;
   const statusInterval = setInterval(() => {
     statusIdx = Math.min(statusIdx + 1, statuses.length - 1);
