@@ -953,6 +953,9 @@ function renderResults(data) {
     releaseDate: ($('#release-date-input') && $('#release-date-input').value) || '',
     privateLink: ($('#private-link-input') && $('#private-link-input').value.trim()) || '',
   };
+  // Release Plan card lives on the Pitch Kit tab now — show it with results.
+  const pitchSettings = $('#pitch-settings-card');
+  if (pitchSettings) show(pitchSettings);
   const recs = data.recommendations || [];
   const genreAlignment = data.genre_alignment || null;
   const userProfile = data.user_profile || null;
@@ -3409,10 +3412,49 @@ const RESULT_TABS = {
           'pitch-comparables-card'],
   peers: ['similar-artists-card', 'audience-match-card', 'conversion-card',
           'flattery-card', 'track-momentum'],
-  pitch: ['editorial-playlists-card',
-          'all-playlists-card', 'curator-emails-card', 'credits-card'],
-  production: ['production-recs-card', 'campaign-forecast-card'],
+  // 2026-08-21 (owner): campaign forecast belongs beneath curator contacts on
+  // the Pitch Kit, not on Production Notes; Release Plan inputs moved here too.
+  pitch: ['editorial-playlists-card', 'all-playlists-card',
+          'pitch-settings-card', 'curator-emails-card',
+          'campaign-forecast-card', 'credits-card'],
+  production: ['production-recs-card'],
+  scans: ['my-scans-card'],
 };
+
+// Scans tab (2026-08-21): every report scan in one place, in-app.
+async function loadMyScans() {
+  const body = document.getElementById('my-scans-body');
+  const card = document.getElementById('my-scans-card');
+  if (!body || !card) return;
+  card.classList.remove('hidden');
+  if (!accessToken) {
+    body.innerHTML = '<tr><td colspan="4">Log in to see your scans.</td></tr>';
+    return;
+  }
+  body.innerHTML = '<tr><td colspan="4">Loading…</td></tr>';
+  try {
+    const r = await fetch(`${API_URL}/api/my-scans?token=${accessToken}`);
+    const data = await r.json();
+    const scans = (data && data.scans) || [];
+    if (!scans.length) {
+      body.innerHTML = '<tr><td colspan="4">No scans yet.</td></tr>';
+      return;
+    }
+    const CHIP = { complete: ['done', '#22c55e'], error: ['failed', '#ef4444'] };
+    body.innerHTML = scans.map(s => {
+      const [label, color] = CHIP[s.status] || ['working', '#f59e0b'];
+      const title = s.track_name
+        ? `“${s.track_name}”${s.artist_name ? ` <span style="opacity:.6">by ${s.artist_name}</span>` : ''}`
+        : (s.spotify_url || 'Scan').slice(0, 60);
+      const link = s.has_report
+        ? `<a href="${API_URL}/report/${s.id}" target="_blank" rel="noopener">open report →</a>` : '';
+      return `<tr><td>${title}</td><td>${(s.created_at || '').replace('T', ' ')}</td>` +
+             `<td><span style="color:${color}">${label}</span></td><td>${link}</td></tr>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="4">Could not load scans — try again.</td></tr>';
+  }
+}
 
 function switchResultsTab(tab) {
   if (!RESULT_TABS[tab]) tab = 'sound';
@@ -3427,14 +3469,33 @@ function switchResultsTab(tab) {
   }
   // Deep link without scroll jump
   try { history.replaceState(null, '', '#' + tab); } catch (e) {}
+  if (tab === 'scans') loadMyScans();
   // Unlock badge: hide the padlock once the account is Pro
   const lock = document.getElementById('pitch-tab-lock');
   if (lock && window._analyzerIsPro) lock.style.display = 'none';
 }
 
+// Release Plan inputs re-render every curator pitch on change (2026-08-21).
+function refreshCuratorPitches() {
+  if (!window._pitchCtx) return;
+  window._pitchCtx.releaseDate = ($('#release-date-input') && $('#release-date-input').value) || '';
+  window._pitchCtx.privateLink = ($('#private-link-input') && $('#private-link-input').value.trim()) || '';
+  const container = $('#curator-emails-body');
+  if (!container || !curatorRows.length) return;
+  const snapshot = curatorRows.slice();
+  curatorRows.length = 0;
+  seenCurators.clear();
+  container.innerHTML = '';
+  snapshot.forEach(c => appendCuratorEmail({ curator: c }));
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.results-tab').forEach(b =>
     b.addEventListener('click', () => switchResultsTab(b.dataset.tab)));
+  ['release-date-input', 'private-link-input'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', refreshCuratorPitches);
+  });
   const initial = (window.location.hash || '').replace('#', '');
   // Arrival deep-link (2026-08-10): ads/content can link /#production so the
   // scan lands the artist on that tab once, then normal per-scan reset applies.

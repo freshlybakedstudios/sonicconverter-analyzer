@@ -326,20 +326,6 @@
         <p class="upload-hint">Paste a Spotify track link to analyze without uploading</p>
       </div>
 
-      <div class="form-group" id="artist-url-group">
-        <label for="upload-artist-url">Artist Spotify URL <span class="optional-hint">(optional, improves matching)</span></label>
-        <input type="url" id="upload-artist-url" placeholder="https://open.spotify.com/artist/..." autocomplete="off">
-        <p class="genre-hint">If this track is by a different artist than the one on your account, paste their Spotify URL here so we can pull their genre lane.</p>
-      </div>
-
-      <div class="form-group" id="prerelease-group">
-        <label for="release-date-input">Release date <span class="optional-hint">(optional — powers pre-release curator pitches)</span></label>
-        <input type="date" id="release-date-input" autocomplete="off">
-        <label for="private-link-input" style="margin-top:8px">Private listen link <span class="optional-hint">(optional — Disco, private SoundCloud, etc.)</span></label>
-        <input type="url" id="private-link-input" placeholder="https://..." autocomplete="off">
-        <p class="genre-hint">Pitching before release day means playlist adds land in the first 24 hours — when the algorithm is watching hardest.</p>
-      </div>
-
       <div class="genre-picker">
         <label for="genre-select">Genre</label>
         <p class="genre-hint">Required. The dropdown sets the lane; artist genres (if URL above) only supplement it.</p>
@@ -426,6 +412,7 @@
         <button class="results-tab" data-tab="peers">Your Peers</button>
         <button class="results-tab" data-tab="production">Production Notes</button>
         <button class="results-tab" data-tab="pitch">Pitch Kit <span class="tab-lock" id="pitch-tab-lock">🔒</span></button>
+        <button class="results-tab" data-tab="scans">Scans</button>
       </nav>
 
       <!-- 2. Sonic Breakdown -->
@@ -660,6 +647,20 @@
       </div>
 
       <!-- Curator Contacts -->
+      <!-- Release plan — feeds the curator pitches below (moved from the scan
+           form 2026-08-21: it's playlisting machinery, it lives with the
+           pitch kit). Changing either field re-renders every pitch. -->
+      <div class="result-card hidden" id="pitch-settings-card">
+        <h3>Release Plan</h3>
+        <p class="card-sub">Set these and every pitch below updates. Pitching before release day lands adds in the first 24 hours — when the algorithm is watching hardest.</p>
+        <div class="form-group">
+          <label for="release-date-input">Release date <span class="optional-hint">(optional — flips pitches to pre-release mode)</span></label>
+          <input type="date" id="release-date-input" autocomplete="off">
+          <label for="private-link-input" style="margin-top:8px">Private listen link <span class="optional-hint">(optional — Disco, private SoundCloud, etc.)</span></label>
+          <input type="url" id="private-link-input" placeholder="https://..." autocomplete="off">
+        </div>
+      </div>
+
       <div class="result-card hidden" id="curator-emails-card">
         <h3>Curator Contacts <button class="csv-download-btn hidden" id="curator-csv-btn" title="Download Curator CSV">Download CSV</button> <button class="csv-download-btn hidden" id="curator-report-btn" title="Open the full report on its own page">Open Report ↗</button></h3>
         <p class="card-sub" id="curator-contacts-count">Resolving curator contacts...</p>
@@ -683,6 +684,18 @@
 
       <!-- Campaign Forecast -->
       <div class="result-card hidden" id="campaign-forecast-card">
+      </div>
+
+      <!-- My Scans (Scans tab, 2026-08-21) — every report scan in one place -->
+      <div class="result-card hidden" id="my-scans-card">
+        <h3>Your Scans</h3>
+        <p class="card-sub" id="my-scans-sub">Every scan on this account. Finished ones open as full reports.</p>
+        <div class="matches-table-wrap" style="overflow-x:auto">
+          <table class="matches-table">
+            <thead><tr><th>Track</th><th>Date</th><th>Status</th><th></th></tr></thead>
+            <tbody id="my-scans-body"></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- CTA -->
