@@ -278,18 +278,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res || !res.found || !res.result) return;
             const running = res.status && res.status !== 'complete' && res.status !== 'error';
             if (running) {
-              if (res.spotify_url && $('#spotify-track-url') && !$('#spotify-track-url').value) {
-                $('#spotify-track-url').value = res.spotify_url;
-              }
-              currentJobId = res.job_id;
-              renderResults(res.result);
-              hide($('#loading-section'));
-              show($('#results-section'));
-              show($('#floating-cta'));
-              if (res.result.pro === false) {
-                renderPitchLockedBlock((res.result.matches || []).length, null, res.result.deep_capped);
-              }
-              if (currentJobId) startSSE(currentJobId);
+              // Owner call 2026-08-21: a refresh NEVER takes the screen back
+              // over, even mid-scan. The running scan whirs on My Scans; the
+              // form stays clean so a new scan can start immediately.
+              const up = $('#upload-section');
+              if (!up || document.getElementById('running-scan-pill')) return;
+              const _rsrc = res.result.source || {};
+              const rlabel = _rsrc.track_name ? `"${_rsrc.track_name}"` : 'Your scan';
+              const rpill = document.createElement('div');
+              rpill.id = 'running-scan-pill';
+              rpill.style.cssText = 'margin:0 auto 14px;max-width:640px;text-align:center;' +
+                'background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.4);' +
+                'border-radius:10px;padding:9px 14px;font-size:14px;';
+              rpill.innerHTML = `<span style="display:inline-block;animation:pulse 1.5s infinite">⏳</span> ` +
+                `${rlabel} is still working — ` +
+                `<a href="${API_URL}/scans?token=${savedToken}" target="_blank" rel="noopener" ` +
+                `style="color:#f59e0b;font-weight:600;">watch it on My Scans ↗</a>` +
+                ` <span style="opacity:.65">You can start a new scan below.</span>`;
+              up.insertBefore(rpill, up.firstChild);
               return;
             }
             // Finished scan: quiet pill above the form, not a takeover.
