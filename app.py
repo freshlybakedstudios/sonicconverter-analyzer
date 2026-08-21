@@ -4947,8 +4947,10 @@ async def my_scans_page(token: str):
     for r in rows:
         st = r.get('status') or '?'
         label, color = STATUS_CHIP.get(st, (st, '#888'))
+        chip_anim = ''
         if st not in ('complete', 'error'):
             any_running = True
+            chip_anim = 'animation:sPulse 1.4s ease-in-out infinite;'
         name = r.get('track_name') or ''
         artist = r.get('artist_name') or ''
         title = f'&ldquo;{esc(name)}&rdquo;' if name else esc((r.get('spotify_url') or 'Scan')[:60])
@@ -4962,13 +4964,13 @@ async def my_scans_page(token: str):
         <tr>
           <td>{title}</td>
           <td class="date">{date}</td>
-          <td><span class="chip" style="border-color:{color};color:{color};">{label}</span></td>
+          <td><span class="chip" style="border-color:{color};color:{color};{chip_anim}">{label}</span></td>
           <td>{link}</td>
         </tr>"""
     if not rows:
         body_rows = '<tr><td colspan="4" style="opacity:.6;padding:26px;">No scans yet — run your first one and it lands here.</td></tr>'
 
-    refresh_tag = '<meta http-equiv="refresh" content="45">' if any_running else ''
+    refresh_tag = '<meta http-equiv="refresh" content="20">' if any_running else ''
     page = f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">{refresh_tag}
@@ -4983,6 +4985,7 @@ async def my_scans_page(token: str):
   td {{ padding:11px 12px; border-bottom:1px solid #242424; vertical-align:middle; }}
   td.date {{ opacity:.55; white-space:nowrap; }}
   .chip {{ border:1px solid; border-radius:999px; padding:3px 10px; font-size:12px; white-space:nowrap; }}
+  @keyframes sPulse {{ 0%, 100% {{ opacity:1; }} 50% {{ opacity:0.35; }} }}
   a {{ color:#f59e0b; text-decoration:none; }}
   a:hover {{ text-decoration:underline; }}
 </style></head><body><div class="wrap">
