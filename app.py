@@ -1470,6 +1470,40 @@ def _genre_alignment_fraction(user_families: set, candidate: dict) -> float:
         return 1.0
     return aligned / total
 
+def _tiered_comps_pool(pool_all: list, pool_tier_filtered: list,
+                       user_monthly, floor: float) -> list:
+    """Same-tier-first comps pool (2026-08-21, owner: Yebba served as a pitch
+    comparable for an established-tier artist). Start at the user's own tier
+    and widen ONE tier at a time, only while the pool starves (<25). The
+    recognizability floor still applies at every radius — dropping it is what
+    made the card stale pre-2026-08-17. Final fallback stays the matcher's
+    tier-filtered pool, same as before."""
+    tiers = list(TIER_RANGES.keys())
+    try:
+        u_idx = tiers.index(_listeners_to_tier(int(float(user_monthly or 0))))
+    except ValueError:
+        floored = [m for m in pool_all if float(m.get('listeners') or 0) >= floor]
+        return floored if len(floored) >= 25 else pool_tier_filtered
+
+    def _idx(m):
+        try:
+            return tiers.index(_listeners_to_tier(int(float(m.get('listeners') or 0))))
+        except (ValueError, TypeError):
+            return None
+
+    eligible = [(m, _idx(m)) for m in pool_all
+                if float(m.get('listeners') or 0) >= floor]
+    pool = []
+    for radius in range(0, len(tiers)):
+        pool = [m for m, i in eligible if i is not None and abs(i - u_idx) <= radius]
+        if len(pool) >= 25:
+            print(f"  Pitch comparables: tier radius {radius} pool {len(pool)} "
+                  f"(user tier {tiers[u_idx]}, floor {int(floor):,})")
+            return pool
+    print(f"  Pitch comparables: all radii starved ({len(pool)}) — tier-filtered fallback")
+    return pool if len(pool) >= 10 else pool_tier_filtered
+
+
 def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
                                 gems_by_isrc: dict, user_families: set = None,
                                 user_primary_family: str = None,
@@ -3385,14 +3419,9 @@ async def analyze(
             # be unreleased, so the floor scales off their listeners when
             # known, else the 25k minimum.
             _u_comp_floor = min(max(float(user_monthly or 0) * 0.10, 25_000), 250_000)
-            _u_comps_pool = [m for m in all_matches
-                             if float(m.get('listeners') or 0) >= _u_comp_floor]
-            if len(_u_comps_pool) < 25:
-                _u_comps_pool = matches
-                print(f"  Pitch comparables (upload): floor starved pool — tier-filtered fallback")
-            else:
-                print(f"  Pitch comparables (upload): multi-tier pool {len(_u_comps_pool)} "
-                      f"(floor {int(_u_comp_floor):,})")
+            # Same-tier-first, widening only on starvation (2026-08-21 Yebba fix).
+            _u_comps_pool = _tiered_comps_pool(
+                all_matches, matches, user_monthly, _u_comp_floor)
             user_profile['pitch_comparables'] = _compute_pitch_comparables(
                 _u_comps_pool, high_converter_gems, matcher._gems_by_isrc,
                 user_families=_file_upload_user_fams,
@@ -4862,6 +4891,31 @@ async def restore_latest_analysis(token: str):
 # shelf. Linked from the signed-in header; running scans show status chips
 # and the page refreshes itself until they land.
 # ---------------------------------------------------------------------------
+@app.get("/api/my-scans")
+async def my_scans_json(token: str):
+    """JSON twin of /scans for the in-app Scans tab (2026-08-21)."""
+    lead = _validate_session(token)
+    email = (lead.get('email') or '').strip()
+    try:
+        q = supabase.table('analysis_jobs') \
+            .select('id,status,track_name,artist_name,spotify_url,created_at,result_json') \
+            .order('created_at', desc=True).limit(50)
+        q = q.eq('user_email', email) if email else q.eq('token', token)
+        rows = q.execute().data or []
+    except Exception as e:
+        print(f"my-scans api: lookup failed: {e}")
+        rows = []
+    return {'scans': [{
+        'id': r['id'],
+        'status': r.get('status') or '?',
+        'track_name': r.get('track_name') or '',
+        'artist_name': r.get('artist_name') or '',
+        'spotify_url': r.get('spotify_url') or '',
+        'created_at': (r.get('created_at') or '')[:16],
+        'has_report': bool(r.get('result_json')) and (r.get('status') == 'complete'),
+    } for r in rows]}
+
+
 @app.get("/scans")
 async def my_scans_page(token: str):
     import html as _html
@@ -6154,15 +6208,9 @@ async def analyze_url(
         _url_user_fams = set(track_user_families) if track_user_families else user_lane_families(genre or '')
         _url_user_primary = None if _lane_vetoed else _primary_genre_family(genre or '')
         _comp_floor = min(max((float(user_monthly or 0)) * 0.10, 25_000), 250_000)
-        comps_pool = [m for m in hero_pool_all_tiers
-                      if float(m.get('listeners') or 0) >= _comp_floor]
-        if len(comps_pool) < 25:
-            comps_pool = found_matches
-            print(f"  Pitch comparables: floor {int(_comp_floor):,} starved pool "
-                  f"({len(comps_pool)} fallback to tier-filtered)")
-        else:
-            print(f"  Pitch comparables: multi-tier pool {len(comps_pool)} "
-                  f"(floor {int(_comp_floor):,} listeners)")
+        # Same-tier-first, widening only on starvation (2026-08-21 Yebba fix).
+        comps_pool = _tiered_comps_pool(
+            hero_pool_all_tiers, found_matches, user_monthly, _comp_floor)
         # (_url_user_pronoun resolved earlier, shared by all three surfaces)
         pitch_comparables = _compute_pitch_comparables(
             comps_pool, high_converter_gems_url, matcher._gems_by_isrc,
