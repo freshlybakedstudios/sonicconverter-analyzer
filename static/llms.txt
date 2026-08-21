@@ -1,0 +1,23 @@
+# Sonic Analyzer — Freshly Baked Studios
+
+> Free AI-powered track analysis tool by Freshly Baked Studios (Brooklyn, NY). Paste a Spotify track link or upload audio and get a full sonic breakdown: BPM, key, loudness (LUFS), frequency balance, emotional character (GEMS scale), and how the track's production compares to 300,000+ professionally profiled tracks. Built by Grammy-nominated, multi-platinum producer Alexander Almgren (19 Billboard Top 20 albums, 3.3 billion+ credited streams).
+
+## What It Does
+
+- Analyzes real audio — tracks are captured and measured, not estimated from metadata
+- Matches the track against 300,000+ profiled tracks to find sonic peers: artists who sound similar, at the artist's own career tier
+- Shows listener-to-follower conversion benchmarks against same-tier sonic peers
+- Gives specific production recommendations based on what the best-converting records in the same genre lane actually share (peer consensus, not opinion)
+- Sonic originality score: how distinctive the sound is vs. the top performers in its cohort
+- Pro tier adds playlist discovery, curator contacts with pre-written pitches, and a campaign forecast
+
+## Who It's For
+
+- Independent artists who want to know how their production compares to records that convert listeners into fans
+- Artists preparing a release who want data on their mix before mastering or pitching
+- Producers and engineers benchmarking their work against genre peers
+
+## Access
+
+- Free scan at https://analyze.freshlybakedstudios.com — no credit card required, takes about a minute
+- Made by Freshly Baked Studios: https://freshlybakedstudios.com (production, mixing, mastering, Dolby Atmos)

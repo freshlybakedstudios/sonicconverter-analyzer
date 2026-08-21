@@ -4903,6 +4903,18 @@ async def restore_latest_analysis(token: str):
 # shelf. Linked from the signed-in header; running scans show status chips
 # and the page refreshes itself until they land.
 # ---------------------------------------------------------------------------
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    from fastapi.responses import FileResponse
+    return FileResponse(str(static_dir / "robots.txt"), media_type="text/plain")
+
+
+@app.get("/llms.txt", include_in_schema=False)
+async def llms_txt():
+    from fastapi.responses import FileResponse
+    return FileResponse(str(static_dir / "llms.txt"), media_type="text/plain")
+
+
 @app.get("/api/my-scans")
 async def my_scans_json(token: str):
     """JSON twin of /scans for the in-app Scans tab (2026-08-21)."""
