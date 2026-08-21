@@ -1266,15 +1266,26 @@ function renderResults(data) {
 
     $('#tm-peer-count').textContent = `vs ${tm.peer_count.toLocaleString()} tracks that sound like yours`;
 
-    // === Gap line: only shown for tracks BELOW top 25% of cohort ===
+    // === Gap line: a LADDER, never mute (2026-08-21, owner) ===
+    // Below top 25%: target the top-25% peer tier (original behavior).
+    // Inside top 25%: target climbs to the top-10% tier.
+    // At/above every rung: affirmation with the numbers, not silence.
     const gapEl = $('#track-momentum-gap');
-    if (tm.gap_additional_revenue && tm.gap_additional_revenue > 0 && tm.gap_target_listeners && compPct < 75) {
-      const cur = (tm.gap_current_revenue || 0).toLocaleString();
-      const tgt = (tm.gap_target_revenue || 0).toLocaleString();
-      const tgtListeners = tm.gap_target_listeners.toLocaleString();
-      const additional = tm.gap_additional_revenue.toLocaleString();
-      gapEl.innerHTML = `<strong>What "closing the gap" looks like:</strong> tracks in the top 25% of this sonic cohort belong to artists with a median of <strong>${tgtListeners} monthly listeners</strong> — typically earning <strong>$${tgt}/year</strong> in Spotify streaming royalties (at $${tm.revenue_per_listener.toFixed(2)}/listener, Loud &amp; Clear 2025). You're currently at $${cur}/year. <strong>+$${additional}/year potential</strong> if your track reached that peer tier.
+    const cur = (tm.gap_current_revenue || 0).toLocaleString();
+    const rate = tm.revenue_per_listener ? tm.revenue_per_listener.toFixed(2) : null;
+    let tierName = 'top 25%';
+    let tgtL = tm.gap_target_listeners, tgtR = tm.gap_target_revenue, add = tm.gap_additional_revenue;
+    if (compPct >= 75 && tm.gap_target_listeners_t10) {
+      tierName = 'top 10%';
+      tgtL = tm.gap_target_listeners_t10; tgtR = tm.gap_target_revenue_t10; add = tm.gap_additional_revenue_t10;
+    }
+    if (add && add > 0 && tgtL && rate) {
+      gapEl.innerHTML = `<strong>What "closing the gap" looks like:</strong> tracks in the ${tierName} of this sonic cohort belong to artists with a median of <strong>${tgtL.toLocaleString()} monthly listeners</strong> — typically earning <strong>$${(tgtR || 0).toLocaleString()}/year</strong> in Spotify streaming royalties (at $${rate}/listener, Loud &amp; Clear 2025). You're currently at $${cur}/year. <strong>+$${add.toLocaleString()}/year potential</strong> if your track reached that peer tier.
         <span class="gap-note">Peer-typical correlation from your actual sonic cohort — what artists with tracks at this level typically have. Not a personal forecast.</span>`;
+      gapEl.style.display = 'block';
+    } else if (compPct >= 75 && tgtL && rate) {
+      gapEl.innerHTML = `<strong>You're pacing the peer tier:</strong> artists with tracks in the ${tierName} of this cohort sit at a median of <strong>${tgtL.toLocaleString()} monthly listeners</strong> (about $${(tgtR || 0).toLocaleString()}/year in Spotify royalties at $${rate}/listener). You're at $${cur}/year — at or above where the tier typically lands. The play here is holding it: playlist coverage and release cadence.
+        <span class="gap-note">Peer-typical correlation from your actual sonic cohort. Not a personal forecast.</span>`;
       gapEl.style.display = 'block';
     } else {
       gapEl.style.display = 'none';

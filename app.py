@@ -1114,8 +1114,15 @@ def _build_track_momentum(scanned_track: dict, peer_matches: list, user_listener
         top25_cut = max(int(len(peer_with_listeners) * 0.25), 10)
         top25_listeners = sorted([l for _, l in peer_with_listeners[:top25_cut]])
         target_listeners = top25_listeners[len(top25_listeners) // 2]
+        # Second rung (2026-08-21, owner: the gap line vanished for tracks
+        # already in the top 25% — the money story should climb, not mute):
+        # median listeners of the composite top-10% peers.
+        top10_cut = max(int(len(peer_with_listeners) * 0.10), 5)
+        top10_listeners = sorted([l for _, l in peer_with_listeners[:top10_cut]])
+        target_listeners_t10 = top10_listeners[len(top10_listeners) // 2]
     else:
         target_listeners = None
+        target_listeners_t10 = None
 
     current_revenue = round(user_listeners * REVENUE_PER_LISTENER_PER_YEAR) if user_listeners > 0 else 0
     if target_listeners and target_listeners > user_listeners:
@@ -1145,6 +1152,11 @@ def _build_track_momentum(scanned_track: dict, peer_matches: list, user_listener
         'gap_current_revenue': current_revenue,
         'gap_target_revenue': target_revenue,
         'gap_additional_revenue': gap_revenue,
+        'gap_target_listeners_t10': int(round(target_listeners_t10)) if target_listeners_t10 else None,
+        'gap_target_revenue_t10': (round(target_listeners_t10 * REVENUE_PER_LISTENER_PER_YEAR)
+                                   if target_listeners_t10 else None),
+        'gap_additional_revenue_t10': (max(0, round(target_listeners_t10 * REVENUE_PER_LISTENER_PER_YEAR) - current_revenue)
+                                       if target_listeners_t10 else 0),
         'revenue_per_listener': REVENUE_PER_LISTENER_PER_YEAR,
     }
 
