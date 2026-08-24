@@ -3617,8 +3617,8 @@ async def analyze(
         # Persist trimmed result for restore-on-refresh (parity with URL path).
         try:
             enrichment_pool.submit(job_mgr.update_job, job_id,
-                                   result_json={k: v for k, v in result.items()
-                                                if k != 'all_matches'})
+                                   result_json={**result,
+                                                'all_matches': result.get('all_matches', [])[:400]})
         except Exception as _e:
             print(f"  result_json persist skipped: {_e}")
         return result
@@ -6397,11 +6397,12 @@ async def analyze_url(
     # Persist the trimmed result payload for restore-on-refresh (2026-08-18:
     # enrichment now completes unattended, but a page refresh lost the whole
     # scan — worst funnel behavior for free users). all_matches is the only
-    # heavyweight key (5000 entries) and is re-derivable; drop it.
+    # heavyweight key (5000 entries); keep a 400-entry slice so the tier
+    # toggle ("Established" / "All") survives restore (2026-08-24 fix).
     try:
         enrichment_pool.submit(job_mgr.update_job, new_job_id,
-                               result_json={k: v for k, v in result.items()
-                                            if k != 'all_matches'})
+                               result_json={**result,
+                                            'all_matches': result.get('all_matches', [])[:400]})
     except Exception as _e:
         print(f"  result_json persist skipped: {_e}")
     return result
