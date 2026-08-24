@@ -885,6 +885,21 @@ def _generate_recommendations(features: dict, matches: list,
 # Routes
 # ---------------------------------------------------------------------------
 
+
+# Fields the frontend match table actually renders (renderMatchRows +
+# hasGenre + enrichment keying). Persisting the FULL all_matches pool but
+# slimmed to these keys keeps the tier toggle honest on restore without
+# bloating the job row (2026-08-24: a 400-entry cap was SMALLER than the
+# tier slice, which re-hid the toggle on restored scans).
+_SLIM_MATCH_KEYS = ('name', 'tier', 'artist_id', 'spotify_url', 'track_url',
+                    'conversion_rate', 'emotions', 'primary_genre',
+                    'secondary_genre', 'artist_genres', 'similarity',
+                    'match_key', 'monthly_listeners')
+
+def _slim_all_matches(result):
+    return [{k: m.get(k) for k in _SLIM_MATCH_KEYS if k in m}
+            for m in (result.get('all_matches') or [])]
+
 # Same tier ranges as emotion_conversion_analyzer.py
 TIER_RANGES = {
     'micro': (0, 5_000),
@@ -3618,7 +3633,7 @@ async def analyze(
         try:
             enrichment_pool.submit(job_mgr.update_job, job_id,
                                    result_json={**result,
-                                                'all_matches': result.get('all_matches', [])[:400]})
+                                                'all_matches': _slim_all_matches(result)})
         except Exception as _e:
             print(f"  result_json persist skipped: {_e}")
         return result
@@ -6402,7 +6417,7 @@ async def analyze_url(
     try:
         enrichment_pool.submit(job_mgr.update_job, new_job_id,
                                result_json={**result,
-                                            'all_matches': result.get('all_matches', [])[:400]})
+                                            'all_matches': _slim_all_matches(result)})
     except Exception as _e:
         print(f"  result_json persist skipped: {_e}")
     return result
