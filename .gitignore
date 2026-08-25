@@ -71,3 +71,10 @@ Alexander_Almgren_Resume*.docx
 PreExisting_IP_Statement.pdf
 *.~lock*
 .~lock*
+# personal / business docs — never in repo
+*_Call_*.html
+LinkedIn_Outreach*.html
+Valuation_Prep*.html
+*Investor*
+PreExisting_IP*
+plugin/build/
