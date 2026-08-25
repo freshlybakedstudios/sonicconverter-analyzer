@@ -1048,7 +1048,7 @@ def build_precall_email(b):
       </p>
       <p style="color:#ccc">If you've got 19 minutes before we talk, this walkthrough shows the
          whole system we'll be using on your record:
-         <a href="https://youtu.be/HOkvWpZX6JQ" style="color:#D8E166">watch it here</a>.</p>
+         <a href="https://www.youtube.com/watch?v=HOkvWpZX6JQ" style="color:#D8E166">watch it here</a>.</p>
       <p style="color:#ccc">To get the most out of it, have handy:</p>
       <ul style="color:#ccc">
         <li>The track(s) you're working on — rough mixes, demos, or stems all work</li>
