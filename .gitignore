@@ -78,3 +78,10 @@ Valuation_Prep*.html
 *Investor*
 PreExisting_IP*
 plugin/build/
+
+# never track utility/backfill scripts or backups (secret-bearing)
+backfill_*.py
+build_gems_universe_cache.py
+drift_*.py
+export_artist_emails.py
+backups_pre_manager_v6/
