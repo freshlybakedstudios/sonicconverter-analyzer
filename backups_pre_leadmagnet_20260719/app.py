@@ -11,7 +11,6 @@ import csv
 import io
 import json
 import math
-import numpy as np
 import os
 import requests
 import secrets
@@ -56,14 +55,8 @@ from chartmetric_lookup import (
 )
 from email_sender import send_results_email
 from job_manager import JobManager
-from track_matcher import (TrackMatcher, _genre_families, umbrella_lane_tag,
-                           match_in_lane, sparse_identity_penalty as _sparse_pen,
-                           SPARSE_IDENTITY_PENALTY as _SPARSE_PEN_UNIT,
-                           candidate_lane_families, user_lane_families,
-                           resolve_scan_lane, primary_in_lane,
-                           track_tags_contradict, aggressive_lane_context,
-                           aesthetic_clash, EXCLUSIVE_FAMILIES, is_faith_world, faith_dominant,
-                           isrc_year, sparse_identity_penalty)
+from track_matcher import (TrackMatcher, _genre_families, match_in_lane,
+                           candidate_lane_families)
 
 # ---------------------------------------------------------------------------
 # Pushover notifications
@@ -111,16 +104,10 @@ _event_loop = None  # Set when the server starts
 _enrichment_gate = threading.Event()
 _enrichment_gate.set()  # Start open (enrichment can run)
 
-_enrichment_paused_at = 0.0  # when the gate last closed (leak-safety timer)
-_ENRICHMENT_MAX_PAUSE = 120  # force-reopen after this many seconds
-
-
 def _pause_enrichment():
     """Pause background enrichment so user-facing CM calls get priority."""
-    global _enrichment_paused_at
     if _enrichment_gate.is_set():
         print("  ⏸️  Pausing enrichment for user-facing CM calls")
-    _enrichment_paused_at = time.time()
     _enrichment_gate.clear()
 
 def _resume_enrichment():
@@ -222,27 +209,6 @@ async def lifespan(app: FastAPI):
     if supabase:
         asyncio.create_task(_nurture_loop())
         print(f"✅ Nurture scheduler started (poll {_NURTURE_POLL_SECONDS}s)", flush=True)
-
-    # Orphaned-enrichment reaper (2026-08-07): enrichment runs on an in-process
-    # thread, so any container restart (deploy, OOM, Railway maintenance) kills
-    # it silently and the job sits 'enriching' forever — the user's page spins
-    # with no end. On startup, close out any job that hasn't written progress in
-    # 30+ minutes: mark complete with whatever it accumulated. The SSE catch-up
-    # path then serves partial results + the complete event instead of hanging.
-    if supabase:
-        try:
-            from datetime import timedelta, timezone
-            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
-            stale = supabase.table('analysis_jobs') \
-                .update({'status': 'complete'}) \
-                .eq('status', 'enriching') \
-                .lt('updated_at', cutoff) \
-                .execute()
-            n = len(stale.data or [])
-            if n:
-                print(f"🧹 Reaped {n} orphaned enrichment job(s) (stuck 'enriching' >30 min)")
-        except Exception as e:
-            print(f"⚠️  Orphan-reaper failed (non-fatal): {e}")
 
     print("Ready.")
     yield
@@ -885,21 +851,6 @@ def _generate_recommendations(features: dict, matches: list,
 # Routes
 # ---------------------------------------------------------------------------
 
-
-# Fields the frontend match table actually renders (renderMatchRows +
-# hasGenre + enrichment keying). Persisting the FULL all_matches pool but
-# slimmed to these keys keeps the tier toggle honest on restore without
-# bloating the job row (2026-08-24: a 400-entry cap was SMALLER than the
-# tier slice, which re-hid the toggle on restored scans).
-_SLIM_MATCH_KEYS = ('name', 'tier', 'artist_id', 'spotify_url', 'track_url',
-                    'conversion_rate', 'emotions', 'primary_genre',
-                    'secondary_genre', 'artist_genres', 'similarity',
-                    'match_key', 'monthly_listeners')
-
-def _slim_all_matches(result):
-    return [{k: m.get(k) for k in _SLIM_MATCH_KEYS if k in m}
-            for m in (result.get('all_matches') or [])]
-
 # Same tier ranges as emotion_conversion_analyzer.py
 TIER_RANGES = {
     'micro': (0, 5_000),
@@ -928,86 +879,16 @@ def _listeners_to_tier(listeners: int) -> str:
 # 'latin'/'spanish' to nudge those too, drop a token to let that market rank
 # natively) and NON_NATIVE_TRAJECTORY_PENALTY (bigger = pushes them down harder;
 # 0 = off). Auto-disabled when the user is themselves a non-native artist.
-# --- Per-family sonic envelopes (2026-08-09, owner's double-check idea) -----
-# Empirical p01-p99 feature ranges per genre family, computed offline from
-# 267k tagged universe tracks (script in session scratchpad; rebuild when the
-# universe refreshes). Used to veto an exclusive lane collapse when we hold
-# no GEMS artist record: audio with >=2 features outside a family's p01/p99
-# cannot plausibly BE that family, whatever the vendor tags claim.
-# Calibration: Solya (danceability 0.24, bpm 61) vs metal p01s (0.48, 67).
-try:
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           'sonic_family_envelopes.json')) as _sef:
-        _SONIC_ENVELOPES = json.load(_sef).get('envelopes', {})
-    print(f"Loaded sonic envelopes for {len(_SONIC_ENVELOPES)} families")
-except Exception as _see:
-    print(f"Sonic envelopes unavailable ({_see}) — envelope veto disabled")
-    _SONIC_ENVELOPES = {}
-
-
-def sonic_envelope_rejects(features: dict, families: set) -> bool:
-    """True when the captured audio sits outside the empirical envelope of
-    EVERY family in the collapsed lane (>=2 features beyond that family's
-    p01/p99). Conservative by design: one outlier is an artistic choice,
-    two is a different genre. Unknown family or missing envelopes -> False
-    (never veto blind)."""
-    if not _SONIC_ENVELOPES or not features or not families:
-        return False
-    for fam in families:
-        env = _SONIC_ENVELOPES.get(fam)
-        if not env:
-            return False
-        outliers = []
-        for feat, band in env.items():
-            v = features.get(feat)
-            if v is None and feat == 'lufs_integrated':
-                v = features.get('lufs')
-            if v is None:
-                continue
-            try:
-                v = float(v)
-            except (TypeError, ValueError):
-                continue
-            if v < band['p01'] or v > band['p99']:
-                outliers.append(f"{feat}={v:.3g} outside [{band['p01']},{band['p99']}]")
-        if len(outliers) < 2:
-            return False
-        print(f"  Sonic envelope: audio rejects '{fam}': {'; '.join(outliers[:4])}")
-    return True
-
-
 NON_NATIVE_TRAJECTORY_PENALTY = 0.03  # ~ erases the typical foreign sonic edge so they interleave
-
-# Era interleave nudge (2026-08-09, the Byrds/Jefferson Airplane in Solya's
-# trajectory; Richie Sambora next to Drug Church): tags can't see decades, but
-# the ISRC registration year can. Recordings older than RETRO_YEARS get a
-# slight ordering penalty on hero surfaces — legacy legends interleave down
-# instead of headlining a modern artist's pitch story. Nudge, not ban.
-RETRO_YEARS = 20
-RETRO_TRAJECTORY_PENALTY = 0.03
-
-
-def _retro_penalty(m: dict) -> float:
-    y = isrc_year(m.get('isrc') or '')
-    if y is not None and y < (datetime.now().year - RETRO_YEARS):
-        return RETRO_TRAJECTORY_PENALTY
-    return 0.0
 NON_NATIVE_TRAJECTORY_TOKENS = (
     # East / SE Asian markets
     'j-pop', 'j-rock', 'j-rap', 'japanese', 'anime', 'city pop',
     'k-pop', 'k-rap', 'k-rock', 'korean',
     'c-pop', 'cantopop', 'mandopop', 'chinese', 'taiwanese', 'hong kong',
     'thai', 'vietnamese', 'indonesian', 'malaysian', 'opm', 'pinoy',
-    'southeast asian', 'east asia',
     # Non-Anglophone European / other markets
     'italian', 'french', 'german', 'greek', 'turkish', 'russian',
     'hebrew', 'israeli', 'arabic', 'hindi', 'bollywood', 'persian',
-    # Latin-American / Iberian markets (2026-08-09: Perro Callejero —
-    # 'latin rock, mexican rock' — hit #4 in a US post-hardcore trajectory
-    # untouched because this block was a TODO in the comment above)
-    'latin', 'spanish', 'mexican', 'argentine', 'brazilian', 'colombian',
-    'chilean', 'peruvian', 'uruguayan', 'venezuelan', 'cuban', 'dominican',
-    'puerto ric', 'portuguese', 'reggaeton', 'regional mexican', 'caribbean',
 )
 
 
@@ -1129,15 +1010,8 @@ def _build_track_momentum(scanned_track: dict, peer_matches: list, user_listener
         top25_cut = max(int(len(peer_with_listeners) * 0.25), 10)
         top25_listeners = sorted([l for _, l in peer_with_listeners[:top25_cut]])
         target_listeners = top25_listeners[len(top25_listeners) // 2]
-        # Second rung (2026-08-21, owner: the gap line vanished for tracks
-        # already in the top 25% — the money story should climb, not mute):
-        # median listeners of the composite top-10% peers.
-        top10_cut = max(int(len(peer_with_listeners) * 0.10), 5)
-        top10_listeners = sorted([l for _, l in peer_with_listeners[:top10_cut]])
-        target_listeners_t10 = top10_listeners[len(top10_listeners) // 2]
     else:
         target_listeners = None
-        target_listeners_t10 = None
 
     current_revenue = round(user_listeners * REVENUE_PER_LISTENER_PER_YEAR) if user_listeners > 0 else 0
     if target_listeners and target_listeners > user_listeners:
@@ -1167,11 +1041,6 @@ def _build_track_momentum(scanned_track: dict, peer_matches: list, user_listener
         'gap_current_revenue': current_revenue,
         'gap_target_revenue': target_revenue,
         'gap_additional_revenue': gap_revenue,
-        'gap_target_listeners_t10': int(round(target_listeners_t10)) if target_listeners_t10 else None,
-        'gap_target_revenue_t10': (round(target_listeners_t10 * REVENUE_PER_LISTENER_PER_YEAR)
-                                   if target_listeners_t10 else None),
-        'gap_additional_revenue_t10': (max(0, round(target_listeners_t10 * REVENUE_PER_LISTENER_PER_YEAR) - current_revenue)
-                                       if target_listeners_t10 else 0),
         'revenue_per_listener': REVENUE_PER_LISTENER_PER_YEAR,
     }
 
@@ -1404,7 +1273,7 @@ PITCH_COMPARABLES_MIN_SIMILARITY = 0.70  # Tighter than matcher's 0.55 floor —
 # that survive only because of one shared genre family tag. Filter applies to
 # both the pitch comparables list AND the cohort scatter cloud.
 
-PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT = 0.45  # (0.30→0.45 2026-08-08, owner: one A&R comparable "really kinda bad") Fraction of the candidate's
+PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT = 0.30  # Fraction of the candidate's
 # individual genre tags whose families overlap with the user's. The 0.67
 # original was tuned for broad lanes (rock/electronic) — for narrow lanes
 # like breaks, even legit jungle artists have mixed tags
@@ -1412,7 +1281,7 @@ PITCH_COMPARABLES_MIN_GENRE_ALIGNMENT = 0.45  # (0.30→0.45 2026-08-08, owner: 
 # so 0.67 emptied the quadrant. 0.30 keeps the legit narrow-lane candidates
 # while still rejecting "touched the lane on one tag" drift.
 
-PITCH_COMPARABLES_MIN_PRIMARY_SHARE = 0.35  # (0.25→0.35 2026-08-08, same tighten) Fraction of the candidate's
+PITCH_COMPARABLES_MIN_PRIMARY_SHARE = 0.25  # Fraction of the candidate's
 # tags that must resolve to the user's PRIMARY (most-frequent) genre family.
 # Same narrow-lane rationale as above — breaks-primary artists carry many
 # electronic/dance tags so the share runs ~0.40; 0.25 lets the real
@@ -1497,47 +1366,10 @@ def _genre_alignment_fraction(user_families: set, candidate: dict) -> float:
         return 1.0
     return aligned / total
 
-def _tiered_comps_pool(pool_all: list, pool_tier_filtered: list,
-                       user_monthly, floor: float) -> list:
-    """Same-tier-first comps pool (2026-08-21, owner: Yebba served as a pitch
-    comparable for an established-tier artist). Start at the user's own tier
-    and widen ONE tier at a time, only while the pool starves (<25). The
-    recognizability floor still applies at every radius — dropping it is what
-    made the card stale pre-2026-08-17. Final fallback stays the matcher's
-    tier-filtered pool, same as before."""
-    tiers = list(TIER_RANGES.keys())
-    try:
-        u_idx = tiers.index(_listeners_to_tier(int(float(user_monthly or 0))))
-    except ValueError:
-        floored = [m for m in pool_all if float(m.get('listeners') or 0) >= floor]
-        return floored if len(floored) >= 25 else pool_tier_filtered
-
-    def _idx(m):
-        try:
-            return tiers.index(_listeners_to_tier(int(float(m.get('listeners') or 0))))
-        except (ValueError, TypeError):
-            return None
-
-    eligible = [(m, _idx(m)) for m in pool_all
-                if float(m.get('listeners') or 0) >= floor]
-    pool = []
-    for radius in range(0, len(tiers)):
-        pool = [m for m, i in eligible if i is not None and abs(i - u_idx) <= radius]
-        if len(pool) >= 25:
-            print(f"  Pitch comparables: tier radius {radius} pool {len(pool)} "
-                  f"(user tier {tiers[u_idx]}, floor {int(floor):,})")
-            return pool
-    print(f"  Pitch comparables: all radii starved ({len(pool)}) — tier-filtered fallback")
-    return pool if len(pool) >= 10 else pool_tier_filtered
-
-
 def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
                                 gems_by_isrc: dict, user_families: set = None,
                                 user_primary_family: str = None,
-                                n: int = 5, user_features: dict = None,
-                                user_pronoun: str = None,
-                                user_non_native: bool = False,
-                                user_code2: str = None) -> list:
+                                n: int = 5) -> list:
     """Returns up to N candidates with name, listeners, similarity, performance
     percentile, originality score, plus a pitch_angle string. Empty if pool
     is too thin or no candidates qualify.
@@ -1562,60 +1394,6 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
                          if _candidate_primary_family_share(m, user_primary_family) >= PITCH_COMPARABLES_MIN_PRIMARY_SHARE]
     if len(found_matches) < 5 or len(high_converter_gems) < 10:
         return []
-
-    # Energy-world gate (2026-08-17, owner: "the song could be on an
-    # aggressive lens" — Better Man captures hot at 0.42 energy, above the
-    # metal envelope's p95, yet spectrally-similar ballads passed because
-    # the similarity energy penalty starts at 0.15 distance and climbs
-    # gently). A pitch comp must live in the same energy world as the
-    # track: per-track, tag-free — a hot scan draws gritty comps, a soft
-    # scan draws soft ones. Skipped when it would starve the pool (<12) or
-    # when the candidate row has no energy value (sparse data passes).
-    _u_energy = (user_features or {}).get('energy')
-    if _u_energy is not None:
-        def _energy_dist(x):
-            row = gems_by_isrc.get(x.get('isrc')) or {}
-            v = row.get('energy')
-            try:
-                return abs(float(v) - float(_u_energy))
-            except (TypeError, ValueError):
-                return None
-        _close = [x for x in found_matches
-                  if (_energy_dist(x) is None or _energy_dist(x) <= 0.12)]
-        if len(_close) >= 12:
-            print(f"  Pitch comparables: energy-world gate {len(found_matches)} -> "
-                  f"{len(_close)} (user energy {float(_u_energy):.2f} +/-0.12)")
-            found_matches = _close
-
-    # Pool-adaptive weighting (2026-08-17, owner: comps felt sonically far
-    # removed; superstar pools run thinner than mid-tier). Keyed off the
-    # MEASURED qualified-pool depth, not the tier label — depth is the thing
-    # that actually varies. Deep pool → be picky: raise the sonic floor to
-    # 0.75 and let sonics lead the combined score. Mid pool → sonics edge
-    # ahead. Thin pool → keep the original balanced needle-mover weighting
-    # so the card never starves (it returns [] below 5 rather than padding).
-    # Each profile also sets the QUALIFICATION bar (q_perf percentile /
-    # q_orig score). The strict Signature-of-Success bar (0.75/75) made the
-    # winners pre-decide the card and the sonic weights just rearranged
-    # leftovers — the sonically-closest act sat 4th while the best performer
-    # topped it at 0.78 sim (2026-08-17, owner unconvinced three rounds
-    # running). Deep pools can demand close-AND-winning: bar drops to
-    # above-median performance (still converting) and sonics genuinely lead.
-    pool_75 = [m for m in found_matches if (m.get('similarity') or 0) >= 0.75]
-    if len(pool_75) >= 25:
-        found_matches = pool_75
-        w_sim, w_perf, w_orig = 0.65, 0.175, 0.175
-        q_perf, q_orig = 0.50, 60
-        _w_profile = f'deep (n={len(pool_75)} @0.75 floor)'
-    elif len(found_matches) >= 12:
-        w_sim, w_perf, w_orig = 0.45, 0.275, 0.275
-        q_perf, q_orig = 0.65, 70
-        _w_profile = f'mid (n={len(found_matches)})'
-    else:
-        w_sim, w_perf, w_orig = 0.30, 0.35, 0.35
-        q_perf, q_orig = 0.75, 75
-        _w_profile = f'thin (n={len(found_matches)})'
-    print(f"  Pitch comparables: weight profile {_w_profile} -> sim={w_sim}, bar perf>={q_perf}/orig>={q_orig}")
 
     # Cohort centroid in z-space (same construction _compute_originality uses)
     centroid, stds = {}, {}
@@ -1649,32 +1427,11 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
         if cm is not None: return 0.50 * pop + 0.30 * cm + 0.20 * pl
         return 0.714 * pop + 0.286 * pl
 
-    def _dev_profile(f):
-        """Deviation-direction fingerprint: the set of (feature, sign) dims
-        where this track sits >1.25 sigma from cohort consensus. Two tracks are
-        'distinctive the same way' when these overlap (2026-08-09, the Cathrine
-        Lynn Rose lesson: originality measures HOW FAR from consensus, not in
-        WHICH DIRECTION — a comparable must deviate along the user's axes)."""
-        out = set()
-        if not f: return out
-        for feat in ORIGINALITY_WEIGHTS:
-            if feat not in centroid: continue
-            v = f.get(feat)
-            if v is None: continue
-            try: z = (float(v) - centroid[feat]) / stds[feat]
-            except (TypeError, ValueError, ZeroDivisionError): continue
-            if abs(z) > 1.25:
-                out.add((feat, 1 if z > 0 else -1))
-        return out
-
-    user_dev = _dev_profile(user_features or {})
-
     def _orig(isrc):
-        if not isrc: return None, set()
+        if not isrc: return None
         f = gems_by_isrc.get(isrc)
-        if not f: return None, set()
+        if not f: return None
         dist_sq, cnt = 0.0, 0
-        dev = set()
         for feat, w in ORIGINALITY_WEIGHTS.items():
             if feat not in centroid: continue
             v = f.get(feat)
@@ -1683,17 +1440,14 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             except (TypeError, ValueError, ZeroDivisionError): continue
             dist_sq += w * z * z
             cnt += 1
-            if abs(z) > 1.25:
-                dev.add((feat, 1 if z > 0 else -1))
-        if cnt < 5: return None, set()
-        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5))), dev
+        if cnt < 5: return None
+        return round(100 * (1 - math.exp(-(dist_sq ** 0.5) / 1.5)))
 
     scored = []
     for x in found_matches:
         p = _perf(x)
-        o, cand_dev = _orig(x.get('isrc'))
+        o = _orig(x.get('isrc'))
         if o is None: continue
-        dev_alignment = len(user_dev & cand_dev)
         scored.append({
             'name': x.get('name'),
             'spotify_url': x.get('spotify_url'),       # artist profile URL (kept for backwards compat)
@@ -1708,13 +1462,6 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             'playlists_total': _safe_int(x.get('editorial_playlists')) + _safe_int(x.get('user_playlists')),
             'perf_pct': round(p, 3),
             'orig_score': o,
-            'dev_alignment': dev_alignment,
-            'pronoun': (x.get('pronoun_title') or '').strip(),
-            'non_native': _cand_non_native(x),
-            'code2': (x.get('code2') or '').upper(),
-            'identity_poor': _sparse_pen(x) >= 2 * _SPARSE_PEN_UNIT,
-            'stale': x.get('_stale', 0.0),
-            'tag_aff': x.get('_tag_aff', 0.0),
         })
     if not scored: return []
 
@@ -1727,23 +1474,11 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
     # Tier 2: "Winning OR distinctive" — perf ≥ p75 OR orig ≥ 75
     # Tier 3: Soft p60 floors on both axes (original fallback)
     # Tier 4: Full scored pool (last resort)
-    # Direction gate: a candidate whose CLAIM is distinctiveness (orig >= 75)
-    # must be distinctive along at least one of the user's own deviation axes
-    # — otherwise they're original in a different direction entirely and prove
-    # nothing about this track's lane (Cathrine Lynn Rose). Users with no
-    # deviations (pure consensus tracks) skip the gate.
-    def _direction_ok(c):
-        if not user_dev: return True
-        if c['orig_score'] < 75: return True
-        return c['dev_alignment'] >= 1
-    scored = [c for c in scored if _direction_ok(c)]
-    if not scored: return []
-
-    sos_peers = [c for c in scored if c['perf_pct'] >= q_perf and c['orig_score'] >= q_orig]
+    sos_peers = [c for c in scored if c['perf_pct'] >= 0.75 and c['orig_score'] >= 75]
     if len(sos_peers) >= n:
         qualified = sos_peers
     else:
-        winning_or_distinctive = [c for c in scored if c['perf_pct'] >= q_perf or c['orig_score'] >= q_orig]
+        winning_or_distinctive = [c for c in scored if c['perf_pct'] >= 0.75 or c['orig_score'] >= 75]
         if len(winning_or_distinctive) >= n:
             qualified = winning_or_distinctive
         else:
@@ -1754,60 +1489,18 @@ def _compute_pitch_comparables(found_matches: list, high_converter_gems: list,
             soft_qualified = [c for c in scored if c['perf_pct'] >= p_floor and c['orig_score'] >= o_floor]
             qualified = soft_qualified if len(soft_qualified) >= n else scored
 
-    # Combined score uses the pool-adaptive weights chosen above: deep pools
-    # let sonics lead (a comp must survive the A&R's ear test first), thin
-    # pools keep the balanced needle-mover weighting.
+    # Reweight combined score to favor perf + orig over raw similarity.
+    # Pitch comparables are A&R proof points — "moving the needle" matters
+    # at least as much as sonic similarity. Bump perf + orig from 0.30 each
+    # to 0.35 each; drop similarity from 0.40 to 0.30.
     for c in qualified:
         c['combined_score'] = round(
-            w_sim * c['similarity']
-            + w_perf * c['perf_pct']
-            + w_orig * (c['orig_score'] / 100),
+            0.30 * c['similarity']
+            + 0.35 * c['perf_pct']
+            + 0.35 * (c['orig_score'] / 100),
             3,
         )
-        # Pronoun-affinity nudge (2026-08-09, owner: "more julias than
-        # chrises"): a comparable who shares the user's pronoun is a
-        # stronger story in a pitch deck. Nudge, not gate — reorders
-        # near-ties, can't push an unqualified candidate into the list.
-        if user_pronoun and c['pronoun'] and c['pronoun'] == user_pronoun:
-            c['combined_score'] = round(c['combined_score'] + 0.05, 3)  # doubled 2026-08-19 (owner: comps should look like the artist)
-        # Foreign-market interleave nudge (parity with trajectory/similar —
-        # a Malaysian comp in a US pitch deck is a weaker proof point).
-        if not user_non_native and c.get('non_native'):
-            c['combined_score'] = round(c['combined_score'] - 0.02, 3)
-        # Rarity-weighted tag affinity (parity with similar/trajectory):
-        # sharing the user's rare subgenres makes a genre-truer comp.
-        if c.get('tag_aff'):
-            c['combined_score'] = round(c['combined_score'] + c['tag_aff'], 3)
-        # Recency (parity with matches/trajectory): a comp whose last era was
-        # years ago is a weaker pitch-deck proof point today.
-        if c.get('stale'):
-            c['combined_score'] = round(c['combined_score'] - c['stale'], 3)
     qualified.sort(key=lambda c: -c['combined_score'])
-    # Market coherence (owner, 2026-08-19: Thai/Russian comps on a US pitch
-    # card are noise, not proof). Principle, not a hack: comps should come
-    # from the USER'S market or the universal pitching markets. Only applies
-    # when the user is a native-market artist; unknown candidate markets are
-    # never punished; falls back to the full pool if it would starve.
-    _PITCH_MARKETS = {'US', 'GB', 'CA', 'AU', 'NZ', 'IE'}
-    def _foreign_comp(c):
-        if c.get('non_native'):
-            return True
-        cc = c.get('code2') or ''
-        if not cc:
-            return False
-        if user_code2 and cc == user_code2:
-            return False
-        return cc not in _PITCH_MARKETS
-    if not user_non_native:
-        _native = [c for c in qualified if not _foreign_comp(c)]
-        if len(_native) >= n:
-            qualified = _native
-    # Identity-poor candidates (tagless / lone-generic-tag) can rank in the
-    # wide match pool but don't belong on a five-name pitch card — the card
-    # is lane PROOF. Fallback keeps the card full on thin lanes.
-    _verified = [c for c in qualified if not c.get('identity_poor')]
-    if len(_verified) >= n:
-        qualified = _verified
     return qualified[:n]
 
 
@@ -2104,59 +1797,6 @@ _INT_EST_COEF = {'lufs': 0.959, 'corr': -3.771, 'crest': -0.050, 'dr': -0.004, '
 _INT_EST_MEDIANS = {'corr': 0.828, 'crest': 10.62, 'dr': 25.6, 'lra': 2.84}
 
 
-def _unify_lufs_est(features: dict):
-    """ONE loudness number everywhere (owner rule 2026-08-19): the projected
-    whole-track Integrated estimate, computed identically for cache hits and
-    fresh captures. Before this, the two paths showed different numbers for
-    the same song (capture: raw loudest-window average; cache: raw chunk
-    integrated) — and the projection estimator itself had NEVER run in
-    production because app.py lacked a numpy import and the NameError was
-    swallowed. Projection wins; existing estimate, then raw, as fallbacks."""
-    try:
-        _proj = _est_integrated_from_gems_row(features)
-        if _proj is not None:
-            features['lufs_integrated_est'] = round(float(_proj), 2)
-    except Exception:
-        pass
-
-
-def _stamp_release_staleness(matches: list, top_n: int = 400):
-    """Recency nudge, ordering only (owner, 2026-08-19: Paola's last track is
-    years old and shouldn't outrank active artists). Fetches release years
-    from tracks.isrc (52% of the universe joins); missing or garbage dates
-    have ZERO effect, the whole step is best-effort, and displayed match %
-    is untouched — this only reorders near-ties toward artists whose sound
-    is from the same era as the scan."""
-    try:
-        from datetime import timezone as _tz
-        now_y = datetime.now(_tz.utc).year
-        pool = [m for m in matches[:top_n] if m.get('isrc')]
-        isrcs = list({m['isrc'] for m in pool})
-        years = {}
-        for i in range(0, len(isrcs), 300):
-            rows = supabase.table('tracks').select('isrc,release_date') \
-                .in_('isrc', isrcs[i:i + 300]) \
-                .not_.is_('release_date', 'null').execute().data or []
-            for r in rows:
-                try:
-                    y = int(str(r['release_date'])[:4])
-                    if 1900 <= y <= now_y + 1:
-                        years[r['isrc']] = y
-                except Exception:
-                    pass
-        for m in pool:
-            y = years.get(m['isrc'])
-            if y is None:
-                continue
-            age = now_y - y
-            m['_stale'] = (0.0 if age <= 2 else
-                           0.01 if age <= 4 else
-                           0.02 if age <= 7 else 0.03)
-        print(f"  recency: {len(years)}/{len(isrcs)} candidates dated")
-    except Exception as e:
-        print(f"  recency stamp skipped: {e}")
-
-
 def _est_integrated_from_gems_row(row: dict):
     """Estimate a peer track's true whole-track Integrated LUFS from its
     stored chunk features. Returns None when the row can't support it."""
@@ -2365,16 +2005,6 @@ def _validate_session(token: str) -> dict:
     if expires < datetime.now(timezone.utc):
         supabase.table('sessions').delete().eq('token', token).execute()
         raise HTTPException(401, "Session expired. Please log in again.")
-    # Sliding window: any use with <29 days left rolls the session back out
-    # to 30 days (at most one write per day per session).
-    try:
-        from datetime import timedelta as _td
-        if (expires - datetime.now(timezone.utc)) < _td(days=29):
-            supabase.table('sessions').update({
-                'expires_at': (datetime.now(timezone.utc) + _td(days=30)).isoformat()
-            }).eq('token', token).execute()
-    except Exception:
-        pass
 
     user_resp = supabase.table('users').select('*').eq('id', session['user_id']).execute()
     if not user_resp.data:
@@ -2387,9 +2017,7 @@ def _create_session(user_id: str) -> str:
     """Create a new session token in Supabase. Returns the token."""
     token = secrets.token_urlsafe(32)
     from datetime import timezone, timedelta
-    # 30-day sliding window: _validate_session rolls this forward on use, so
-    # active users never get dumped back to the login form.
-    expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    expires = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
     supabase.table('sessions').insert({
         'token': token,
         'user_id': user_id,
@@ -2440,13 +2068,10 @@ def _send_reset_email(email: str, reset_token: str) -> bool:
 
     from sendgrid import SendGridAPIClient
     from sendgrid.helpers.mail import IpPoolName, Mail, HtmlContent
-    from deal_nurture import _html_and_plain as _hp
-    html, _plain = _hp(html)
     message = Mail(
         from_email='noreply@freshlybakedstudios.com',
         to_emails=email,
         subject='Reset your Sonic Analyzer password',
-        plain_text_content=_plain,
         html_content=HtmlContent(html),
     )
     message.ip_pool_name = IpPoolName('production_pool2')
@@ -2566,7 +2191,6 @@ async def login(
         "token": token,
         "name": user['name'],
         "scans_remaining": user['max_scans'] - user['scans_used'],
-        "pro": bool(user.get('full_enrichment')),
     }
 
 
@@ -2604,8 +2228,7 @@ async def me(token: str):
 
     # Legacy token
     if 'id' not in user:
-        return {"name": user.get('name', ''), "email": user.get('email', ''),
-                "scans_remaining": 999, "pro": True}
+        return {"name": user.get('name', ''), "email": user.get('email', ''), "scans_remaining": 999}
 
     return {
         "name": user['name'],
@@ -2613,7 +2236,6 @@ async def me(token: str):
         "scans_remaining": user['max_scans'] - user['scans_used'],
         "scans_used": user['scans_used'],
         "max_scans": user['max_scans'],
-        "pro": bool(user.get('full_enrichment')),
     }
 
 
@@ -2758,16 +2380,6 @@ async def analyze(
     """
     # Validate token
     lead = _validate_session(token)
-    # Uploading your OWN audio (unreleased music) is the Pro feature
-    # (2026-08-09, owner call) — link scans of any Spotify track are free.
-    # Legacy tokens (no user id — owner/test sessions) stay ungated.
-    if lead.get('id') and not (lead.get('full_enrichment') or lead.get('fresh_capture')):
-        raise HTTPException(402, {
-            'code': 'pro_required',
-            'message': "Uploading your own audio is a Pro feature. "
-                       "Scan any released track free by pasting its Spotify link — "
-                       "or unlock Pro to analyze unreleased music straight from your files.",
-        })
     _check_scan_cap(lead)
 
     # Validate file type
@@ -2941,45 +2553,22 @@ async def analyze(
         # fall back to the artist's first two resolvable families (positional,
         # same approach as the URL path).
         if dropdown_genre:
-            user_families = user_lane_families(dropdown_genre)
+            user_families = _genre_families(dropdown_genre)
         else:
             artist_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
             seen, tags = set(), []
-            # Two passes: specific tags first, contentless 'alternative'
-            # variants only if nothing specific resolves (parity with URL path).
-            for allow_umbrella in (False, True):
-                for g in artist_parts:
+            for g in artist_parts:
+                lg = g.lower()
+                if lg in seen:
+                    continue
+                if _genre_families(g):
+                    tags.append(g); seen.add(lg)
                     if len(tags) >= 2:
                         break
-                    lg = g.lower()
-                    if lg in seen:
-                        continue
-                    if umbrella_lane_tag(g) and not allow_umbrella:
-                        continue
-                    if _genre_families(g):
-                        tags.append(g); seen.add(lg)
-                if tags:
-                    break
-            user_families = user_lane_families(*tags) if tags else set()
+            user_families = _genre_families(*tags) if tags else set()
 
         print(f"  Upload lane (heavy-weight dropdown): {user_families} | "
               f"dropdown='{dropdown_genre}' | artist_genre='{artist_genre[:80]}'")
-
-        # Faith overlay — parity with URL path (christian = market, not sound).
-        # Styling from the RAW tag soup: dominance voting may already have
-        # dropped the styling families from the collapsed lane.
-        _upload_faith_filter = False
-        _u_probe = user_families | user_lane_families(artist_genre or '')
-        if 'gospel' in _u_probe and faith_dominant(dropdown_genre or '', artist_genre or ''):
-            _u_raw = set()
-            for _gs in (dropdown_genre or '', artist_genre or ''):
-                for _t in _gs.split(','):
-                    _u_raw |= _genre_families(_t.strip())
-            _u_styling = _u_raw - {'gospel'}
-            if _u_styling:
-                print(f"  Faith overlay (upload): lane {user_families} -> {_u_styling}")
-                user_families = _u_styling
-                _upload_faith_filter = True
 
         # Canonical gate — shared single source of truth in track_matcher.py
         # (match_in_lane / in_lane_families). Rules: sparse-data drop,
@@ -2998,32 +2587,13 @@ async def analyze(
         # Widen-only — cannot change results when the lane is healthy.
         MIN_AFTER_LANE_FILTER = 25
         _av_parts = [g.strip() for g in (artist_genre or '').split(',') if g.strip()]
-        artist_families = user_lane_families(*_av_parts) if _av_parts else set()
+        artist_families = _genre_families(*_av_parts) if _av_parts else set()
         if len(lane_filtered) < MIN_AFTER_LANE_FILTER and (artist_families - user_families):
             relaxed = user_families | artist_families
             lane_filtered = [m for m in all_matches if in_lane(m, relaxed)]
             print(f"  Upload lane relax: dropdown lane starved (<{MIN_AFTER_LANE_FILTER}); "
                   f"relaxed to dropdown∪artist → {len(lane_filtered)}")
         all_matches = lane_filtered
-
-        # Trajectory-grade gates on the Similar Artists pool — parity with the
-        # URL path (2026-08-09 owner call): primary-in-lane + track-tag
-        # contradiction + aesthetic-clash veto, with a starvation fallback.
-        upload_aggr_ctx = aggressive_lane_context(user_families,
-                                                  dropdown_genre or '', artist_genre or '')
-        if user_families:
-            hero_gated = [m for m in all_matches
-                          if primary_in_lane(m, user_families)
-                          and not track_tags_contradict(m, user_families)
-                          and not aesthetic_clash(m, upload_aggr_ctx)
-                          and (not _upload_faith_filter or is_faith_world(m))]
-            if len(hero_gated) >= 25:
-                print(f"  Hero gate (upload similar artists): {len(all_matches)} → {len(hero_gated)} "
-                      f"(aggressive_ctx={upload_aggr_ctx})")
-                all_matches = hero_gated
-            else:
-                print(f"  Hero gate (upload): kept only {len(hero_gated)} (<25) — "
-                      f"falling back to lane-gated pool of {len(all_matches)}")
 
         # Country boost: same-region artists get a small boost. Targets the
         # SCANNED artist's market when a form artist URL was provided (client
@@ -3043,23 +2613,6 @@ async def analyze(
             if boosted_count > 0:
                 all_matches.sort(key=lambda x: x.get('similarity', 0), reverse=True)
                 print(f"  Country boost: {boosted_count} matches from {boost_code2} boosted +{COUNTRY_BOOST*100:.0f}%")
-
-        # Ordering nudges on Similar Artists (parity with URL path):
-        # faith-first tiering + pronoun affinity + rarity-weighted tag
-        # affinity. Displayed similarity untouched, only rank shifts.
-        _upload_aff_tags = matcher.affinity_tag_set(artist_genre or '',
-                                                    dropdown_genre or '',
-                                                    lane=user_families)
-        for m in all_matches:
-            m['_tag_aff'] = (matcher.tag_affinity_bonus(_upload_aff_tags, m)
-                             - sparse_identity_penalty(m))
-        _stamp_release_staleness(all_matches)
-        all_matches.sort(key=lambda x: ((1.0 if (_upload_faith_filter and is_faith_world(x)) else 0.0)
-                                        + x.get('similarity', 0)
-                                        + x.get('_tag_aff', 0.0)
-                                        - x.get('_stale', 0.0)
-                                        + (0.035 if (user_pronoun and (x.get('pronoun_title') or '') == user_pronoun) else 0.0)),
-                         reverse=True)
 
         # Debug: show top 40 matches with genre families
         print(f"  Top 40 matches (before tier filter):")
@@ -3110,7 +2663,7 @@ async def analyze(
             user_tier_num = tier_order_map.get(user_tier, -1)
 
             # Use family-based filtering (same as Similar Artists)
-            user_families = user_lane_families(genre or '')
+            user_families = _genre_families(genre or '')
             # Market banding: only demote foreign-market targets when the USER
             # is an Anglophone-market artist themselves (else it's not "foreign").
             user_non_native = _is_non_native_market(genre or '')
@@ -3120,10 +2673,7 @@ async def analyze(
             seen_artists = set()
             dropdown_lower = dropdown_genre.lower() if dropdown_genre else ''
 
-            # Mirror by construction (2026-08-09): draw from the SAME hero-gated
-            # pool the Similar Artists table uses (all_matches survives the tier
-            # filter intact — `matches` is the tier slice), not the pre-gate pool.
-            for m in all_matches:
+            for m in all_matches_unfiltered:
                 cand_tier_num = tier_order_map.get(m.get('tier', 'unknown'), -1)
                 if cand_tier_num <= user_tier_num:
                     continue
@@ -3135,12 +2685,6 @@ async def analyze(
                 # Same gate as Similar Artists (in_lane above) — keeps the
                 # trajectory pool consistent with what's surfacing in the table.
                 if not in_lane(m, user_families):
-                    continue
-                # Hero-surface tightening (2026-08-08): trajectory targets must
-                # have their PRIMARY genre in the lane, not just a soup tag.
-                if not primary_in_lane(m, user_families):
-                    continue
-                if track_tags_contradict(m, user_families):
                     continue
                 # Sparse-data drop already enforced by in_lane(); explicit sparse
                 # check here keeps the trajectory-specific log readable.
@@ -3166,30 +2710,17 @@ async def analyze(
                 pronoun_boost = 0
                 cand_pronoun = m.get('pronoun_title', '')
                 if user_pronoun and cand_pronoun and cand_pronoun == user_pronoun:
-                    pronoun_boost = 0.05  # doubled-ish 2026-08-19, owner: trajectory should mirror the artist
+                    pronoun_boost = 0.035  # 3.5% boost for matching pronouns
 
-                total_boost = genre_boost + pronoun_boost + m.get('_tag_aff', 0.0) - m.get('_stale', 0.0)
-                # Aesthetic-clash veto (parity with URL-path trajectory).
-                if aesthetic_clash(m, upload_aggr_ctx):
-                    continue
+                total_boost = genre_boost + pronoun_boost
                 # Slight market penalty: nudge foreign-market targets down so they
                 # interleave with same-market peers instead of stacking on top.
                 nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _is_non_native_market(*cand_genre_parts)) else 0.0
-                score = m.get('similarity', 0) + total_boost - nn_penalty - _retro_penalty(m)
-                # Faith-first tiering (parity with URL path).
-                faith_rank = 1 if (_upload_faith_filter and is_faith_world(m)) else 0
-                flattery_candidates.append(((faith_rank, cand_tier_num), score, m, cand_pronoun))
+                score = m.get('similarity', 0) + total_boost - nn_penalty
+                flattery_candidates.append((cand_tier_num, score, m, cand_pronoun))
 
             # Sort by tier (highest first), then market-weighted sonic similarity.
             flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
-
-            # Showcase lists are lane PROOF (owner, 2026-08-19: Paola with a
-            # lone 'us pop' tag surfacing as a trajectory artist): identity-poor
-            # candidates (tagless / lone-generic-tag) drop out whenever the
-            # list can afford it. Universal rule, not artist-specific.
-            _rich = [t for t in flattery_candidates if _sparse_pen(t[2]) < 2 * _SPARSE_PEN_UNIT]
-            if len(_rich) >= 8:
-                flattery_candidates = _rich
 
             # Debug: show top candidates with pronoun info
             if flattery_candidates:
@@ -3439,24 +2970,12 @@ async def analyze(
         if user_profile is not None:
             # Reuse the genre families computed for the matcher's family
             # filter — same source of truth (user's detected/declared genres).
-            _file_upload_user_fams = user_lane_families(genre or '')
+            _file_upload_user_fams = _genre_families(genre or '')
             _file_upload_user_primary = _primary_genre_family(genre or '')
-            # Multi-tier comps pool with recognizability floor (parity with
-            # the URL path — tier-locking starved the card). Upload users may
-            # be unreleased, so the floor scales off their listeners when
-            # known, else the 25k minimum.
-            _u_comp_floor = min(max(float(user_monthly or 0) * 0.10, 25_000), 250_000)
-            # Same-tier-first, widening only on starvation (2026-08-21 Yebba fix).
-            _u_comps_pool = _tiered_comps_pool(
-                all_matches, matches, user_monthly, _u_comp_floor)
             user_profile['pitch_comparables'] = _compute_pitch_comparables(
-                _u_comps_pool, high_converter_gems, matcher._gems_by_isrc,
+                matches, high_converter_gems, matcher._gems_by_isrc,
                 user_families=_file_upload_user_fams,
                 user_primary_family=_file_upload_user_primary,
-                user_features=features,
-                user_pronoun=user_pronoun or None,
-                user_non_native=_is_non_native_market(genre or '', artist_genre or ''),
-                user_code2=(user_code2 or '').upper() or None,
             )
             # Cohort scatter — every same-tier peer with both axes computed,
             # for the Sonic Quadrant background cloud.
@@ -3474,13 +2993,7 @@ async def analyze(
         signature_recs = _generate_signature_recommendations(features, high_converter_gems)
 
         # Create background enrichment job
-        job_id = job_mgr.create_job(token, features, matches, all_matches=matches,
-                                    identity={
-                                        'track_name': (file.filename or '').rsplit('.', 1)[0][:200],
-                                        'spotify_url': artist_spotify_url,
-                                        'user_email': lead.get('email'),
-                                        'scan_source': 'upload',
-                                    })
+        job_id = job_mgr.create_job(token, features, matches, all_matches=matches)
 
         # Get user's CM artist ID for related-artists lookup (used by the
         # background enrichment job for the "related artists" reverse lookup).
@@ -3609,33 +3122,12 @@ async def analyze(
         enrichment_matches = enrichment_matches[:200]  # Cap total
         # Resume enrichment gate — user-facing CM calls are done
         _resume_enrichment()
-        # Same tiering as analyze-url (2026-08-17 free-slice surgery): every
-        # scan gets enrichment — Pro the full 200 + curators/credits, free a
-        # 25-match slice with curators counted-but-locked. (Upload is
-        # Pro-only in the UI anyway — this is the defensive backend mirror.)
-        _full = bool(lead.get('full_enrichment')) or not lead.get('id')
-        _deep_capped = False
-        if _full and not _deep_scan_available(lead):
-            _full = False
-            _deep_capped = True
-            print(f"Deep-scan daily cap: {lead.get('email')} — light slice for this scan")
-        result['pro'] = _full
-        result['deep_capped'] = _deep_capped
-        _enrich_cap = 200 if _full else 25
         enrichment_pool.submit(
             _run_background_enrichment,
-            job_id, enrichment_matches[:_enrich_cap], user_cm_id,
-            _enrich_cap, _full,
+            job_id, enrichment_matches, user_cm_id,
         )
 
         _use_scan(lead)
-        # Persist trimmed result for restore-on-refresh (parity with URL path).
-        try:
-            enrichment_pool.submit(job_mgr.update_job, job_id,
-                                   result_json={**result,
-                                                'all_matches': _slim_all_matches(result)})
-        except Exception as _e:
-            print(f"  result_json persist skipped: {_e}")
         return result
 
     finally:
@@ -3739,7 +3231,7 @@ def _lookup_curator_local(cm_curator_id: int) -> dict | None:
             f"?cm_curator_id=eq.{cm_curator_id}"
             f"&select=cm_curator_id,curator_name,submission_email,"
             f"instagram_url,facebook_url,website_url,twitter_url,"
-            f"groover_url,submithub_url,spotify_url,total_followers,updated_at",
+            f"groover_url,submithub_url,spotify_url,total_followers",
             headers=headers, timeout=10,
         )
         if resp.status_code == 200:
@@ -3756,9 +3248,6 @@ def _lookup_curator_local(cm_curator_id: int) -> dict | None:
                     'submithub_url': row.get('submithub_url') or '',
                     'spotify_url': row.get('spotify_url') or '',
                     'total_followers': row.get('total_followers') or 0,
-                    # Internal marker (stripped before UI): when the row was
-                    # last written — powers the negative-contact cache.
-                    '_row_updated_at': row.get('updated_at') or '',
                 }
     except Exception as e:
         print(f"Local curator lookup failed for {cm_curator_id}: {e}")
@@ -3788,10 +3277,6 @@ def _upsert_curator(cm_curator_id: int, curator_data: dict):
         # Map 'email' to 'submission_email' if present
         if curator_data.get('email') and 'submission_email' not in payload:
             payload['submission_email'] = curator_data['email']
-        # Stamp check time so contactless rows work as a negative cache
-        # (skip re-asking CM for 90 days).
-        from datetime import timezone as _tz
-        payload['updated_at'] = datetime.now(_tz.utc).isoformat()
         requests.post(
             f"{supa_url}/rest/v1/curators",
             json=payload, headers=headers, timeout=10,
@@ -3875,193 +3360,15 @@ def _compute_playlist_score(sonic_similarity: float, followers: int,
 # ---------------------------------------------------------------------------
 # Background enrichment
 # ---------------------------------------------------------------------------
-_DEEP_SCAN_EXEMPT = {
-    e.strip().lower() for e in os.getenv(
-        'DEEP_SCAN_EXEMPT',
-        'freshlybakedstudios@gmail.com,almgren@freshlybakedstudios.com,'
-        'scantest-20260719@freshlybakedstudios.com'
-    ).split(',') if e.strip()
-}
-
-
-def _deep_scan_available(lead) -> bool:
-    """One full (200-match + curator) enrichment per user per rolling 24h;
-    repeat scans the same day run the light slice instead. The deep pass is
-    the resource hog (hundreds of rate-limited CM calls) and would let one
-    user starve everyone else. Owner/test emails exempt; errored runs don't
-    burn the slot; lookup failures fail OPEN so a paying user is never
-    blocked by our own outage."""
-    email = (lead.get('email') or '').strip().lower()
-    if not email or email in _DEEP_SCAN_EXEMPT:
-        return True
-    try:
-        from datetime import timedelta, timezone as _tz
-        cutoff = (datetime.now(_tz.utc) - timedelta(hours=24)).isoformat()
-        r = supabase.table('analysis_jobs').select('id,status') \
-            .eq('user_email', email) \
-            .gte('created_at', cutoff) \
-            .filter('progress->>deep_run', 'eq', 'true') \
-            .neq('status', 'error') \
-            .limit(1).execute()
-        return not (r.data or [])
-    except Exception as e:
-        print(f"deep-scan cap check failed (fail open): {e}")
-        return True
-
-
-def _send_curator_report_email(job_id: str, curator_count: int):
-    """IG-receipt-style completion email for Pro runs: the curator list is
-    ready, here's the top of it, open the pitch screen or grab the CSV.
-    Rides the Gmail rail from deal_nurture (lands in Primary). Fire-and-forget;
-    caller wraps in try/except."""
-    row = supabase.table('analysis_jobs') \
-        .select('user_email,track_name,artist_name,curator_emails,token') \
-        .eq('id', job_id).limit(1).execute()
-    job = (row.data or [{}])[0]
-    to_email = (job.get('user_email') or '').strip()
-    if not to_email or '@' not in to_email:
-        print(f"Enrichment [{job_id[:8]}]: no user_email on job, skipping report email")
-        return
-    track = job.get('track_name') or 'your track'
-    curators = job.get('curator_emails') or {}
-    if isinstance(curators, str):
-        try:
-            curators = json.loads(curators)
-        except Exception:
-            curators = {}
-
-    def _best_contact(c):
-        for key, label in (('email', None), ('instagram_url', 'Instagram'),
-                           ('facebook_url', 'Facebook'), ('website_url', 'Website'),
-                           ('submithub_url', 'SubmitHub'), ('groover_url', 'Groover')):
-            v = (c.get(key) or '').strip()
-            if v:
-                return (v, label or v)
-        return ('', '')
-
-    top = sorted(curators.values(),
-                 key=lambda c: c.get('followers', 0) or 0, reverse=True)[:10]
-    site_url = 'https://analyze.freshlybakedstudios.com'
-    csv_url = f'{site_url}/api/analysis/{job_id}/csv'
-    report_url = f'{site_url}/report/{job_id}'
-    scans_url = f"{site_url}/scans?token={job.get('token') or ''}"
-
-    btn = ('display:inline-block;padding:11px 20px;border-radius:8px;'
-           'text-decoration:none;font-weight:bold;margin-right:10px;')
-    if curator_count <= 0:
-        # No curator sweep on this scan (light pass) — the deliverable is the
-        # saved result itself, reachable from My Scans.
-        html = f"""
-        <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#1a1a1a;">
-          <p>Hey,</p>
-          <p>Your scan of &ldquo;{track}&rdquo; just finished. The full breakdown is saved
-          to your account &mdash; sonic profile, matches, and playlists.</p>
-          <p style="margin:22px 0;">
-            <a href="{scans_url}" style="{btn}background:#b45309;color:#fff;">Open My Scans</a>
-          </p>
-          <p>Every scan you run stays saved there. What are you scanning next?</p>
-          <p>Alexander<br>Freshly Baked Studios</p>
-        </div>
-        """
-        plain = (f"Your scan of \"{track}\" just finished. The full breakdown is saved "
-                 f"to your account.\n\nOpen My Scans: {scans_url}\n\n"
-                 f"Alexander\nFreshly Baked Studios")
-        subject = f'Your scan of "{track}" is ready'
-        try:
-            from deal_nurture import _send_via_gmail
-            ok = _send_via_gmail(to_email, subject, html, plain)
-        except Exception as e:
-            print(f"Enrichment [{job_id[:8]}]: gmail rail unavailable ({e})")
-            ok = False
-        print(f"Enrichment [{job_id[:8]}]: scan-ready email to {to_email}: "
-              f"{'sent' if ok else 'FAILED'}")
-        return
-
-    rows_html = ''
-    for c in top:
-        contact_val, contact_label = _best_contact(c)
-        if contact_label and contact_label != contact_val:
-            contact_html = f'<a href="{contact_val}" style="color:#b45309;">{contact_label}</a>'
-        else:
-            contact_html = contact_val
-        rows_html += (
-            '<tr>'
-            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;">{c.get("name", "")}</td>'
-            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;">{c.get("playlist_name", "")}</td>'
-            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">{(c.get("followers", 0) or 0):,}</td>'
-            f'<td style="padding:6px 10px;border-bottom:1px solid #eee;">{contact_html}</td>'
-            '</tr>'
-        )
-
-    btn = ('display:inline-block;padding:11px 20px;border-radius:8px;'
-           'text-decoration:none;font-weight:bold;margin-right:10px;')
-    html = f"""
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#1a1a1a;">
-      <p>Hey,</p>
-      <p>The deep scan on &ldquo;{track}&rdquo; just finished. <b>{curator_count} curators
-      with real contact info</b>, pulled from playlists that are already running songs
-      that sound like yours. Every one of them comes with a ready-to-send pitch on
-      your results page.</p>
-      <p style="margin:22px 0;">
-        <a href="{report_url}" style="{btn}background:#b45309;color:#fff;">Open your curator report</a>
-        <a href="{csv_url}" style="{btn}background:#f3f4f6;color:#1a1a1a;border:1px solid #ddd;">Download the sheet (CSV)</a>
-      </p>
-      <p style="margin-bottom:6px;"><b>Top of the list:</b></p>
-      <table style="border-collapse:collapse;width:100%;font-size:13px;">
-        <tr>
-          <th style="text-align:left;padding:6px 10px;border-bottom:2px solid #1a1a1a;">Curator</th>
-          <th style="text-align:left;padding:6px 10px;border-bottom:2px solid #1a1a1a;">Playlist</th>
-          <th style="text-align:right;padding:6px 10px;border-bottom:2px solid #1a1a1a;">Followers</th>
-          <th style="text-align:left;padding:6px 10px;border-bottom:2px solid #1a1a1a;">Contact</th>
-        </tr>
-        {rows_html}
-      </table>
-      <p style="margin-top:22px;">Your results stay live on the site for two weeks.
-      Which playlist are you going after first?</p>
-      <p>Alexander<br>Freshly Baked Studios</p>
-    </div>
-    """
-    plain = (
-        f"The deep scan on \"{track}\" just finished. {curator_count} curators with "
-        f"real contact info, pulled from playlists already running songs that sound "
-        f"like yours.\n\nOpen your curator report: {report_url}\nDownload the sheet (CSV): "
-        f"{csv_url}\n\nYour results stay live for two weeks. Which playlist are you "
-        f"going after first?\n\nAlexander\nFreshly Baked Studios"
-    )
-    subject = f'Your curator list is ready. {curator_count} contacts for "{track}"'
-    try:
-        from deal_nurture import _send_via_gmail
-        ok = _send_via_gmail(to_email, subject, html, plain)
-    except Exception as e:
-        print(f"Enrichment [{job_id[:8]}]: gmail rail unavailable ({e})")
-        ok = False
-    print(f"Enrichment [{job_id[:8]}]: curator report email to {to_email}: "
-          f"{'sent' if ok else 'FAILED'}")
-
-
-def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = None,
-                               max_matches: int = 200, include_curators: bool = True):
+def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = None):
     """
     Runs in a thread. Enriches matches with:
     1. CM Related Artists (fast, 1 API call) → confidence signal
     2. Playlists per match (slow, 2-3 calls each) → streamed via SSE
     3. Track credits → piggybacks on playlist resolution
     4. Curator emails → runs after playlists
-
-    Tiering (Chartmetric cost control): free users get max_matches≈25 and NO
-    curator resolution (contacts are the paid asset and the heaviest CM +
-    scraping cost); users.full_enrichment=true (or legacy/owner sessions) get
-    the full 200 + curators.
     """
-    matches = (matches or [])[:max_matches]
     global _last_api_activity
-    if include_curators:
-        # Stamp the job as a deep run so the one-per-user-per-day cap can
-        # count it (progress->>deep_run filter in _deep_scan_available).
-        try:
-            job_mgr.update_job(job_id, progress={'deep_run': True})
-        except Exception:
-            pass
     try:
         refresh_token = os.getenv('REFRESH_TOKEN')
         if not refresh_token:
@@ -4122,7 +3429,6 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         all_playlists = []
         seen_curator_ids = set()
         curator_count = 0
-        curators_locked = 0  # free tier: curators found but withheld — the Pro upsell count
         BATCH_SIZE = 10
 
         _sse_publish(job_id, 'enrichment_progress', {
@@ -4130,27 +3436,29 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             'curators_found': 0, 'phase': 'playlists',
         })
 
-        # ALL enrichment runs to completion UNATTENDED (2026-08-17 free-slice
-        # surgery; supersedes the 2026-08-09 free-tier stale cutoff). Free
-        # runs are cost-bounded by the 25-match cap + no curators + no
-        # credits (~2 CM calls per match); Pro runs were already unattended
-        # (bought and paid for). Results persist to the job row either way,
-        # so a closed tab picks them up via the SSE catch-up replay.
+        _no_subscriber_since = None  # Track when subscribers disappeared
 
         for batch_start in range(0, total, BATCH_SIZE):
+            # Stop enrichment if no one is listening (tab closed) — 30s grace for reconnects
+            if job_id not in sse_subscribers or not sse_subscribers[job_id]:
+                if _no_subscriber_since is None:
+                    _no_subscriber_since = time.time()
+                    print(f"Enrichment [{job_id[:8]}]: No SSE subscribers — waiting 30s for reconnect")
+                elif time.time() - _no_subscriber_since > 30:
+                    print(f"Enrichment [{job_id[:8]}]: No SSE subscribers for 30s — stopping (tab closed)")
+                    job_mgr.update_job(job_id, status='stale')
+                    _notify_local_pipeline('user_idle')
+                    return
+            else:
+                _no_subscriber_since = None
+
             # Keep activity alive so resource-switcher doesn't resume GEMS mid-enrichment
             _last_api_activity = time.time()
 
-            # Yield to user-facing scans: HOLD while the gate is closed (owner
-            # constraint: a user's scan must never wait on another user's
-            # enrichment). Leak-safety: if a crashed request never resumed the
-            # gate, force-reopen after _ENRICHMENT_MAX_PAUSE so enrichment can't
-            # starve forever.
-            while not _enrichment_gate.wait(timeout=2):
-                if time.time() - _enrichment_paused_at > _ENRICHMENT_MAX_PAUSE:
-                    print(f"Enrichment [{job_id[:8]}]: gate held >{_ENRICHMENT_MAX_PAUSE}s — assuming leaked pause, resuming")
-                    _enrichment_gate.set()
-                    break
+            # Brief pause if user-facing CM calls need priority (2s max to prevent blocking)
+            if not _enrichment_gate.wait(timeout=2):
+                _enrichment_gate.set()  # Force open — never block enrichment
+                _enrichment_gate.set()
             # Refresh CM token each batch — prevents 401s when token expires mid-enrichment
             token = get_cm_token(refresh_token)
             if not token:
@@ -4187,21 +3495,17 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                         track_name=m.get('track_name', ''),
                     )
 
-                    # Credits are Pro-only (2026-08-17 free-slice surgery):
-                    # an extra CM call per match, and the credits card is
-                    # part of the paid pitch kit.
-                    if include_curators:
-                        try:
-                            credits = _extract_track_credits(token, cm_track_id)
-                            if credits and (credits.get('producers') or credits.get('writers')):
-                                job_mgr.update_job(job_id, credits={match_key: credits})
-                                _sse_publish(job_id, 'credits', {
-                                    'match_key': match_key,
-                                    'artist_name': m.get('name', ''),
-                                    'credits': credits,
-                                })
-                        except Exception as e:
-                            print(f"Enrichment [{job_id[:8]}]: Credits failed for {isrc}: {e}")
+                    try:
+                        credits = _extract_track_credits(token, cm_track_id)
+                        if credits and (credits.get('producers') or credits.get('writers')):
+                            job_mgr.update_job(job_id, credits={match_key: credits})
+                            _sse_publish(job_id, 'credits', {
+                                'match_key': match_key,
+                                'artist_name': m.get('name', ''),
+                                'credits': credits,
+                            })
+                    except Exception as e:
+                        print(f"Enrichment [{job_id[:8]}]: Credits failed for {isrc}: {e}")
 
                     print(f"Enrichment [{job_id[:8]}]:   -> {len(playlists) if playlists else 0} playlists for {artist_name}")
                     if playlists:
@@ -4303,26 +3607,26 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     'sonic_match_pct': pl.get('sonic_similarity', 0.80),
                 })
 
-            if not include_curators and batch_curators:
-                # Free tier: curator contacts are paid-only — never resolve or scrape.
-                # Count what was withheld: the results page shows this number on the
-                # locked Pro block ("N curators found — contacts unlock with Pro").
-                curators_locked += len(batch_curators)
-                print(f"Enrichment [{job_id[:8]}]: skipping {len(batch_curators)} curators (free tier)")
-                batch_curators = []
             if batch_curators:
                 print(f"Enrichment [{job_id[:8]}]: Batch {batch_start//BATCH_SIZE+1} — resolving {len(batch_curators)} curators...")
 
             curators_checked = 0
-            _cc_lock = threading.Lock()
-
-            def _resolve_one(curator_info):
-                nonlocal curator_count, curators_checked
+            for curator_info in batch_curators:
                 try:
-                    with _cc_lock:
-                        curators_checked += 1
-                    # (Tab-closed abort removed 2026-08-17: all runs complete
-                    # unattended; curator resolve only happens on Pro runs.)
+                    curators_checked += 1
+
+                    # Check for tab closed every 10 curators
+                    if curators_checked % 10 == 0:
+                        if job_id not in sse_subscribers or not sse_subscribers[job_id]:
+                            if _no_subscriber_since is None:
+                                _no_subscriber_since = time.time()
+                            elif time.time() - _no_subscriber_since > 30:
+                                print(f"Enrichment [{job_id[:8]}]: No SSE subscribers for 30s (during curator resolve) — stopping")
+                                job_mgr.update_job(job_id, status='stale')
+                                _notify_local_pipeline('user_idle')
+                                return
+                        else:
+                            _no_subscriber_since = None
 
                     cm_cid = curator_info.get('cm_curator_id')
                     # Live status so UI doesn't look frozen
@@ -4338,8 +3642,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     if cm_cid:
                         local = _lookup_curator_local(cm_cid)
                         if local:
-                            curator_info.update({k: v for k, v in local.items()
-                                                 if v and not k.startswith('_')})
+                            curator_info.update({k: v for k, v in local.items() if v})
                             print(f"Enrichment [{job_id[:8]}]: LOCAL curator {cm_cid} ({curator_info['name']}): "
                                   f"email={'yes' if local.get('email') else 'no'}, "
                                   f"ig={'yes' if local.get('instagram_url') else 'no'}, "
@@ -4351,22 +3654,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                                     curator_info.get('instagram_url') or
                                     curator_info.get('facebook_url') or
                                     curator_info.get('website_url'))
-                    # Negative cache: a local row that exists but is contactless
-                    # means a previous scan already asked CM and found nothing —
-                    # don't burn a rate-limited API call again for 90 days.
-                    _neg_cached = False
-                    if cm_cid and not has_any_local and local is not None:
-                        try:
-                            from datetime import timezone as _tz
-                            _ts = str(local.get('_row_updated_at') or '')
-                            _dt = datetime.fromisoformat(_ts.replace('Z', '+00:00'))
-                            _neg_cached = (datetime.now(_tz.utc) - _dt).days < 90
-                        except Exception:
-                            _neg_cached = False
-                    if _neg_cached:
-                        print(f"Enrichment [{job_id[:8]}]: Negative cache — curator {cm_cid} "
-                              f"({curator_info.get('name', '?')}) checked <90d ago, no contacts; skipping CM call")
-                    if cm_cid and not has_any_local and not _neg_cached:
+                    if cm_cid and not has_any_local:
                         contact = _fetch_curator_contact(token, cm_cid)
                         if contact:
                             curator_info.update(contact)
@@ -4441,30 +3729,15 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
                     if not has_contact:
                         print(f"Enrichment [{job_id[:8]}]: No contact info for curator '{curator_info.get('name', '?')}' (cm_id={cm_cid}) — skipped")
                     if has_contact:
-                        with _cc_lock:
-                            curator_count += 1
-                            _count_now = curator_count
+                        curator_count += 1
                         job_mgr.update_job(job_id,
                                            curator_emails={curator_info['name']: curator_info})
                         _sse_publish(job_id, 'curator_emails', {
                             'curator': curator_info,
-                            'progress': f'{_count_now} curators',
+                            'progress': f'{curator_count} curators',
                         })
                 except Exception as e:
                     print(f"Enrichment [{job_id[:8]}]: Curator failed for {curator_info.get('name', '?')}: {e}")
-
-            # Parallel resolve: each curator is an independent network round-trip
-            # (CM lookup / local cache / scraper), so a small pool multiplies
-            # throughput until Chartmetric's own rate cap becomes the ceiling.
-            # 429s are retried with backoff inside the CM fetch layer.
-            _workers = max(1, int(os.getenv('CURATOR_RESOLVE_WORKERS', '4') or 4))
-            if _workers > 1 and len(batch_curators) > 3:
-                from concurrent.futures import ThreadPoolExecutor
-                with ThreadPoolExecutor(max_workers=_workers) as _cpool:
-                    list(_cpool.map(_resolve_one, batch_curators))
-            else:
-                for _ci in batch_curators:
-                    _resolve_one(_ci)
 
             batch_num = batch_start // BATCH_SIZE + 1
             total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
@@ -4650,24 +3923,9 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
             job_mgr.update_job(job_id, campaign_forecast=forecast)
 
         # Done
-        if curators_locked:
-            _sse_publish(job_id, 'curators_locked', {'count': curators_locked})
-            # Merge into stored progress (don't clobber batch fields) so the
-            # SSE catch-up path can replay the locked count on reconnect.
-            _prog = dict(((job_mgr.get_job_state(job_id) or {}).get('progress') or {}))
-            _prog['curators_locked'] = curators_locked
-            job_mgr.update_job(job_id, progress=_prog)
         job_mgr.update_job(job_id, status='complete')
-        _sse_publish(job_id, 'complete', {'status': 'complete',
-                                          'curators_locked': curators_locked})
-        print(f"Enrichment [{job_id[:8]}]: Complete"
-              + (f" — {curators_locked} curators locked behind Pro" if curators_locked else ""))
-        # Every scan announces itself when done (fire-and-forget delivery):
-        # Pro runs get the curator report, light runs get the scan-ready note.
-        try:
-            _send_curator_report_email(job_id, curator_count)
-        except Exception as _mail_err:
-            print(f"Enrichment [{job_id[:8]}]: report email failed: {_mail_err}")
+        _sse_publish(job_id, 'complete', {'status': 'complete'})
+        print(f"Enrichment [{job_id[:8]}]: Complete")
         # Notify resource-switcher that we're done — local scripts can resume
         _notify_local_pipeline('user_idle')
 
@@ -4718,12 +3976,7 @@ async def stream_enrichment(job_id: str):
                 if state.get('campaign_forecast'):
                     yield f"event: campaign_forecast\ndata: {json.dumps(state['campaign_forecast'])}\n\n"
                 if state.get('status') == 'complete':
-                    _locked = 0
-                    if isinstance(state.get('progress'), dict):
-                        _locked = state['progress'].get('curators_locked', 0) or 0
-                    if _locked:
-                        yield f"event: curators_locked\ndata: {json.dumps({'count': _locked})}\n\n"
-                    yield f"event: complete\ndata: {json.dumps({'status': 'complete', 'curators_locked': _locked})}\n\n"
+                    yield f"event: complete\ndata: {json.dumps({'status': 'complete'})}\n\n"
                     return
 
             # Stream live updates
@@ -4754,438 +4007,6 @@ async def stream_enrichment(job_id: str):
             "X-Accel-Buffering": "no",
         },
     )
-
-
-# ---------------------------------------------------------------------------
-# Restore-on-refresh: the session's most recent scan, full payload
-# ---------------------------------------------------------------------------
-@app.post("/api/analyze-url-queue")
-async def analyze_url_queue(
-    spotify_url: str = Form(...),
-    token: str = Form(...),
-    genre: Optional[str] = Form(None),
-):
-    """Fire-and-forget scan: validate fast, create the job row, run the whole
-    pipeline as a server-side background task, return the job id immediately.
-    The scan survives tab close / navigation — delivery is My Scans, the
-    report page, and the completion email."""
-    lead = _validate_session(token)
-    _check_scan_cap(lead)
-    if 'open.spotify.com/track/' not in spotify_url and 'spotify:track:' not in spotify_url:
-        raise HTTPException(400, "Please provide a valid Spotify track URL")
-
-    import uuid as _uuid
-    jid = str(_uuid.uuid4())
-    from datetime import timezone as _tz
-    now = datetime.now(_tz.utc).isoformat()
-    try:
-        supabase.table('analysis_jobs').insert({
-            'id': jid, 'token': token, 'status': 'queued',
-            'spotify_url': spotify_url,
-            'user_email': lead.get('email'),
-            'scan_source': 'url_queued',
-            'features': '{}', 'matches': '[]', 'playlists': '{}',
-            'related_artists': '[]', 'credits': '{}', 'curator_emails': '{}',
-            'confidence_map': '{}', 'progress': '{}',
-            'created_at': now, 'updated_at': now,
-        }).execute()
-    except Exception as e:
-        print(f"queue scan: row create failed: {e}")
-        raise HTTPException(503, "Could not queue the scan — try again in a moment.")
-    job_mgr._mem[jid] = {'id': jid, 'status': 'queued', 'spotify_url': spotify_url,
-                         'token': token}
-
-    def _run_queued_thread():
-        # Dedicated thread with its own event loop: the pipeline body is
-        # blocking-heavy (matching CPU, sync HTTP), so running it as a task on
-        # the server's main loop froze ALL requests — including this
-        # endpoint's own response — until the scan finished.
-        try:
-            job_mgr.update_job(jid, status='matching')
-            asyncio.run(analyze_url(spotify_url=spotify_url, token=token,
-                                    genre=genre, queued_job_id=jid))
-            print(f"Queued scan [{jid[:8]}]: pipeline finished")
-        except HTTPException as he:
-            print(f"Queued scan [{jid[:8]}]: failed: {he.detail}")
-            try:
-                job_mgr.update_job(jid, status='error',
-                                   progress={'error_message': str(he.detail)[:300]})
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"Queued scan [{jid[:8]}]: crashed: {e}")
-            try:
-                job_mgr.update_job(jid, status='error')
-            except Exception:
-                pass
-
-    threading.Thread(target=_run_queued_thread, daemon=True,
-                     name=f'queued-scan-{jid[:8]}').start()
-    return {'job_id': jid, 'queued': True}
-
-
-@app.get("/api/analysis/{job_id}/state")
-async def analysis_state(job_id: str):
-    """Featherweight status for queue chips: status + names + result flag."""
-    try:
-        rows = supabase.table('analysis_jobs') \
-            .select('status,track_name,artist_name,result_json') \
-            .eq('id', job_id).limit(1).execute().data
-    except Exception:
-        rows = None
-    if not rows:
-        raise HTTPException(404, "Job not found")
-    r = rows[0]
-    return {'status': r.get('status'), 'track_name': r.get('track_name'),
-            'artist_name': r.get('artist_name'),
-            'has_result': bool(r.get('result_json'))}
-
-
-@app.get("/api/analysis/{job_id}/result")
-async def analysis_result(job_id: str, token: str):
-    """Full saved result for one specific scan — powers 'view here' on queue
-    chips and reopening any scan from history. Session must own the job
-    (same token or same account email)."""
-    lead = _validate_session(token)
-    try:
-        rows = supabase.table('analysis_jobs') \
-            .select('id,status,token,user_email,spotify_url,result_json') \
-            .eq('id', job_id).limit(1).execute().data
-    except Exception:
-        rows = None
-    if not rows:
-        raise HTTPException(404, "Scan not found")
-    row = rows[0]
-    _email = (lead.get('email') or '').strip().lower()
-    owns = (row.get('token') == token or
-            (_email and (row.get('user_email') or '').strip().lower() == _email))
-    if not owns:
-        raise HTTPException(403, "Not your scan")
-    result = row.get('result_json')
-    if isinstance(result, str):
-        try:
-            result = json.loads(result)
-        except Exception:
-            result = None
-    if not result:
-        return {'found': False, 'status': row.get('status')}
-    return {'found': True, 'job_id': row['id'], 'status': row.get('status'),
-            'spotify_url': row.get('spotify_url'), 'result': result}
-
-
-@app.get("/api/analysis/restore")
-async def restore_latest_analysis(token: str):
-    """Return the newest scan result for this session so a page refresh (or a
-    return visit) lands back on the results instead of a blank form. The
-    frontend re-renders the payload and reopens the SSE stream, whose catch-up
-    replay refills every enrichment card from the job row."""
-    lead = _validate_session(token)
-    from datetime import timedelta, timezone
-    try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
-        q = supabase.table('analysis_jobs') \
-            .select('id,status,spotify_url,created_at,result_json') \
-            .not_.is_('result_json', 'null') \
-            .gte('created_at', cutoff) \
-            .order('created_at', desc=True) \
-            .limit(1)
-        # History follows the ACCOUNT, not the session token — a re-login or
-        # a second device still finds your scans. Token match is the fallback
-        # for legacy sessions with no email.
-        _email = (lead.get('email') or '').strip()
-        q = q.eq('user_email', _email) if _email else q.eq('token', token)
-        res = q.execute()
-        rows = res.data or []
-    except Exception as e:
-        print(f"restore: lookup failed: {e}")
-        rows = []
-    if not rows:
-        return {'found': False}
-    row = rows[0]
-    result = row.get('result_json')
-    if isinstance(result, str):
-        try:
-            result = json.loads(result)
-        except Exception:
-            return {'found': False}
-    return {'found': True, 'job_id': row['id'], 'status': row.get('status'),
-            'spotify_url': row.get('spotify_url'), 'created_at': row.get('created_at'),
-            'result': result}
-
-
-# ---------------------------------------------------------------------------
-# My Scans — per-account scan history. Every scan is saved; this page is the
-# shelf. Linked from the signed-in header; running scans show status chips
-# and the page refreshes itself until they land.
-# ---------------------------------------------------------------------------
-@app.get("/robots.txt", include_in_schema=False)
-async def robots_txt():
-    from fastapi.responses import FileResponse
-    return FileResponse(str(static_dir / "robots.txt"), media_type="text/plain")
-
-
-@app.get("/llms.txt", include_in_schema=False)
-async def llms_txt():
-    from fastapi.responses import FileResponse
-    return FileResponse(str(static_dir / "llms.txt"), media_type="text/plain")
-
-
-@app.get("/api/my-scans")
-async def my_scans_json(token: str):
-    """JSON twin of /scans for the in-app Scans tab (2026-08-21)."""
-    lead = _validate_session(token)
-    email = (lead.get('email') or '').strip()
-    try:
-        q = supabase.table('analysis_jobs') \
-            .select('id,status,track_name,artist_name,spotify_url,created_at,result_json') \
-            .order('created_at', desc=True).limit(50)
-        q = q.eq('user_email', email) if email else q.eq('token', token)
-        rows = q.execute().data or []
-    except Exception as e:
-        print(f"my-scans api: lookup failed: {e}")
-        rows = []
-    return {'scans': [{
-        'id': r['id'],
-        'status': r.get('status') or '?',
-        'track_name': r.get('track_name') or '',
-        'artist_name': r.get('artist_name') or '',
-        'spotify_url': r.get('spotify_url') or '',
-        'created_at': (r.get('created_at') or '')[:16],
-        'has_report': bool(r.get('result_json')) and (r.get('status') == 'complete'),
-    } for r in rows]}
-
-
-@app.get("/scans")
-async def my_scans_page(token: str):
-    import html as _html
-    from fastapi.responses import HTMLResponse
-    lead = _validate_session(token)
-    email = (lead.get('email') or '').strip()
-    esc = _html.escape
-    try:
-        q = supabase.table('analysis_jobs') \
-            .select('id,status,track_name,artist_name,spotify_url,created_at,result_json') \
-            .order('created_at', desc=True).limit(50)
-        q = q.eq('user_email', email) if email else q.eq('token', token)
-        rows = q.execute().data or []
-    except Exception as e:
-        print(f"scans page: lookup failed: {e}")
-        rows = []
-
-    STATUS_CHIP = {
-        'complete': ('done', '#22c55e'),
-        'error': ('failed', '#ef4444'),
-        'queued': ('queued', '#f59e0b'),
-        'enriching': ('building your list', '#f59e0b'),
-        'matching': ('analyzing', '#f59e0b'),
-        'pending_features': ('queued', '#f59e0b'),
-        'features_ready': ('analyzing', '#f59e0b'),
-    }
-    any_running = False
-    body_rows = ''
-    for r in rows:
-        st = r.get('status') or '?'
-        label, color = STATUS_CHIP.get(st, (st, '#888'))
-        chip_anim = ''
-        if st not in ('complete', 'error'):
-            any_running = True
-            chip_anim = 'animation:sPulse 1.4s ease-in-out infinite;'
-        name = r.get('track_name') or ''
-        artist = r.get('artist_name') or ''
-        title = f'&ldquo;{esc(name)}&rdquo;' if name else esc((r.get('spotify_url') or 'Scan')[:60])
-        if artist:
-            title += f' <span style="opacity:.6">by {esc(artist)}</span>'
-        date = esc((r.get('created_at') or '')[:16].replace('T', ' '))
-        has_result = bool(r.get('result_json'))
-        link = (f'<a href="/report/{esc(r["id"])}">open report &rarr;</a>'
-                if st == 'complete' and has_result else '')
-        body_rows += f"""
-        <tr>
-          <td>{title}</td>
-          <td class="date">{date}</td>
-          <td><span class="chip" style="border-color:{color};color:{color};{chip_anim}">{label}</span></td>
-          <td>{link}</td>
-        </tr>"""
-    if not rows:
-        body_rows = '<tr><td colspan="4" style="opacity:.6;padding:26px;">No scans yet — run your first one and it lands here.</td></tr>'
-
-    refresh_tag = '<meta http-equiv="refresh" content="20">' if any_running else ''
-    page = f"""<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">{refresh_tag}
-<title>My Scans &mdash; Sonic Analyzer</title>
-<style>
-  body {{ background:#0a0a0a; color:#eee; font-family:-apple-system,Segoe UI,Arial,sans-serif; margin:0; padding:24px; }}
-  .wrap {{ max-width:900px; margin:0 auto; }}
-  .card {{ background:#161616; border:1px solid #2a2a2a; border-radius:14px; padding:22px 26px; }}
-  h1 {{ font-size:22px; margin:0 0 4px; }}
-  .sub {{ opacity:.65; font-size:14px; margin-bottom:14px; }}
-  table {{ border-collapse:collapse; width:100%; font-size:14px; }}
-  td {{ padding:11px 12px; border-bottom:1px solid #242424; vertical-align:middle; }}
-  td.date {{ opacity:.55; white-space:nowrap; }}
-  .chip {{ border:1px solid; border-radius:999px; padding:3px 10px; font-size:12px; white-space:nowrap; }}
-  @keyframes sPulse {{ 0%, 100% {{ opacity:1; }} 50% {{ opacity:0.35; }} }}
-  a {{ color:#f59e0b; text-decoration:none; }}
-  a:hover {{ text-decoration:underline; }}
-</style></head><body><div class="wrap">
-  <div class="card">
-    <h1>My Scans</h1>
-    <div class="sub">Every scan you run is saved here{' &middot; this page refreshes itself while a scan is running' if any_running else ''}.
-    &middot; <a href="https://analyze.freshlybakedstudios.com">scan another track</a></div>
-    <table>{body_rows}</table>
-  </div>
-</div></body></html>"""
-    return HTMLResponse(page)
-
-
-# ---------------------------------------------------------------------------
-# Standalone curator report page — the shareable "sheet". Linked from the
-# pitch screen and the completion email; the job UUID is the capability.
-# ---------------------------------------------------------------------------
-@app.get("/report/{job_id}")
-async def curator_report_page(job_id: str):
-    import html as _html
-    from fastapi.responses import HTMLResponse
-    try:
-        res = supabase.table('analysis_jobs') \
-            .select('track_name,artist_name,spotify_url,created_at,curator_emails') \
-            .eq('id', job_id).limit(1).execute()
-        job = (res.data or [None])[0]
-    except Exception:
-        job = None
-    if not job:
-        raise HTTPException(404, "Report not found")
-    curators = job.get('curator_emails') or {}
-    if isinstance(curators, str):
-        try:
-            curators = json.loads(curators)
-        except Exception:
-            curators = {}
-    rows = sorted(curators.values(),
-                  key=lambda c: c.get('followers', 0) or 0, reverse=True)
-    track = job.get('track_name') or 'your track'
-    artist = job.get('artist_name') or ''
-    scan_date = (job.get('created_at') or '')[:10]
-    esc = _html.escape
-
-    def _contact_links(c):
-        out = []
-        email = (c.get('email') or '').strip()
-        if email:
-            out.append(f'<a href="mailto:{esc(email)}">{esc(email)}</a>')
-        for key, label in (('instagram_url', 'Instagram'), ('facebook_url', 'Facebook'),
-                           ('website_url', 'Website'), ('submithub_url', 'SubmitHub'),
-                           ('groover_url', 'Groover'), ('submission_url', 'Submit')):
-            v = (c.get(key) or '').strip()
-            if v:
-                out.append(f'<a href="{esc(v)}" target="_blank" rel="noopener">{label}</a>')
-        return ' &middot; '.join(out) or '&mdash;'
-
-    body_rows = ''
-    for i, c in enumerate(rows):
-        pl_name = esc(c.get('playlist_name') or '')
-        pl_link = (c.get('playlist_link') or '').strip()
-        pl_html = (f'<a href="{esc(pl_link)}" target="_blank" rel="noopener">{pl_name}</a>'
-                   if pl_link else pl_name)
-        anchor = esc(c.get('sonic_match') or '')
-        anchor_track = esc(c.get('track_name') or '')
-        anchor_html = f'{anchor}{" &middot; " + anchor_track if anchor_track else ""}' if anchor else '&mdash;'
-        body_rows += f"""
-        <tr>
-          <td><b>{esc(c.get('name') or '?')}</b></td>
-          <td>{pl_html}</td>
-          <td class="num">{(c.get('followers', 0) or 0):,}</td>
-          <td>{anchor_html}</td>
-          <td>{_contact_links(c)}</td>
-          <td><button class="pitch-btn" data-i="{i}">Copy pitch</button></td>
-        </tr>"""
-
-    curators_json = json.dumps([
-        {'name': c.get('name') or '', 'playlist_name': c.get('playlist_name') or '',
-         'sonic_match': c.get('sonic_match') or '', 'track_name': c.get('track_name') or '',
-         'email': c.get('email') or ''} for c in rows
-    ])
-    ctx_json = json.dumps({'artist': artist, 'track': track,
-                           'url': job.get('spotify_url') or ''})
-
-    page = f"""<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Curator Report &mdash; {esc(track)}</title>
-<style>
-  body {{ background:#0a0a0a; color:#eee; font-family:-apple-system,Segoe UI,Arial,sans-serif; margin:0; padding:24px; }}
-  .wrap {{ max-width:1100px; margin:0 auto; }}
-  .card {{ background:#161616; border:1px solid #2a2a2a; border-radius:14px; padding:22px 26px; margin-bottom:18px; }}
-  h1 {{ font-size:22px; margin:0 0 4px; }}
-  .sub {{ opacity:.65; font-size:14px; }}
-  .stat {{ color:#22c55e; font-weight:700; }}
-  table {{ border-collapse:collapse; width:100%; font-size:14px; }}
-  th {{ text-align:left; padding:9px 12px; border-bottom:2px solid #333; white-space:nowrap; }}
-  td {{ padding:9px 12px; border-bottom:1px solid #242424; vertical-align:top; }}
-  td.num {{ text-align:right; white-space:nowrap; }}
-  a {{ color:#f59e0b; text-decoration:none; }}
-  a:hover {{ text-decoration:underline; }}
-  .pitch-btn {{ background:#262626; color:#eee; border:1px solid #3a3a3a; border-radius:7px; padding:6px 12px; cursor:pointer; white-space:nowrap; }}
-  .pitch-btn:hover {{ background:#333; }}
-  .dl {{ display:inline-block; background:#22c55e; color:#0a0a0a; font-weight:700; border-radius:8px; padding:10px 18px; margin-top:10px; }}
-  .tablewrap {{ overflow-x:auto; }}
-</style></head><body><div class="wrap">
-  <div class="card">
-    <h1>Curator Report &mdash; &ldquo;{esc(track)}&rdquo;{' by ' + esc(artist) if artist else ''}</h1>
-    <div class="sub">Scanned {esc(scan_date)} &middot; <span class="stat">{len(rows)} contactable curators</span>
-    &middot; every row has a ready-to-send pitch</div>
-    <a class="dl" href="/api/analysis/{esc(job_id)}/csv">Download the sheet (CSV)</a>
-  </div>
-  <div class="card tablewrap">
-    <table>
-      <tr><th>Curator</th><th>Playlist</th><th>Followers</th><th>They already run</th><th>Contact</th><th></th></tr>
-      {body_rows}
-    </table>
-  </div>
-</div>
-<script>
-const CURATORS = {curators_json};
-const CTX = {ctx_json};
-function buildPitch(c) {{
-  const track = CTX.track ? '"' + CTX.track + '"' : 'my new track';
-  const artist = CTX.artist || 'an independent artist';
-  const pl = c.playlist_name || 'your playlist';
-  const ref = c.sonic_match || '';
-  const refTrack = c.track_name ? '"' + c.track_name + '"' : '';
-  const who = (c.name || '').split(' ')[0] || 'there';
-  const lines = ['Hi ' + who + ',', ''];
-  if (ref) {{
-    const poss = ref.endsWith('s') ? ref + "'" : ref + "'s";
-    const anchor = refTrack ? poss + ' ' + refTrack : ref;
-    lines.push('You already have ' + anchor + ' on ' + pl + ' — our track ' + track +
-               ' is a direct sonic match to it. Same energy, same production world.');
-  }} else {{
-    lines.push(track + ' belongs on ' + pl + '.');
-  }}
-  if (CTX.url) {{ lines.push(''); lines.push('Listen here: ' + CTX.url); }}
-  lines.push('');
-  lines.push(ref ? "It'll sit right next to it on the playlist. Thanks for the add!" : 'Thanks for the add!');
-  lines.push('');
-  lines.push(artist);
-  return lines.join('\\n');
-}}
-document.querySelectorAll('.pitch-btn').forEach(btn => {{
-  btn.addEventListener('click', () => {{
-    const text = buildPitch(CURATORS[parseInt(btn.dataset.i, 10)] || {{}});
-    const done = () => {{ btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy pitch', 1600); }};
-    if (navigator.clipboard && navigator.clipboard.writeText) {{
-      navigator.clipboard.writeText(text).then(done).catch(() => fallback(text, done));
-    }} else fallback(text, done);
-  }});
-}});
-function fallback(text, done) {{
-  const ta = document.createElement('textarea');
-  ta.value = text; document.body.appendChild(ta); ta.select();
-  try {{ document.execCommand('copy'); done(); }} catch (e) {{}}
-  ta.remove();
-}}
-</script></body></html>"""
-    return HTMLResponse(page)
 
 
 # ---------------------------------------------------------------------------
@@ -5264,29 +4085,15 @@ async def analyze_url(
     spotify_url: str = Form(...),
     token: str = Form(...),
     genre: Optional[str] = Form(None),
-    queued_job_id: Optional[str] = None,
 ):
     """
     Analyze a Spotify track by URL.
     Always full-quality capture via the Mac worker (Spotify desktop playback
     through Loopback). Spotify Web API is metadata-only — preview URLs are
     never used for analysis.
-
-    queued_job_id: internal — the fire-and-forget queue endpoint pre-creates
-    the job row and runs this whole pipeline as a background task on that id.
     """
     lead = _validate_session(token)
     _check_scan_cap(lead)
-    # Ownership guard: queued_job_id is reachable as a query param, so never
-    # trust it unless the row exists and belongs to this session.
-    if queued_job_id:
-        try:
-            _qrow = supabase.table('analysis_jobs').select('token') \
-                .eq('id', queued_job_id).limit(1).execute().data
-            if not _qrow or _qrow[0].get('token') != token:
-                queued_job_id = None
-        except Exception:
-            queued_job_id = None
 
     # Validate Spotify URL
     if 'open.spotify.com/track/' not in spotify_url and 'spotify:track:' not in spotify_url:
@@ -5344,9 +4151,7 @@ async def analyze_url(
                     track_data = track_resp.json()
                     preview_url = track_data.get('preview_url')
                     track_name = track_data.get('name', '')
-                    # ISRCs are canonically uppercase; Spotify sometimes reports
-                    # lowercase, which missed our universe cache + in-memory index.
-                    track_isrc = ((track_data.get('external_ids') or {}).get('isrc', '') or '').strip().upper()
+                    track_isrc = (track_data.get('external_ids') or {}).get('isrc', '')
                     artists = track_data.get('artists', [])
                     artist_name = ', '.join(a['name'] for a in artists)
                     # Get primary artist's Spotify URL for CM lookup
@@ -5357,60 +4162,6 @@ async def analyze_url(
         except Exception as e:
             print(f"Spotify API failed: {e}")
 
-    # Cache-first: tracks already in the GEMS universe serve canonical chunk
-    # features instantly — the same currency the matcher runs on, so results are
-    # MORE consistent than a fresh noisy capture. Fresh Mac-rig capture (Spotify
-    # desktop through Loopback) is a PAID feature (users.fresh_capture flag);
-    # free users whose track isn't cached are steered to file upload or upgrade.
-    # Runs BEFORE the CM artist/genre lookups so gated scans answer in ~2s.
-    features = None
-    features_source = None
-    if track_isrc:
-        try:
-            cached_feats = _lookup_gems_features(track_isrc)
-        except Exception as e:
-            print(f"  URL analysis: universe-cache lookup failed ({e}) — continuing")
-            cached_feats = None
-        if cached_feats:
-            features = cached_feats
-            features_source = 'universe_cache'
-            # Cache rows carry only the loudest-window LUFS; the rig's fresh
-            # captures average 3 samples into lufs_integrated_est and the UI
-            # prefers that. Stamp the same estimate here from the window
-            # features (2026-08-17, Holy Roller: card showed the -12.1 window
-            # value while the owner's meter read -9.1 integrated; the
-            # estimator projects -9.7 from this exact row).
-            if features.get('lufs_integrated_est') is None:
-                _est = _est_integrated_from_gems_row(features)
-                if _est is not None:
-                    features['lufs_integrated_est'] = round(_est, 2)
-                    print(f"  URL analysis: integrated LUFS est from window features: {_est:.1f}")
-            print(f"  URL analysis: features from universe cache (ISRC {track_isrc}) — no capture needed")
-        else:
-            print(f"  URL analysis: ISRC {track_isrc!r} not in universe cache "
-                  f"(in-memory index says {'PRESENT' if (track_isrc and matcher._gems_by_isrc.get(track_isrc)) else 'absent'})")
-
-    # Capture lane is FREE for link scans (2026-08-09, owner call): any Spotify
-    # track should scan for anyone, cache hit or miss — the Mac rig serves free
-    # users too, bounded by the per-account scan cap. The PAID feature is now
-    # uploading your OWN (unreleased) audio — gated on /api/analyze instead.
-
-    # Track-momentum prefetch: if the scanned track isn't in the universe cache,
-    # its momentum needs 1 Spotify + ~3 CM calls (~3-5s). Kick that off NOW in a
-    # thread so the (much longer) capture wait absorbs it instead of paying it
-    # serially after features arrive. Joined with a timeout where it's consumed.
-    momentum_future = None
-    if track_isrc and track_id and not matcher._tracks.get(track_isrc):
-        def _prefetch_momentum(tid=track_id, isrc=track_isrc):
-            try:
-                cm_refresh = os.getenv('REFRESH_TOKEN')
-                cm_tok = get_cm_token(cm_refresh) if cm_refresh else None
-                return fetch_track_momentum(cm_tok, tid, isrc) if cm_tok else None
-            except Exception as e:
-                print(f"  Track momentum: prefetch failed for {isrc}: {e}")
-                return None
-        momentum_future = enrichment_pool.submit(_prefetch_momentum)
-
     # Look up track's artist in Chartmetric for genres + related artists
     # NOTE: Use track's artist for genre/CM ID, but keep user's own tier from registration
     # Pause enrichment so user-facing CM calls get priority
@@ -5420,28 +4171,7 @@ async def analyze_url(
     artist_genre = ''                       # artist-level CM genres (back-catalog union)
     if artist_spotify_url:
         print(f"  URL analysis: looking up track artist {artist_name} via CM...")
-        # Cache-first (same 30d Supabase read-through the deal calculator uses,
-        # ~4-5s saved per scan on known artists); live Chartmetric only on miss.
-        track_artist_cm_data = _cached_artist_lookup(artist_spotify_url)
-        if track_artist_cm_data and len([g for g in (track_artist_cm_data.get('genres') or '').split(',') if g.strip()]) < 2:
-            # Cache row is genre-less OR thin (<2 tags). 2026-08-09 Jon Keith:
-            # empty genres collapsed identity. 2026-08-17 Slow Pulp: a single
-            # 'art pop' tag starved the lane the same way — indie kin unreachable.
-            # Original note (2026-08-09, Jon Keith:
-            # artists-table row had listeners history but genres=None — the
-            # cache hit short-circuited live CM, identity collapsed, lane
-            # emptied, 3,998-match free-for-all). Genres are the identity
-            # spine — a genre-less hit must still consult live CM.
-            print(f"  URL analysis: cache row has no genres — consulting live CM anyway")
-            _live = lookup_artist_by_spotify(artist_spotify_url)
-            if _live and (_live.get('genres') or '').strip():
-                track_artist_cm_data = _live
-        if track_artist_cm_data:
-            print(f"  URL analysis: artist served from cache ({track_artist_cm_data.get('_cache_age_days')}d old)"
-                  if track_artist_cm_data.get('_cache_age_days') is not None else
-                  f"  URL analysis: artist served live (genre-less cache bypassed)")
-        else:
-            track_artist_cm_data = lookup_artist_by_spotify(artist_spotify_url)
+        track_artist_cm_data = lookup_artist_by_spotify(artist_spotify_url)
         if track_artist_cm_data:
             user_cm_id = track_artist_cm_data.get('cm_id')
             cm_genres = track_artist_cm_data.get('genres', '')
@@ -5473,20 +4203,6 @@ async def analyze_url(
                   f"{track_artist_cm_data.get('listeners', 0):.0f} listeners")
         else:
             print(f"  URL analysis: CM lookup returned nothing for {artist_spotify_url}")
-
-    # Resilience fallback (2026-08-09, Jon Keith re-scan: CM artist lookup
-    # returned nothing and the scan's identity collapsed to the track's own
-    # pop-leaning tags — same track, different results scan-to-scan). When
-    # CM gives us no artist genres, fall back to our own GEMS artist record.
-    if not artist_genre and artist_spotify_url:
-        _asp_fb = artist_spotify_url.split('?')[0].rstrip('/')
-        for _aid_fb, _adata_fb in matcher._artists.items():
-            if (_adata_fb.get('spotify_url') or '').split('?')[0].rstrip('/') == _asp_fb:
-                _g_fb = (_adata_fb.get('genres') or '').strip()
-                if _g_fb:
-                    artist_genre = _g_fb
-                    print(f"  URL analysis: artist genres (GEMS fallback) = {artist_genre[:100]}")
-                break
 
     # Track-level genre — split into two sources for lane vs display:
     #
@@ -5534,20 +4250,7 @@ async def analyze_url(
                 if cm_live and cm_live.strip().lower() != 'others':
                     track_genre_display = cm_live
                     print(f"  URL analysis: track genres (CM live, display) = {cm_live[:120]}")
-                    # Lane-source consistency (2026-08-09, the Grubby case):
-                    # a freshly-captured track's gems row holds only 1-2
-                    # artist-echo tags, so its SECOND scan (cache hit) resolved
-                    # a narrower lane than its first (capture path used CM
-                    # live) — same track, different results. When the gems
-                    # snapshot is sparse, MERGE the live tags into the lane
-                    # source so both paths resolve the same lane.
-                    merged = [g.strip() for g in (track_genre or '').split(',') if g.strip()]
-                    for g in cm_live.split(','):
-                        g = g.strip()
-                        if g and g.lower() not in {x.lower() for x in merged}:
-                            merged.append(g)
-                    track_genre = ', '.join(merged)
-                elif not track_genre and cm_live:
+                if not track_genre and cm_live:
                     track_genre = cm_live  # use CM as last-resort lane source too
             except Exception as e:
                 print(f"  URL analysis: track genre fetch failed for {track_isrc}: {e}")
@@ -5577,28 +4280,26 @@ async def analyze_url(
             candidate = [g for g in track_parts if g.lower() in artist_lc]
         else:
             candidate = track_parts
-
         seen, tags = set(), []
-
-        def _take(parts, allow_umbrella):
-            for g in parts:
-                if len(tags) >= 2:
-                    return
-                lg = g.lower()
-                if lg in seen or not _genre_families(g):
-                    continue
-                if umbrella_lane_tag(g) and not allow_umbrella:
-                    continue
+        for g in candidate:
+            lg = g.lower()
+            if lg in seen:
+                continue
+            if _genre_families(g):
                 tags.append(g); seen.add(lg)
-
-        # Specific tags first (track positions 1+2, then artist supplement —
-        # still CM-ordered: position 1 = primary), umbrella tags only as a
-        # last resort in the same order (see umbrella_lane_tag: 'alternative'
-        # variants are lane-contentless).
-        _take(candidate, False)
-        _take(artist_parts, False)
-        _take(candidate, True)
-        _take(artist_parts, True)
+                if len(tags) >= 2:
+                    break
+        # If we don't have 2 yet, supplement from the artist tags (still
+        # CM-ordered: position 1 = artist primary, etc.).
+        if len(tags) < 2:
+            for g in artist_parts:
+                lg = g.lower()
+                if lg in seen:
+                    continue
+                if _genre_families(g):
+                    tags.append(g); seen.add(lg)
+                    if len(tags) >= 2:
+                        break
         # Umbrella deepening: if our positions 1+2 resolve to an umbrella family
         # ONLY (currently just 'electronic' — the family that covers dance,
         # edm, house, techno, dubstep, trance, idm... too broad to define a
@@ -5632,13 +4333,13 @@ async def analyze_url(
         genre = ', '.join(tags) if tags else (artist_parts[0] if artist_parts else '')
     print(f"  URL analysis: match genre='{genre}' | track='{track_genre}' | artist='{artist_genre}' | dropdown='{dropdown_genre}'")
 
-    # (features/features_source resolved right after Spotify metadata — cache
-    # lookup + paid gate run BEFORE the slow CM lookups so free users on
-    # uncached tracks get their 402 in ~2s instead of riding artist resolution.)
+    # Always scan fresh via Mac worker — Spotify desktop playback through Loopback
+    # No cached GEMS features, no preview URLs — full quality capture only
+    features = None
 
     # Create job for Mac worker — insert directly as pending_features with spotify_url
     if not features:
-        job_id = queued_job_id or str(__import__('uuid').uuid4())
+        job_id = str(__import__('uuid').uuid4())
         now = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
 
         # Check queue position before creating job
@@ -5655,13 +4356,9 @@ async def analyze_url(
                 print(f"  URL analysis: {queue_ahead} job(s) ahead in queue")
 
             try:
-                job_mgr._supabase.table('analysis_jobs').upsert({
+                job_mgr._supabase.table('analysis_jobs').insert({
                     'id': job_id, 'token': token, 'status': 'pending_features',
                     'spotify_url': spotify_url,
-                    'track_name': track_name[:200] if track_name else None,
-                    'artist_name': artist_name[:200] if artist_name else None,
-                    'user_email': lead.get('email'),
-                    'scan_source': 'worker_capture',
                     'features': '{}', 'matches': '[]', 'playlists': '{}',
                     'related_artists': '[]', 'credits': '{}', 'curator_emails': '{}',
                     'confidence_map': '{}', 'progress': '{}',
@@ -5677,9 +4374,8 @@ async def analyze_url(
         _last_api_activity = time.time()
         _notify_local_pipeline('user_active')
 
-        # Longer timeout if there's a queue (150s base + ~50s per job ahead —
-        # measured worker time per job is ~35-50s, 90s was over-budgeting)
-        timeout = 150 + (queue_ahead * 50)
+        # Longer timeout if there's a queue (150s base + 90s per job ahead)
+        timeout = 150 + (queue_ahead * 90)
         print(f"  URL analysis: waiting for Mac worker (up to {timeout}s, {queue_ahead} ahead)...")
         deadline = time.time() + timeout
 
@@ -5730,11 +4426,8 @@ async def analyze_url(
             "It may be busy or briefly restarting. Try again in a minute, or upload the audio file instead."
         )
 
-    # We have features — now run the normal matching pipeline.
-    # (job_id is None on the universe-cache path — no capture job was created;
-    # the real result job is created further down and drives SSE enrichment.)
-    if job_id:
-        job_mgr.update_job(job_id, status='matching', features=features)
+    # We have features — now run the normal matching pipeline
+    job_mgr.update_job(job_id, status='matching', features=features)
 
     # Run emotion detection on features (same as file upload path)
     from audio_analyzer import _emotion_detector
@@ -5768,96 +4461,8 @@ async def analyze_url(
     # to let an alternative track inherit a country/reggae lane. The candidate side
     # still checks each candidate's track AND artist genres, so an off-lane act
     # can't slip through on sparse track tags.
-    # Lane from the FULL track-tag soup, not the 2-position `genre` pick
-    # (2026-08-09, Grubby: cached tags 'emo, indie' truncated the lane while
-    # the live tags said 'hardcore, punk, metal, rock' — the hardcore lens
-    # never reached the lane). user_lane_families dominance-votes the soup,
-    # so noise tags can't hijack; dropdown still overrides via `genre`.
-    _lane_track_src = dropdown_genre or track_genre or genre or ''
-    # Umbrella-only track soup ('alternative' variants) carries no lane
-    # identity — filter those tags so a contentless track falls through
-    # resolve_scan_lane's silent-track rule to the artist's real identity.
-    # Dropdown is the user's explicit word and is never filtered.
-    _lane_track_eff = _lane_track_src
-    if not dropdown_genre:
-        _specific_tags = [t.strip() for t in _lane_track_src.split(',')
-                          if t.strip() and not umbrella_lane_tag(t)]
-        _lane_track_eff = ', '.join(_specific_tags)
-        if _lane_track_eff != _lane_track_src:
-            print(f"  Lane source: umbrella tags filtered "
-                  f"('{_lane_track_src}' -> '{_lane_track_eff or '(artist fallback)'}')")
-    track_user_families = resolve_scan_lane(user_lane_families(_lane_track_eff),
-                                            user_lane_families(artist_genre or ''))
-
-    # Exclusive-collapse corroboration (2026-08-09, Solya: CM tagged an
-    # indie singer-songwriter 'black metal, us metal...' — vendor tags can
-    # lie about IDENTITY, not just precision. Energy 0.24, dissonance 0.03,
-    # 61bpm: the audio said ballad while the lane collapsed to {metal}).
-    # Before an exclusive collapse stands, demand corroboration from an
-    # independent source: (a) our own GEMS artist record's families, or
-    # (b) for metal, the captured audio itself. On contradiction, rebuild
-    # the lane from the non-exclusive tag families + the GEMS record.
-    _lane_vetoed = False
-    if track_user_families and track_user_families <= EXCLUSIVE_FAMILIES:
-        _gems_art_fams = set()
-        if artist_spotify_url:
-            _asp0 = artist_spotify_url.split('?')[0].rstrip('/')
-            for _aid0, _adata0 in matcher._artists.items():
-                if (_adata0.get('spotify_url') or '').split('?')[0].rstrip('/') == _asp0:
-                    _gems_art_fams = user_lane_families(_adata0.get('genres') or '')
-                    break
-        # GEMS-record agreement is CONCLUSIVE either way: agreement clears
-        # the collapse (no further checks — the 274k-universe envelopes show
-        # real metal spans energy 0.17-0.41, so a naive audio threshold
-        # would wrongly veto ~40% of true metal scans); contradiction vetoes.
-        # The sonic envelope check runs ONLY when we have no record at all.
-        if _gems_art_fams:
-            _contradiction = not (_gems_art_fams & track_user_families)
-        else:
-            _contradiction = bool(features) and sonic_envelope_rejects(
-                features, track_user_families)
-        if _contradiction:
-            _union_fams = set()
-            for _gs in (_lane_track_src, artist_genre or ''):
-                for _t in _gs.split(','):
-                    _union_fams |= _genre_families(_t.strip())
-            _rebuilt = ((_union_fams - EXCLUSIVE_FAMILIES)
-                        | (_gems_art_fams - EXCLUSIVE_FAMILIES))
-            if _rebuilt:
-                print(f"  Lane veto: exclusive collapse {track_user_families} contradicted "
-                      f"(gems artist fams={_gems_art_fams or 'n/a'}, "
-                      f"energy={features.get('energy') if features else 'n/a'}); "
-                      f"rebuilt lane = {_rebuilt}")
-                track_user_families = _rebuilt
-                _lane_vetoed = True
-
-    # Faith overlay (2026-08-09, Jon Keith: christian hip-hop pulled worship
-    # acts — same faith shelf, wrong record). Christian is a market, not a
-    # sound: when the lane has 'gospel' PLUS real styling families, the
-    # styling becomes the lane and faith becomes a candidate membership
-    # filter applied in the hero gate below. Pure worship artists (gospel
-    # only, no styling) keep the gospel lane unchanged.
-    _faith_filter = False
-    _faith_probe = track_user_families | user_lane_families(artist_genre or '')
-    # faith_dominant guard (2026-08-17): one souvenir 'gospel' tag must not
-    # flip a rock band's scan into the faith market.
-    if 'gospel' in _faith_probe and faith_dominant(_lane_track_src, artist_genre or ''):
-        # Styling must come from the RAW tag soup — dominance voting may
-        # have already dropped the styling families before we get here
-        # (Jon Keith: genre pick 'christian hip-hop, gospel' voted gospel-
-        # dominant and dropped hip-hop as a minority exclusive).
-        _raw_fams = set()
-        for _gs in (_lane_track_src, artist_genre or ''):
-            for _t in _gs.split(','):
-                _raw_fams |= _genre_families(_t.strip())
-        _styling_fams = _raw_fams - {'gospel'}
-        if _styling_fams:
-            print(f"  Faith overlay: lane {track_user_families} -> styling {_styling_fams}, "
-                  f"candidates must be faith-world")
-            track_user_families = _styling_fams
-            _faith_filter = True
-
-    artist_user_families = user_lane_families(artist_genre or '')
+    track_user_families = _genre_families(genre or '')
+    artist_user_families = _genre_families(artist_genre or '')
     # Kept broad (track ∪ artist) for the looser flattery pass downstream.
     user_families = track_user_families | artist_user_families
 
@@ -5895,74 +4500,6 @@ async def analyze_url(
         all_found = track_filtered
         print(f"  Family filter (track-to-track overlap): {len(all_matches_unfiltered)} → {len(all_found)} matches")
 
-    # Trajectory-grade gates on the Similar Artists pool (2026-08-09, owner
-    # call: "similar artists matching should resemble trajectory, just at the
-    # user's tier"). Same hero-surface rules the flattery loop runs — primary
-    # genre in lane, track-tag contradiction veto, aesthetic-clash veto — plus
-    # the foreign-market interleave nudge on ORDERING (displayed similarity is
-    # untouched; only rank shifts). Safety fallback if the strict pool starves.
-    user_non_native = _is_non_native_market(artist_genre or '', track_genre or '', genre or '')
-    # When the lane veto fired, the tag blob itself is untrustworthy (it's
-    # what lied) — judge aggression from the corrected lane alone.
-    if _lane_vetoed:
-        aggr_ctx = aggressive_lane_context(track_user_families)
-    else:
-        aggr_ctx = aggressive_lane_context(track_user_families,
-                                           genre or '', track_genre or '', artist_genre or '')
-    # User pronoun (for the affinity nudge on all three surfaces): CM artist
-    # data first, then the GEMS artist cache by spotify profile URL.
-    _url_user_pronoun = (track_artist_cm_data or {}).get('pronoun_title') or ''
-    if not _url_user_pronoun and artist_spotify_url:
-        _asp = artist_spotify_url.split('?')[0].rstrip('/')
-        for _aid, _adata in matcher._artists.items():
-            if (_adata.get('spotify_url') or '').split('?')[0].rstrip('/') == _asp:
-                _url_user_pronoun = _adata.get('pronoun_title') or ''
-                break
-    if track_user_families:
-        hero_gated = [m for m in all_found
-                      if primary_in_lane(m, track_user_families)
-                      and not track_tags_contradict(m, track_user_families)
-                      and not aesthetic_clash(m, aggr_ctx)
-                      and (not _faith_filter or is_faith_world(m))]
-        if len(hero_gated) >= 25:
-            print(f"  Hero gate (similar artists): {len(all_found)} → {len(hero_gated)} "
-                  f"(aggressive_ctx={aggr_ctx})")
-            all_found = hero_gated
-        else:
-            print(f"  Hero gate (similar artists): kept only {len(hero_gated)} (<25) — "
-                  f"falling back to lane-gated pool of {len(all_found)}")
-    # Faith-first tiering (owner call 2026-08-09): when the user is faith-
-    # world and the strict pool was thin, faith acts surface as a block
-    # ABOVE the genre-matched secular fill — the 1.0 term dominates every
-    # similarity/nudge difference, so ordering inside each block stays the
-    # normal nudged-sonic ranking.
-    # Rarity-weighted tag affinity (ordering only, displayed sim untouched):
-    # stamped once per match so the flattery loop and comparables reuse it.
-    _user_aff_tags = matcher.affinity_tag_set(artist_genre or '', track_genre or '',
-                                              genre or '', dropdown_genre or '',
-                                              lane=track_user_families)
-    for m in all_found:
-        m['_tag_aff'] = (matcher.tag_affinity_bonus(_user_aff_tags, m)
-                         - sparse_identity_penalty(m))
-    _stamp_release_staleness(all_found)
-    all_found.sort(key=lambda m: ((1.0 if (_faith_filter and is_faith_world(m)) else
-                                   0.0 if _faith_filter else 0.0)
-                                  + m.get('similarity', 0)
-                                  + m.get('_tag_aff', 0.0)
-                                  - m.get('_stale', 0.0)
-                                  - (NON_NATIVE_TRAJECTORY_PENALTY
-                                     if (not user_non_native and _cand_non_native(m)) else 0.0)
-                                  - _retro_penalty(m)
-                                  + (0.02 if (_url_user_pronoun
-                                              and (m.get('pronoun_title') or '') == _url_user_pronoun)
-                                     else 0.0)),
-                   reverse=True)
-    # Trajectory mirrors Similar Artists (2026-08-09 owner call): the flattery
-    # loop below draws from THIS pool — same gates, same ordering basis — so
-    # the two surfaces can never disagree. Snapshot before the tier filter
-    # slices it down to the user's tier.
-    hero_pool_all_tiers = list(all_found)
-
     # Tier filtering for display table
     MIN_PEER_MATCHES = 10
     tier_order = list(TIER_RANGES.keys())
@@ -5999,18 +4536,17 @@ async def analyze_url(
     # Stash for the originality pass below (user_profile is built later in this path)
     _url_sonic_originality = _compute_originality(features, high_converter_gems_url)
 
-    # Flattery matches — higher-tier artists from the SAME hero-gated pool as
-    # the Similar Artists table (mirror by construction; was the unfiltered
-    # pool with its own separate gates until 2026-08-09).
+    # Flattery matches — higher-tier artists from unfiltered pool (before genre filter)
     flattery_matches = []
-    if user_tier and hero_pool_all_tiers:
+    if user_tier and all_matches_unfiltered:
         tier_order_map = {t: i for i, t in enumerate(TIER_RANGES.keys())}
         user_tier_num = tier_order_map.get(user_tier, 0)
-        # Market banding (user_non_native / aggr_ctx computed above, shared
-        # with the Similar Artists hero gate).
+        # Market banding: demote foreign-market targets to a second band, but
+        # only when the user is an Anglophone-market artist themselves.
+        user_non_native = _is_non_native_market(artist_genre or '', track_genre or '', genre or '')
         flattery_candidates = []
         seen_artists = set()
-        for m in hero_pool_all_tiers:
+        for m in all_matches_unfiltered:
             cand_tier = m.get('tier', '')
             cand_tier_num = tier_order_map.get(cand_tier, 0)
             if cand_tier_num <= user_tier_num:
@@ -6030,39 +4566,20 @@ async def analyze_url(
             if track_user_families:
                 if not match_in_lane(m, track_user_families):
                     continue
-                # Hero-surface tightening (2026-08-08): trajectory targets must
-                # have their PRIMARY genre in the lane, not just a soup tag
-                # (kills the Everclear-via-one-metal-tag stragglers).
-                if not primary_in_lane(m, track_user_families):
-                    continue
-                if track_tags_contradict(m, track_user_families):
-                    continue
                 shared = candidate_lane_families(m) & track_user_families
                 total_boost += 0.05 * len(shared)
-            # Aesthetic-clash veto: soft/mellow acts never headline an
-            # aggressive-lane user's trajectory (Train/Noel Gallagher case).
-            if aesthetic_clash(m, aggr_ctx):
-                continue
             cand_pronoun = m.get('pronoun_title', 'They')
-            # Pronoun-affinity nudge (parity with the upload path's
-            # pronoun_boost and the A&R comparables nudge).
-            if _url_user_pronoun and (m.get('pronoun_title') or '') == _url_user_pronoun:
-                total_boost += 0.035
             # Slight market penalty: nudge foreign-market targets down so they
             # interleave with same-market peers instead of stacking on top.
             nn_penalty = NON_NATIVE_TRAJECTORY_PENALTY if (not user_non_native and _cand_non_native(m)) else 0.0
-            score = (m.get('similarity', 0) + total_boost + m.get('_tag_aff', 0.0)
-                     - nn_penalty - _retro_penalty(m))
-            # Faith-first tiering: faith-world targets lead the trajectory
-            # for faith-world users; genre-matched secular follow.
-            faith_rank = 1 if (_faith_filter and is_faith_world(m)) else 0
-            flattery_candidates.append(((faith_rank, cand_tier_num), score, m, cand_pronoun))
+            score = m.get('similarity', 0) + total_boost - nn_penalty
+            flattery_candidates.append((cand_tier_num, score, m, cand_pronoun))
 
         # Sort by tier (highest first), then market-weighted sonic similarity.
         flattery_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
         if flattery_candidates:
-            print(f"  Flattery: {len(flattery_candidates)} total candidates from {len(hero_pool_all_tiers)} hero-gated pool")
+            print(f"  Flattery: {len(flattery_candidates)} total candidates from {len(all_matches_unfiltered)} unfiltered pool")
             print(f"  Flattery: user families = {user_families}, user tier = {user_tier} (num={user_tier_num})")
             for i, (tn, sc, m, _) in enumerate(flattery_candidates[:10]):
                 print(f"    {i+1}. {m.get('name','?')[:25]:<25} tier={m.get('tier','?'):<12} sim={m.get('similarity',0):.1%} boosted={sc:.1%}")
@@ -6070,15 +4587,7 @@ async def analyze_url(
         for _, _, m, _ in flattery_candidates[:20]:
             flattery_matches.append(m)
 
-    new_job_id = job_mgr.create_job(token, features, found_matches, job_id=(job_id or queued_job_id), identity={
-        'track_name': track_name,
-        'artist_name': artist_name,
-        'spotify_url': spotify_url,
-        'user_email': lead.get('email'),
-        # Distinguish cache-hit link scans from Mac-rig capture scans so the
-        # dashboard source split shows real rig load, not just link volume.
-        'scan_source': 'url' if features_source == 'universe_cache' else 'url_capture',
-    })
+    new_job_id = job_mgr.create_job(token, features, found_matches)
 
     # Build user_profile for "Where You Stand" conversion comparison
     user_profile = None
@@ -6214,17 +4723,18 @@ async def analyze_url(
         # so the panel works for tracks not yet in our universe.
         track_momentum = None
         scanned_track_row = matcher._tracks.get(track_isrc) if track_isrc else None
-        if not scanned_track_row and momentum_future is not None:
-            # Prefetched in a thread when the scan started — the capture wait has
-            # been absorbing the latency. Bounded join so a hung fetch can't stall
-            # the response (result used for this scan only, not cached back).
+        if not scanned_track_row and track_isrc and track_id:
+            # On-demand fetch — 1 Spotify call + ~3 CM calls, ~3-5s added latency.
+            # Result is used for this scan only (not cached back to universe yet).
             try:
-                fetched = momentum_future.result(timeout=8)
+                cm_refresh = os.getenv('REFRESH_TOKEN')
+                cm_tok = get_cm_token(cm_refresh) if cm_refresh else None
+                fetched = fetch_track_momentum(cm_tok, track_id, track_isrc) if cm_tok else None
                 if fetched:
                     scanned_track_row = fetched
-                    print(f"  Track momentum: prefetched for {track_isrc} (not in universe cache)")
+                    print(f"  Track momentum: live-fetched for {track_isrc} (not in universe cache)")
             except Exception as e:
-                print(f"  Track momentum: prefetch unavailable for {track_isrc}: {e}")
+                print(f"  Track momentum: live fetch failed for {track_isrc}: {e}")
         if scanned_track_row and all_found:
             track_momentum = _build_track_momentum(scanned_track_row, all_found, u_listeners)
 
@@ -6237,31 +4747,16 @@ async def analyze_url(
                 track_momentum.get('composite_percentile'),
             )
 
-        # Pitch comparables — A&R-ready list. Pool was found_matches (same
-        # tier) but that tier-locked the card: a superstar scan's qualified
-        # pool collapsed to ~11 names and the card served the same five every
-        # time (2026-08-17, owner: "still pulling the same people"). Now the
-        # pool is the FULL multi-tier hero pool with a recognizability floor —
-        # a comp must be a name an A&R could recognize, scaled to the user
-        # (10% of their listeners, clamped 25k-250k). If the floor starves
-        # the pool below 25, it falls back to the tier-filtered pool.
-        # Corrected lane (post exclusive-collapse veto) — not the raw
-        # `genre` pick, which is what lied in the Solya case.
-        _url_user_fams = set(track_user_families) if track_user_families else user_lane_families(genre or '')
-        _url_user_primary = None if _lane_vetoed else _primary_genre_family(genre or '')
-        _comp_floor = min(max((float(user_monthly or 0)) * 0.10, 25_000), 250_000)
-        # Same-tier-first, widening only on starvation (2026-08-21 Yebba fix).
-        comps_pool = _tiered_comps_pool(
-            hero_pool_all_tiers, found_matches, user_monthly, _comp_floor)
-        # (_url_user_pronoun resolved earlier, shared by all three surfaces)
+        # Pitch comparables — A&R-ready list. Pool is found_matches (same tier,
+        # already genre-family-filtered by the matcher). Pass user_families +
+        # primary family so the alignment + primary-share filters can scope
+        # to the user's dominant lane (catches hybrid-vs-hybrid false positives).
+        _url_user_fams = _genre_families(genre or '')
+        _url_user_primary = _primary_genre_family(genre or '')
         pitch_comparables = _compute_pitch_comparables(
-            comps_pool, high_converter_gems_url, matcher._gems_by_isrc,
+            found_matches, high_converter_gems_url, matcher._gems_by_isrc,
             user_families=_url_user_fams,
             user_primary_family=_url_user_primary,
-            user_features=features,
-            user_pronoun=_url_user_pronoun or None,
-            user_non_native=user_non_native,
-            user_code2=(((track_artist_cm_data or {}).get('code2') or '').upper() or None),
         )
         # Cohort scatter for the Sonic Quadrant background cloud
         cohort_scatter = _compute_cohort_scatter(
@@ -6298,7 +4793,6 @@ async def analyze_url(
           f"{len(all_found)} total genre-filtered for enrichment, "
           f"{len(flattery_matches)} flattery, {len(recs)} recs")
 
-    _unify_lufs_est(features)
     result = {
         'job_id': new_job_id,
         'total_match_count': total_match_count,
@@ -6356,10 +4850,7 @@ async def analyze_url(
             'artist_tier': track_artist_cm_data.get('tier', '') if track_artist_cm_data else '',
             'artist_listeners': track_artist_cm_data.get('listeners', 0) if track_artist_cm_data else 0,
             'preview_used': features is not None and preview_url is not None,
-            'features_source': features_source or 'fresh_capture',
         },
-        # Also top-level: the provenance badge + integrations read it here
-        'features_source': features_source or 'fresh_capture',
         'timing': {},
     }
 
@@ -6380,46 +4871,21 @@ async def analyze_url(
     except Exception as e:
         print(f"Email send error (non-fatal): {e}")
 
-    # Resume enrichment gate — user-facing CM calls are done
-    _resume_enrichment()
-    # Tier (2026-08-17 free-slice surgery, supersedes 2026-08-08 "free = NO
-    # enrichment"): every scan gets enrichment — Pro/legacy the full 200-match
-    # pass with curator contacts + credits + forecast; free a 25-match slice
-    # (related artists → audience match, capped playlists) with curators
-    # counted-but-locked as the upsell. Free cost ≈ 25 matches × ~2 CM calls.
-    _full = bool(lead.get('full_enrichment')) or not lead.get('id')
-    _deep_capped = False
-    if _full and not _deep_scan_available(lead):
-        _full = False
-        _deep_capped = True
-        print(f"Deep-scan daily cap: {lead.get('email')} — light slice for this scan")
-    result['pro'] = _full
-    result['deep_capped'] = _deep_capped
-    # Displayed matches FIRST, then wider pool, so every visible match
-    # gets playlist data
+    # Kick off background enrichment: displayed matches FIRST, then wider pool
+    # This ensures every match the user sees gets playlist data
     displayed_ids = {str(m.get('artist_id', '')) for m in found_matches}
     wider_pool = sorted(all_found, key=lambda m: m.get('similarity', 0), reverse=True)
     wider_extra = [m for m in wider_pool if str(m.get('artist_id', '')) not in displayed_ids]
-    _enrich_cap = 200 if _full else 25
-    enrichment_matches = (found_matches + wider_extra)[:_enrich_cap]
+    enrichment_matches = found_matches + wider_extra
+    enrichment_matches = enrichment_matches[:200]  # Cap total
+    # Resume enrichment gate — user-facing CM calls are done
+    _resume_enrichment()
     enrichment_pool.submit(
         _run_background_enrichment,
         new_job_id, enrichment_matches, user_cm_id,
-        _enrich_cap, _full,
     )
 
     _use_scan(lead)
-    # Persist the trimmed result payload for restore-on-refresh (2026-08-18:
-    # enrichment now completes unattended, but a page refresh lost the whole
-    # scan — worst funnel behavior for free users). all_matches is the only
-    # heavyweight key (5000 entries); keep a 400-entry slice so the tier
-    # toggle ("Established" / "All") survives restore (2026-08-24 fix).
-    try:
-        enrichment_pool.submit(job_mgr.update_job, new_job_id,
-                               result_json={**result,
-                                            'all_matches': _slim_all_matches(result)})
-    except Exception as _e:
-        print(f"  result_json persist skipped: {_e}")
     return result
 
 
@@ -6676,28 +5142,20 @@ async def deal_lookup(
             # fallback, electronic umbrella deepening — mirrors the URL path.
             deal_lane = set()
             track_tags = [t for t in (features.get('primary_genre'),
-                                      features.get('secondary_genre'))
-                          if t and not umbrella_lane_tag(t)]
+                                      features.get('secondary_genre')) if t]
             if track_tags:
-                deal_lane = user_lane_families(*track_tags)
+                deal_lane = _genre_families(*track_tags)
             if not deal_lane and genres_str:
                 seen_tags, lane_tags = set(), []
-                # Two passes: specific tags first, contentless 'alternative'
-                # variants only if nothing specific resolves.
-                for allow_umbrella in (False, True):
-                    for g in (p.strip() for p in genres_str.split(',') if p.strip()):
+                for g in (p.strip() for p in genres_str.split(',') if p.strip()):
+                    lg = g.lower()
+                    if lg in seen_tags:
+                        continue
+                    if _genre_families(g):
+                        lane_tags.append(g); seen_tags.add(lg)
                         if len(lane_tags) >= 2:
                             break
-                        lg = g.lower()
-                        if lg in seen_tags:
-                            continue
-                        if umbrella_lane_tag(g) and not allow_umbrella:
-                            continue
-                        if _genre_families(g):
-                            lane_tags.append(g); seen_tags.add(lg)
-                    if lane_tags:
-                        break
-                deal_lane = user_lane_families(*lane_tags) if lane_tags else set()
+                deal_lane = _genre_families(*lane_tags) if lane_tags else set()
             if deal_lane == {'electronic'} and genres_str:
                 from track_matcher import ELECTRONIC_SUBGENRES
                 deep = _genre_families(genres_str) & ELECTRONIC_SUBGENRES
@@ -7358,99 +5816,6 @@ async def deal_checkout_status(session_id: str):
         raise HTTPException(400, str(e))
 
 
-# ---------------------------------------------------------------------------
-# Analyzer paid tier — Stripe checkout that flips users.fresh_capture /
-# users.full_enrichment. Subscription mode when STRIPE_ANALYZER_PRICE_ID (a
-# recurring Price created in the Stripe dashboard) is set; otherwise a one-time
-# unlock at ANALYZER_FRESH_PRICE_USD (default $29) so the gate works day one.
-ANALYZER_URL = os.getenv('ANALYZER_URL', 'https://analyze.freshlybakedstudios.com')
-
-
-@app.post("/api/analyzer/upgrade")
-async def analyzer_upgrade(token: str = Form(...)):
-    """Create a Stripe Checkout Session for the analyzer Pro unlock."""
-    lead = _validate_session(token)
-    if not lead.get('id'):
-        raise HTTPException(400, "Log in with an account to upgrade")
-    if not stripe_lib.api_key:
-        raise HTTPException(500, "Payment system not configured")
-    meta = {'product': 'analyzer_fresh', 'analyzer_user_id': str(lead['id'])}
-    try:
-        price_id = os.getenv('STRIPE_ANALYZER_PRICE_ID')
-        common = dict(
-            customer_email=lead.get('email') or None,
-            metadata=meta,
-            success_url=f"{ANALYZER_URL}/?upgrade_session={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{ANALYZER_URL}/",
-        )
-        if price_id:
-            session = stripe_lib.checkout.Session.create(
-                mode='subscription',
-                line_items=[{'price': price_id, 'quantity': 1}],
-                subscription_data={'metadata': meta},
-                **common,
-            )
-        else:
-            amount = int(os.getenv('ANALYZER_FRESH_PRICE_USD', '29'))
-            session = stripe_lib.checkout.Session.create(
-                mode='payment',
-                line_items=[{
-                    'price_data': {
-                        'currency': 'usd',
-                        'product_data': {
-                            'name': 'Sonic Analyzer Pro',
-                            'description': 'Analyze your own unreleased audio straight from your files + full pitch-list enrichment with playlists, curator contacts and campaign forecast',
-                        },
-                        'unit_amount': amount * 100,
-                    },
-                    'quantity': 1,
-                }],
-                **common,
-            )
-        return {'checkout_url': session.url}
-    except stripe_lib.error.StripeError as e:
-        print(f"Analyzer upgrade: Stripe error: {e}")
-        raise HTTPException(400, "Could not start checkout. Please try again.")
-
-
-@app.get("/api/analyzer/upgrade/status")
-async def analyzer_upgrade_status(session_id: str, token: str):
-    """Verify the upgrade checkout and flip the user's paid flags."""
-    lead = _validate_session(token)
-    if not stripe_lib.api_key:
-        raise HTTPException(500, "Payment system not configured")
-    try:
-        session = stripe_lib.checkout.Session.retrieve(session_id)
-    except stripe_lib.error.StripeError as e:
-        raise HTTPException(400, str(e))
-    meta = session.metadata or {}
-    if meta.get('product') != 'analyzer_fresh' or meta.get('analyzer_user_id') != str(lead.get('id')):
-        raise HTTPException(403, "Session does not belong to this account")
-    if session.status == 'complete' and session.payment_status in ('paid', 'no_payment_required'):
-        if supabase and not lead.get('fresh_capture'):
-            try:
-                supabase.table('users').update({
-                    'fresh_capture': True,
-                    'full_enrichment': True,
-                    # Paid Pro = 25 scans (owner 2026-08-15; beta free-Pro = 10)
-                    'max_scans': max(int(lead.get('max_scans') or 3), 25),
-                }).eq('id', lead['id']).execute()
-                print(f"Analyzer upgrade: user {lead['id']} unlocked (session {session_id[:12]})")
-                try:
-                    send_pushover_notification(
-                        "ANALYZER PRO UNLOCK 🔓",
-                        f"{lead.get('email') or lead.get('name') or lead['id']}\n"
-                        f"${(session.amount_total or 0) / 100:,.0f}",
-                    )
-                except Exception:
-                    pass
-            except Exception as e:
-                print(f"Analyzer upgrade: flag update failed: {e}")
-                raise HTTPException(500, "Payment received but unlock failed — contact support")
-        return {'status': 'complete', 'fresh_capture': True}
-    return {'status': session.status or 'open'}
-
-
 def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
     """Send the signed contract to the artist via SendGrid."""
     api_key = os.getenv('SENDGRID_API_KEY')
@@ -7488,18 +5853,12 @@ def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
     from sendgrid import SendGridAPIClient
     from sendgrid.helpers.mail import IpPoolName, Mail, HtmlContent
 
-    from deal_nurture import _html_and_plain as _hp
-    html, _plain = _hp(html)
     message = Mail(
-        from_email='rates@freshlybakedstudios.com',
+        from_email='deals@freshlybakedstudios.com',
         to_emails=email,
         subject=f'{name}, your production agreement — Freshly Baked Studios',
-        plain_text_content=_plain,
         html_content=HtmlContent(html),
     )
-    # rates@ is a real alias (2026-07-20); replies also route to the owner.
-    from sendgrid.helpers.mail import ReplyTo as _ReplyTo
-    message.reply_to = _ReplyTo('almgren@freshlybakedstudios.com', 'Alexander Almgren')
     message.ip_pool_name = IpPoolName('production_pool2')
 
     try:
@@ -7555,42 +5914,6 @@ async def deal_nurture_bookings(token: str = "", dry: int = 0):
         raise HTTPException(500, "database unavailable")
     dry_run = True if dry == 1 else None  # None => auto (respects BOOKING_NURTURE_ENABLED)
     return deal_nurture.run_booking_nurture(supabase, dry_run=dry_run)
-
-
-@app.get("/api/booking/confirm")
-async def booking_confirm(uid: str, e: str, t: str):
-    """One-tap attendee confirmation from the pre-call email (2026-08-24,
-    owner demand after repeat no-shows). Verifies HMAC, stamps a
-    booking_confirmed row, pings Pushover so Alexander knows the call is real."""
-    from deal_nurture import verify_confirm
-    from fastapi.responses import HTMLResponse
-    email = (e or "").strip().lower()
-    if not verify_confirm(email, uid, t):
-        return HTMLResponse("<h3 style='font-family:sans-serif'>Link expired — just reply to the email instead.</h3>", status_code=400)
-    already = False
-    try:
-        existing = supabase.table("deal_leads").select("id") \
-            .eq("step", "booking_confirmed").eq("email", email).execute().data or []
-        for _r in existing:
-            already = True
-        if not already:
-            supabase.table("deal_leads").insert({
-                "email": email, "name": "", "step": "booking_confirmed",
-                "metadata": {"booking_uid": uid},
-            }).execute()
-    except Exception as _e:
-        print(f"confirm store failed: {_e}")
-    if not already:
-        send_pushover_notification("✅ Call CONFIRMED", f"{email} tapped 'I'll be there' (booking {uid})")
-    return HTMLResponse("""
-    <html><body style="background:#141213;color:#eee;font-family:-apple-system,sans-serif;
-        display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
-      <div style="text-align:center;max-width:420px;padding:24px">
-        <div style="font-size:52px;margin-bottom:12px">🤘</div>
-        <h2 style="margin:0 0 8px">You're locked in.</h2>
-        <p style="color:#aaa">Alexander knows you're coming. Bring the track — see you on the call.</p>
-      </div>
-    </body></html>""")
 
 
 @app.get("/api/deal/nurture/unsubscribe")

@@ -20,15 +20,6 @@
     gtag('js', new Date());
     gtag('config', 'G-GEEEEG3EBW');
   </script>
-  <!-- Microsoft Clarity (project: Sonic Analyzer y49jl7ph3v — separate from
-       the main site's) -->
-  <script>
-    (function(c,l,a,r,i,t,y){
-        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-    })(window, document, "clarity", "script", "y49jl7ph3v");
-  </script>
   <!-- Meta Pixel Code -->
   <script>
   !function(f,b,e,v,n,t,s)
@@ -121,18 +112,9 @@
       <h1>Know Your Sound.<br>Find Your Audience.</h1>
       <p class="hero-sub">
         Upload your track and get an instant sonic breakdown &mdash; frequency balance,
-        emotional character, and artists who sound like you from a universe of 300,000+ analyzed tracks.
+        emotional character, and artists who sound like you from a universe of 210,000+ analyzed tracks.
       </p>
       <button class="btn-primary" onclick="scrollToRegister()">Analyze My Track</button>
-      <div style="max-width:720px;margin:36px auto 0">
-        <p style="color:#8D8F59;font-size:0.85rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px">Watch the full walkthrough</p>
-        <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.5)">
-          <iframe src="https://www.youtube.com/embed/HOkvWpZX6JQ" title="Sonic Analyzer walkthrough"
-                  style="position:absolute;top:0;left:0;width:100%;height:100%;border:0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowfullscreen></iframe>
-        </div>
-      </div>
     </header>
 
     <!-- AUTH -->
@@ -301,7 +283,6 @@
         <h2>Analyze Your Track</h2>
         <div class="user-info">
           <span class="scans-badge hidden" id="scans-badge"></span>
-          <a href="#" id="my-scans-btn" class="logout-link" target="_blank" rel="noopener">My Scans</a>
           <a href="#" id="logout-btn" class="logout-link">Log out</a>
         </div>
       </div>
@@ -333,6 +314,12 @@
           <input type="url" id="spotify-track-url" placeholder="https://open.spotify.com/track/..." autocomplete="off">
         </div>
         <p class="upload-hint">Paste a Spotify track link to analyze without uploading</p>
+      </div>
+
+      <div class="form-group" id="artist-url-group">
+        <label for="upload-artist-url">Artist Spotify URL <span class="optional-hint">(optional, improves matching)</span></label>
+        <input type="url" id="upload-artist-url" placeholder="https://open.spotify.com/artist/..." autocomplete="off">
+        <p class="genre-hint">If this track is by a different artist than the one on your account, paste their Spotify URL here so we can pull their genre lane.</p>
       </div>
 
       <div class="genre-picker">
@@ -413,31 +400,20 @@
         </div>
       </div>
 
-      <!-- Results tab bar: five stages of the artist's journey. Cards are
-           assigned to tabs in app.js (RESULT_TABS); switching toggles the
-           .tab-hide class — app.js's own show/hide logic is untouched. -->
-      <nav class="results-tabs" id="results-tabs" aria-label="Result sections">
-        <button class="results-tab active" data-tab="sound">Your Sound</button>
-        <button class="results-tab" data-tab="peers">Your Peers</button>
-        <button class="results-tab" data-tab="production">Production Notes</button>
-        <button class="results-tab" data-tab="pitch">Pitch Kit <span class="tab-lock" id="pitch-tab-lock">🔒</span></button>
-        <button class="results-tab" data-tab="scans">Scans</button>
-      </nav>
-
       <!-- 2. Sonic Breakdown -->
-      <div class="result-card" id="sonic-breakdown-card">
+      <div class="result-card">
         <h3>Your Sonic Breakdown</h3>
         <div class="stats-grid stats-grid-6" id="stats-grid"></div>
       </div>
 
       <!-- 3. Frequency Balance -->
-      <div class="result-card" id="freq-balance-card">
+      <div class="result-card">
         <h3>Frequency Balance</h3>
         <div class="eq-chart" id="eq-chart"></div>
       </div>
 
       <!-- 4. Emotional Character -->
-      <div class="result-card" id="emotion-card">
+      <div class="result-card">
         <h3>Emotional Character</h3>
         <div class="emotion-tags" id="emotion-tags"></div>
       </div>
@@ -450,6 +426,13 @@
       </div>
 
       <!-- 5. Trajectory Targets -->
+      <div class="result-card hidden" id="flattery-card">
+        <h3>Trajectory Targets</h3>
+        <p class="card-sub">Higher-tier artists that match your sonic profile</p>
+        <div id="flattery-list"></div>
+      </div>
+
+      <!-- 6. Audience Match (double-validated via CM Related Artists) -->
       <div class="result-card hidden" id="audience-match-card">
         <h3>Audience Match</h3>
         <p class="card-sub">Artists with confirmed audience overlap — sonic similarity + Chartmetric Related Artists</p>
@@ -460,7 +443,7 @@
            Each feature shows a band between two consensus targets: the full
            high-converter cohort (safe/genre edge) and the signature-of-success
            subset (distinctive-winners edge). Aim anywhere in the band. -->
-      <div class="result-card" id="production-recs-card">
+      <div class="result-card">
         <h3>Production Recommendations
           <button class="export-targets-btn hidden" id="export-targets-btn" type="button" title="Download all target ranges as a .sonictargets.json file for the SonicMeter plugin">Export targets for plugin</button>
         </h3>
@@ -477,13 +460,6 @@
 
         <!-- Track-level momentum panel (shown when scanned track is in our universe
              OR live-fetched from Spotify/Chartmetric on cache miss). -->
-      <div class="result-card hidden" id="flattery-card">
-        <h3>Trajectory Targets</h3>
-        <p class="card-sub">Higher-tier artists that match your sonic profile</p>
-        <div id="flattery-list"></div>
-      </div>
-
-      <!-- 6. Audience Match (double-validated via CM Related Artists) -->
         <div class="track-momentum hidden" id="track-momentum">
           <div class="track-momentum-title">Where Your Track Stands <span class="track-momentum-sub" id="tm-peer-count"></span></div>
           <p class="track-momentum-tagline">How this song is performing right now, compared to tracks that sound like yours.</p>
@@ -581,9 +557,9 @@
       </div>
 
       <!-- 8. Similar Artists -->
-      <div class="result-card" id="similar-artists-card">
+      <div class="result-card">
         <h3>Similar Artists</h3>
-        <p class="card-sub">From our universe of 300,000+ sonically profiled tracks</p>
+        <p class="card-sub">From our universe of 210,000+ sonically profiled tracks</p>
         <div class="matches-controls">
           <div class="tier-toggle hidden" id="tier-toggle">
             <button class="tier-btn active" id="tier-btn-mine">My Tier</button>
@@ -656,22 +632,8 @@
       </div>
 
       <!-- Curator Contacts -->
-      <!-- Release plan — feeds the curator pitches below (moved from the scan
-           form 2026-08-21: it's playlisting machinery, it lives with the
-           pitch kit). Changing either field re-renders every pitch. -->
-      <div class="result-card hidden" id="pitch-settings-card">
-        <h3>Release Plan</h3>
-        <p class="card-sub">Set these and every pitch below updates. Pitching before release day lands adds in the first 24 hours — when the algorithm is watching hardest.</p>
-        <div class="form-group">
-          <label for="release-date-input">Release date <span class="optional-hint">(optional — flips pitches to pre-release mode)</span></label>
-          <input type="date" id="release-date-input" autocomplete="off">
-          <label for="private-link-input" style="margin-top:8px">Private listen link <span class="optional-hint">(optional — Disco, private SoundCloud, etc.)</span></label>
-          <input type="url" id="private-link-input" placeholder="https://..." autocomplete="off">
-        </div>
-      </div>
-
       <div class="result-card hidden" id="curator-emails-card">
-        <h3>Curator Contacts <button class="csv-download-btn hidden" id="curator-csv-btn" title="Download Curator CSV">Download CSV</button> <button class="csv-download-btn hidden" id="curator-report-btn" title="Open the full report on its own page">Open Report ↗</button></h3>
+        <h3>Curator Contacts <button class="csv-download-btn hidden" id="curator-csv-btn" title="Download Curator CSV">Download CSV</button></h3>
         <p class="card-sub" id="curator-contacts-count">Resolving curator contacts...</p>
         <div class="matches-table-wrap">
           <table class="matches-table curator-contacts-table">
@@ -683,7 +645,6 @@
                 <th>Followers</th>
                 <th>Email</th>
                 <th>Links</th>
-                <th title="A pitch pre-written for this curator — copy it anywhere">Pitch</th>
               </tr>
             </thead>
             <tbody id="curator-emails-body"></tbody>
@@ -693,18 +654,6 @@
 
       <!-- Campaign Forecast -->
       <div class="result-card hidden" id="campaign-forecast-card">
-      </div>
-
-      <!-- My Scans (Scans tab, 2026-08-21) — every report scan in one place -->
-      <div class="result-card hidden" id="my-scans-card">
-        <h3>Your Scans</h3>
-        <p class="card-sub" id="my-scans-sub">Every scan on this account. Finished ones open as full reports.</p>
-        <div class="matches-table-wrap" style="overflow-x:auto">
-          <table class="matches-table">
-            <thead><tr><th>Track</th><th>Date</th><th>Status</th><th></th></tr></thead>
-            <tbody id="my-scans-body"></tbody>
-          </table>
-        </div>
       </div>
 
       <!-- CTA -->
@@ -742,6 +691,6 @@
 
   <script src="/static/vendor/jspdf.umd.min.js"></script>
   <script src="/static/vendor/html2canvas.min.js"></script>
-  <script src="/static/app.js?v=20260707-1"></script>
+  <script src="/static/app.js?v=20260705-1"></script>
 </body>
 </html>

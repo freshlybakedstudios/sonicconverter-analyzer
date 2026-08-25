@@ -144,6 +144,27 @@ def _parse(ts):
         return None
 
 
+def _pushover(title, message):
+    try:
+        import urllib.request, urllib.parse
+        data = urllib.parse.urlencode({
+            'token': os.getenv('PUSHOVER_API_TOKEN', 'azq6g5x1rfzg9sykm6xscw8ypn4m1y'),
+            'user': os.getenv('PUSHOVER_USER_KEY', 'usbh1c1xzp7ooasfu8vvwbqmgiiipp'),
+            'title': title, 'message': message,
+        }).encode()
+        urllib.request.urlopen('https://api.pushover.net/1/messages.json', data=data, timeout=10)
+    except Exception as e:
+        print(f"pushover failed: {e}")
+
+
+def confirm_token(email: str, uid: str) -> str:
+    return unsub_token(f"{email}|{uid}")
+
+
+def verify_confirm(email: str, uid: str, token: str) -> bool:
+    return verify_unsub(f"{email}|{uid}", token)
+
+
 def unsub_token(email: str) -> str:
     return hmac.new(
         _UNSUB_SECRET.encode(), email.strip().lower().encode(), hashlib.sha256
@@ -919,6 +940,17 @@ def _cal_fetch_bookings():
     return out
 
 
+def _confirmed_uids(supabase):
+    """Booking uids whose lead tapped the confirm button (last 14d)."""
+    since = (_now() - timedelta(days=14)).isoformat()
+    try:
+        rows = supabase.table("deal_leads").select("metadata") \
+            .eq("step", "booking_confirmed").gte("created_at", since).execute().data or []
+        return {(r.get("metadata") or {}).get("booking_uid") for r in rows}
+    except Exception:
+        return set()
+
+
 def _booking_markers(supabase):
     """Set of (booking_uid, kind, mode) already handled."""
     since = (_now() - timedelta(days=14)).isoformat()
@@ -999,15 +1031,24 @@ def build_precall_email(b):
     link = b["video_url"] or f"https://cal.freshlybakedstudios.com/booking/{b['uid']}"
     greet = b["name"].split()[0] if b["name"] else "there"
     subject = f"Talk soon — we're on at {when}"
+    confirm_url = (f"{PUBLIC_API_BASE}/api/booking/confirm?uid={b['uid']}"
+                   f"&e={b['email']}&t={confirm_token(b['email'], b['uid'])}")
     body = f"""
       <p style="color:#ccc">Hey {greet},</p>
       <p style="color:#ccc">Quick heads-up: our call is coming up at <strong>{when}</strong>.
-         Here's your link when it's time:</p>
-      <p style="text-align:center;margin:28px 0">
-        <a href="{link}" style="background:#D8E166;color:#222020;text-decoration:none;
+         One favor — tap this so I know you're locked in:</p>
+      <p style="text-align:center;margin:28px 0 10px">
+        <a href="{confirm_url}" style="background:#D8E166;color:#222020;text-decoration:none;
            font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
-           Join the call</a>
+           &#9989; I'll be there</a>
       </p>
+      <p style="text-align:center;margin:0 0 24px">
+        <a href="{link}" style="color:#D8E166;text-decoration:underline;font-size:14px">
+           Join link for when it's time</a>
+      </p>
+      <p style="color:#ccc">If you've got 19 minutes before we talk, this walkthrough shows the
+         whole system we'll be using on your record:
+         <a href="https://youtu.be/HOkvWpZX6JQ" style="color:#D8E166">watch it here</a>.</p>
       <p style="color:#ccc">To get the most out of it, have handy:</p>
       <ul style="color:#ccc">
         <li>The track(s) you're working on — rough mixes, demos, or stems all work</li>
@@ -1088,6 +1129,18 @@ def run_booking_nurture(supabase, dry_run: bool = None) -> dict:
             return (b["uid"], kind, "live") in markers or (b["uid"], kind, mode) in markers
 
         delta = b["start"] - now
+        # Owner alert: call is <75 min out, precall reminder went out live,
+        # and the lead never tapped the confirm button. One pushover per
+        # booking so Alexander knows he does NOT have to sit and wait.
+        if (not dry_run and timedelta(0) < delta <= timedelta(minutes=75)
+                and (b["uid"], "precall", "live") in markers
+                and (b["uid"], "unconf_alert", "live") not in markers
+                and b["uid"] not in _confirmed_uids(supabase)):
+            when_local = _fmt_local(b["start"], b["tz"])
+            _pushover("⚠️ UNCONFIRMED call",
+                      f"{b['name'] or b['email']} at {when_local} never tapped "
+                      f"'I'll be there'. Your call whether to sit down for it.")
+            _stamp_booking(supabase, b, "unconf_alert", "live")
         if timedelta(0) < delta <= PRECALL_WINDOW:
             if _handled("precall"):
                 continue
