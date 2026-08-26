@@ -512,6 +512,9 @@ function setInputMode(mode) {
   const urlToggle = $('#mode-url');
   const fileZone = $('#upload-zone');
   const urlInput = $('#url-input-zone');
+  // Upload-mode ONLY (owner call 2026-08-26): link mode already has the
+  // artist in the pasted URL, so the field would be noise there.
+  const artistGroup = $('#artist-url-group');
 
   const genreLabel = document.querySelector('.genre-picker label');
   if (mode === 'file') {
@@ -519,12 +522,14 @@ function setInputMode(mode) {
     urlToggle && urlToggle.classList.remove('active');
     fileZone && show(fileZone);
     urlInput && hide(urlInput);
+    artistGroup && show(artistGroup);
     if (genreLabel) genreLabel.textContent = 'Genre';
   } else {
     fileToggle && fileToggle.classList.remove('active');
     urlToggle && urlToggle.classList.add('active');
     fileZone && hide(fileZone);
     urlInput && show(urlInput);
+    artistGroup && hide(artistGroup);
     if (genreLabel) genreLabel.textContent = 'Genre (optional — auto-detected from Spotify)';
   }
   updateAnalyzeButton();
