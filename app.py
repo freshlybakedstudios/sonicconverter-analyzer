@@ -7201,7 +7201,12 @@ async def deal_checkout(data: dict):
         session = stripe_lib.checkout.Session.create(
             mode='payment',
             customer_email=email,
-            payment_method_types=['card', 'affirm', 'klarna'],
+            # No payment_method_types: Stripe offers whatever is active in the
+            # dashboard (card + Klarna today; Affirm appears if activated).
+            # Hardcoding ['card','affirm','klarna'] made EVERY session-create
+            # throw "affirm is invalid" from 2026-03-05 until 2026-08-26,
+            # because Affirm was never activated — zero live deal-calc
+            # checkouts ever succeeded. Never pin inactive methods again.
             line_items=[{
                 'price_data': {
                     'currency': 'usd',
