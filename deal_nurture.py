@@ -951,6 +951,45 @@ def _confirmed_uids(supabase):
         return set()
 
 
+def _lead_engaged(supabase, email):
+    """True if the deal-lead rail already knows a human conversation exists:
+    the lead replied by email (replied_at) or the owner emailed them
+    personally (manual_followup). A no-show template must never interrupt
+    either. Fails CLOSED (True = suppress) — a missed rebook nudge is cheap,
+    a false 'your call didn't happen' email to an active deal is not."""
+    try:
+        rows = supabase.table("deal_leads").select("metadata") \
+            .eq("step", "contact").eq("email", email).execute().data or []
+        for r in rows:
+            nur = (r.get("metadata") or {}).get("nurture") or {}
+            if nur.get("replied_at") or nur.get("manual_followup"):
+                return True
+        return False
+    except Exception:
+        return True
+
+
+def _human_contact_since(email, start_dt):
+    """True if ANY Gmail correspondence with this address exists after the
+    meeting start — an inbound from them, or an outbound the owner sent.
+    Either one is proof the relationship is live and the call almost
+    certainly happened. Fails CLOSED (True = suppress)."""
+    try:
+        import requests as _rq
+        tok = _gmail_access_token()
+        if not tok:
+            return True
+        q = f"(from:{email} OR to:{email}) after:{int(start_dt.timestamp())}"
+        r = _rq.get(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+            headers={"Authorization": f"Bearer {tok}"},
+            params={"q": q, "maxResults": 1}, timeout=15)
+        r.raise_for_status()
+        return bool(r.json().get("messages"))
+    except Exception:
+        return True
+
+
 def _booking_markers(supabase):
     """Set of (booking_uid, kind, mode) already handled."""
     since = (_now() - timedelta(days=14)).isoformat()
@@ -1156,6 +1195,16 @@ def run_booking_nurture(supabase, dry_run: bool = None) -> dict:
             if _lead_unsubscribed(supabase, b["email"]):
                 continue
             if _lead_paid_since(supabase, b["email"], b["start"]):
+                continue
+            # ── False-positive guards (Jenn Tam incident, 2026-08-26): the
+            # branch above never verified attendance, so every attended call
+            # that didn't pay within ~20h got a "your call didn't happen"
+            # email. Suppress on ANY evidence of a live relationship. ──
+            if b["uid"] in _confirmed_uids(supabase):
+                continue
+            if _lead_engaged(supabase, b["email"]):
+                continue
+            if _human_contact_since(b["email"], b["start"]):
                 continue
             noshow.append(b)
 
