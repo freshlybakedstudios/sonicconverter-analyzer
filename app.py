@@ -7258,11 +7258,13 @@ async def deal_checkout(data: dict):
             except Exception as e:
                 print(f"Deal checkout save error: {e}")
 
-        # Push notification
-        send_pushover_notification(
-            "Deal Checkout Started!",
-            f"{name} ({artist_name})\n{kind_label}: ${deposit_amount:,} of ${total:,}\n{service_names}"
-        )
+        # Push notification — but never for internal probes (the 7:25am money
+        # canary creates a real checkout session daily; it must stay silent).
+        if not email.lower().endswith('@freshlybakedstudios.com'):
+            send_pushover_notification(
+                "Deal Checkout Started!",
+                f"{name} ({artist_name})\n{kind_label}: ${deposit_amount:,} of ${total:,}\n{service_names}"
+            )
 
         return {"url": session.url, "session_id": session.id}
 
