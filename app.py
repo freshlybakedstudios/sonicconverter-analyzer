@@ -258,6 +258,7 @@ app.add_middleware(
     allow_origins=[
         "https://freshlybakedstudios.com",
         "https://www.freshlybakedstudios.com",
+        "https://qr.freshlybakedstudios.com",
         "https://analyze.freshlybakedstudios.com",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
