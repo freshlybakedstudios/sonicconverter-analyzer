@@ -601,6 +601,84 @@ def _set_nurture_state(supabase, lead_id, patch: dict):
     supabase.table("deal_leads").update({"metadata": meta}).eq("id", lead_id).execute()
 
 
+# --- Google review ask (2026-08-30, owner: "ok do it") ----------------------
+# Paid clients, ~30 days after payment (record delivered or nearly), get ONE
+# gentle review ask. Local-SEO context: 30 Google reviews vs Donut Shop's 85;
+# AI assistants rarely name businesses under ~150 reviews. Capped per run so a
+# backlog of past clients drips out instead of blasting at once.
+REVIEWASK_DELAY = timedelta(days=30)
+REVIEWASK_LOOKBACK = timedelta(days=120)   # don't ask ancient clients cold
+REVIEWASK_CAP = 3                          # per run (runs are daily-ish)
+GOOGLE_REVIEW_LINK = "https://maps.google.com/?cid=14646847461987856661"
+
+
+def _build_review_ask(lead: dict):
+    v = _lead_view(lead)
+    unsub = f"{PUBLIC_API_BASE}/api/deal/nurture/unsubscribe?e={v['email']}&t={unsub_token(v['email'])}"
+    subject = "one small favor"
+    body = f"""
+      <p>Hey {v['greet']},</p>
+      <p>Alexander here. It was a real pleasure building your record with you,
+      and I hope it's doing everything you wanted out in the world.</p>
+      <p>One small favor, only if you're up for it: a short Google review helps
+      other artists find the studio, and I read every single one.
+      <a href="{GOOGLE_REVIEW_LINK}">You can leave one here</a>.
+      Two sentences is plenty.</p>
+      <p>Either way, thank you for trusting me with your music. The door's
+      always open for the next one.</p>
+      <p>A</p>
+    """
+    # Typed-by-a-person packaging, same as touches 2/3.
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                max-width:560px;margin:0 auto;color:#111;font-size:15px;line-height:1.5">
+      {body}
+      <p style="color:#999;font-size:11px;margin-top:28px">
+        You got this because you made a record at freshlybakedstudios.com ·
+        <a href="{unsub}" style="color:#999">unsubscribe</a>
+      </p>
+    </div>
+    """
+    return subject, html
+
+
+def run_review_asks(supabase, dry_run: bool = None) -> dict:
+    """One-time Google-review ask to paid clients ~30d after payment."""
+    if dry_run is None:
+        dry_run = not NURTURE_ENABLED
+    now = _now()
+    since = (now - REVIEWASK_LOOKBACK).isoformat()
+    rows = (
+        supabase.table("deal_leads").select("*")
+        .eq("step", "paid").gte("created_at", since).execute().data or []
+    )
+    sent, targets, seen = 0, [], set()
+    for r in sorted(rows, key=lambda x: x.get("created_at") or ""):
+        email = (r.get("email") or "").lower()
+        if not email or email in seen:
+            continue
+        seen.add(email)
+        nur = (r.get("metadata") or {}).get("nurture") or {}
+        if nur.get("review_ask_sent_at") or nur.get("unsubscribed"):
+            continue
+        if _is_suppressed_email(email):
+            continue
+        paid_at = _parse(r.get("created_at"))
+        if not paid_at or now - paid_at < REVIEWASK_DELAY:
+            continue
+        if sent >= REVIEWASK_CAP:
+            break
+        targets.append(email)
+        if dry_run:
+            sent += 1
+            continue
+        subject, html = _build_review_ask(r)
+        if _send_email(email, subject, html):
+            _set_nurture_state(supabase, r["id"], {"review_ask_sent_at": now.isoformat()})
+            sent += 1
+    return {"dry_run": dry_run, "review_asks": sent, "targets": targets}
+
+
 def run_nurture(supabase, dry_run: bool = None) -> dict:
     """
     Select leads due for a follow-up and send (or preview) their email.

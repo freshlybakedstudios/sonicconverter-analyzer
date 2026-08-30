@@ -7537,7 +7537,14 @@ async def deal_nurture_run(token: str = "", dry: int = 0):
     if not supabase:
         raise HTTPException(500, "database unavailable")
     dry_run = True if dry == 1 else None  # None => auto (respects NURTURE_ENABLED)
-    return deal_nurture.run_nurture(supabase, dry_run=dry_run)
+    result = deal_nurture.run_nurture(supabase, dry_run=dry_run)
+    # Google review asks ride the same cron (2026-08-30, owner-approved):
+    # one-time ask to paid clients ~30d post-payment, capped per run.
+    try:
+        result["review_ask"] = deal_nurture.run_review_asks(supabase, dry_run=dry_run)
+    except Exception as e:
+        result["review_ask"] = {"error": str(e)[:120]}
+    return result
 
 
 @app.post("/api/deal/nurture/digest")
