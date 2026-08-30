@@ -609,7 +609,7 @@ def _set_nurture_state(supabase, lead_id, patch: dict):
 REVIEWASK_DELAY = timedelta(days=30)
 REVIEWASK_LOOKBACK = timedelta(days=120)   # don't ask ancient clients cold
 REVIEWASK_CAP = 3                          # per run (runs are daily-ish)
-GOOGLE_REVIEW_LINK = "https://maps.google.com/?cid=14646847461987856661"
+GOOGLE_REVIEW_LINK = "https://g.page/r/CRUxHhMqDkTLEBM/review"  # official GBP review link
 
 
 def _build_review_ask(lead: dict):
