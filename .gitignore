@@ -29,6 +29,7 @@ test_*.py
 *.json
 !genre_mapping.json
 !sonic_family_envelopes.json
+!card_assets/londrina_widths.json
 
 # Logs
 *.log

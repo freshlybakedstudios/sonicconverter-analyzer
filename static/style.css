@@ -2329,3 +2329,62 @@ body {
 
 /* Generic soft pulse (running-scan pill, 2026-08-21) */
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* Share card modal (2026-08-30) */
+.share-card-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+.share-card-overlay.hidden { display: none; }
+.share-card-modal {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  max-width: 420px;
+  width: 100%;
+  max-height: 92vh;
+  overflow-y: auto;
+  text-align: center;
+}
+.share-card-modal img {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.share-card-hint {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin: 10px 0 6px;
+}
+.share-card-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+.share-card-actions .csv-download-btn {
+  margin-left: 0;
+  color: #141213;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
+}
+.share-card-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 26px;
+  cursor: pointer;
+  line-height: 1;
+}
+.share-card-close:hover { color: var(--text); }

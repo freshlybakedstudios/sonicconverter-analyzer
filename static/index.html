@@ -396,6 +396,20 @@
 
       <div class="results-toolbar">
         <button class="csv-download-btn pdf-download-btn hidden" id="pdf-download-btn" title="Download a one-card-per-page PDF report">Download PDF</button>
+        <button class="csv-download-btn share-card-btn hidden" id="share-card-btn" title="Get a shareable image of your results for IG stories">Share Your Results</button>
+      </div>
+
+      <!-- Share-card modal: generated story image + save/share actions -->
+      <div class="share-card-overlay hidden" id="share-card-overlay">
+        <div class="share-card-modal">
+          <button class="share-card-close" id="share-card-close" aria-label="Close">&times;</button>
+          <img id="share-card-img" alt="Your shareable analyzer card" />
+          <p class="share-card-hint">Long-press the image to save it on mobile, then post it to your story.</p>
+          <div class="share-card-actions">
+            <button class="csv-download-btn" id="share-card-share">Share</button>
+            <a class="csv-download-btn" id="share-card-download" download="fbs-analyzer-card.png">Download</a>
+          </div>
+        </div>
       </div>
 
       <!-- 1. Artist Card -->

@@ -464,6 +464,7 @@ fileInput.addEventListener('change', () => {
 });
 
 function handleFile(file) {
+  window._lastUploadName = file.name;
   const ext = file.name.split('.').pop().toLowerCase();
   const allowed = ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'aiff', 'aif'];
   if (!allowed.includes(ext)) {
@@ -995,6 +996,8 @@ function renderResults(data) {
   })();
   const pdfBtn = $('#pdf-download-btn');
   if (pdfBtn) pdfBtn.classList.remove('hidden');
+  const shareCardBtn = $('#share-card-btn');
+  if (shareCardBtn) shareCardBtn.classList.remove('hidden');
 
   // Descriptive labels for numeric features
   function energyLabel(v) {
@@ -1168,6 +1171,19 @@ function renderResults(data) {
     tag.innerHTML = `${EMOTION_LABELS[emo] || emo} <span class="emotion-score">${(score * 100).toFixed(0)}%</span>`;
     emotionDiv.appendChild(tag);
   });
+
+  // Share-card payload — mirrors the displayed stats so the server-side card
+  // matches what the artist sees on screen (see /api/share-card).
+  window._shareCardData = {
+    track: src.track_name || (window._lastUploadName || '').replace(/\.[^.]+$/, '') || 'My Next Single',
+    artist: src.artist_name || up.name || '',
+    stats: stats.map(s => ({ value: String(s.value), label: s.label, sub: s.subtitle || '' })),
+    genre: (genreAlignment && genreAlignment.genre) || '',
+    genre_detail: genreAlignment && genreAlignment.genre
+      ? `${genreAlignment.count} of ${genreAlignment.total} closest sonic matches (${genreAlignment.percentage.toFixed(0)}%) share this lane`
+      : '',
+    emotions: emotions.slice(0, 3).map(([emo]) => EMOTION_LABELS[emo] || emo),
+  };
 
   // Genre alignment callout
   const genreCallout = $('#genre-callout');
@@ -3225,6 +3241,62 @@ async function generateAnalysisPDF() {
 (function() {
   const btn = document.getElementById('pdf-download-btn');
   if (btn) btn.addEventListener('click', generateAnalysisPDF);
+})();
+
+// -------------------------------------------------------
+// Share card — branded story image generated server-side
+// -------------------------------------------------------
+let _shareCardBlob = null;
+async function generateShareCard() {
+  const btn = document.getElementById('share-card-btn');
+  const data = window._shareCardData;
+  if (!data) { alert('Run a scan first'); return; }
+  const prev = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Baking your card…'; btn.disabled = true; }
+  try {
+    const res = await fetch('/api/share-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    _shareCardBlob = await res.blob();
+    const url = URL.createObjectURL(_shareCardBlob);
+    const img = document.getElementById('share-card-img');
+    const dl = document.getElementById('share-card-download');
+    if (img) img.src = url;
+    if (dl) dl.href = url;
+    const overlay = document.getElementById('share-card-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    if (typeof gtag === 'function') gtag('event', 'share_card_generated', { event_category: 'engagement' });
+  } catch (e) {
+    alert('Could not generate your share card. Please try again.');
+  } finally {
+    if (btn) { btn.textContent = prev || 'Share Your Results'; btn.disabled = false; }
+  }
+}
+async function shareCardNative() {
+  if (!_shareCardBlob) return;
+  const file = new File([_shareCardBlob], 'fbs-analyzer-card.png', { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'My Song Analyzer results' });
+      if (typeof gtag === 'function') gtag('event', 'share_card_shared', { event_category: 'engagement' });
+    } catch (e) { /* user closed the share sheet */ }
+  } else {
+    const dl = document.getElementById('share-card-download');
+    if (dl) dl.click();
+  }
+}
+(function() {
+  const btn = document.getElementById('share-card-btn');
+  if (btn) btn.addEventListener('click', generateShareCard);
+  const closeBtn = document.getElementById('share-card-close');
+  const overlay = document.getElementById('share-card-overlay');
+  if (closeBtn && overlay) closeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
+  if (overlay) overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.add('hidden'); });
+  const nativeBtn = document.getElementById('share-card-share');
+  if (nativeBtn) nativeBtn.addEventListener('click', shareCardNative);
 })();
 
 // -------------------------------------------------------

@@ -1,0 +1,4 @@
+# librsvg -> rsvg-convert, used by share_card.py to rasterize the shareable
+# result cards ("..." keeps nixpacks' default python setup packages).
+[phases.setup]
+nixPkgs = ["...", "librsvg"]

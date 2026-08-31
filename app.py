@@ -28,9 +28,9 @@ from typing import Optional
 import bcrypt
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from supabase import create_client
 
@@ -5192,6 +5192,35 @@ function fallback(text, done) {{
 # ---------------------------------------------------------------------------
 # CSV export endpoint
 # ---------------------------------------------------------------------------
+@app.post("/api/share-card")
+async def share_card_endpoint(request: Request, format: str = "story"):
+    """Branded shareable PNG (IG story primary, OG landscape secondary) built
+    from a completed scan's headline stats. The client sends the values it is
+    already displaying; the server only typesets them (share_card.py, rsvg)."""
+    try:
+        import share_card as share_card_mod
+    except Exception as e:
+        raise HTTPException(503, f"Card renderer unavailable: {e}")
+    if not share_card_mod.renderer_available():
+        raise HTTPException(503, "Card renderer unavailable (rsvg-convert missing)")
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError
+    except Exception:
+        raise HTTPException(400, "JSON body required")
+    fmt = "og" if format == "og" else "story"
+    loop = asyncio.get_event_loop()
+    try:
+        png = await loop.run_in_executor(None, share_card_mod.render_card_png, payload, fmt)
+    except Exception as e:
+        print(f"[share-card] render failed: {e}")
+        raise HTTPException(500, "Card render failed")
+    return Response(
+        content=png, media_type="image/png",
+        headers={"Content-Disposition": f'inline; filename="fbs-analyzer-card-{fmt}.png"'})
+
+
 @app.get("/api/analysis/{job_id}/csv")
 async def export_csv(job_id: str):
     """Download playlists + curator contacts as CSV."""
