@@ -276,7 +276,7 @@ def build_touch(lead: dict, touch: int):
     # Skip "for <artist>" when the greeting already IS the artist name —
     # "hey TeeMoneyyy ... a project for TeeMoneyyy" reads robotic (2026-08-15).
     for_artist = f" for {v['artist']}" if v["artist"] and v["artist"] != v["greet"] else ""
-    price = f" — ${v['value']:,}" if isinstance(v["value"], (int, float)) and v["value"] else ""
+    price = f" at ${v['value']:,}" if isinstance(v["value"], (int, float)) and v["value"] else ""
     svc = v["service_str"]
     # Adapt the sentence whether or not we know the specific services.
     project_phrase = f"a <strong>{svc}</strong> project" if svc else "a project"
@@ -286,7 +286,7 @@ def build_touch(lead: dict, touch: int):
         subject = "Your Freshly Baked quote's still warm"
         lead_line = (
             f"You started pricing out {project_phrase}"
-            f"{for_artist}{price} with us — just wanted to make sure you got what you needed."
+            f"{for_artist}{price} with us. Just wanted to make sure you got what you needed."
         )
         body = f"""
           <p style="color:#ccc">Hey {v['greet']},</p>
@@ -305,10 +305,12 @@ def build_touch(lead: dict, touch: int):
              the <a href="{reviews}" style="color:#D8E166">reviews page</a> is all real
              clients, most of them independent artists who came in exactly where you are
              now.</p>
-          <p style="color:#ccc">And if something's holding you back — budget, timeline, a question
-             about the deal — just hit reply. It comes straight to my phone, not a
-             support inbox. Even if you're nowhere near booking, I'd love to hear
-             what you're making. What's the vision for the record?</p>
+          <p style="color:#ccc">And if something's holding you back, budget, timeline, a question
+             about the deal, just hit reply. It comes straight to my phone, not a
+             support inbox. If it's the number, tell me what you're actually working
+             with. Projects here start smaller than most people think, one track at a
+             time if that's the right size. Even if you're nowhere near booking, I'd
+             love to hear what you're making. What's the vision for the record?</p>
           <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
         """
     elif touch == 3:
@@ -405,8 +407,13 @@ def build_touch(lead: dict, touch: int):
              comes from hearing the actual files. No card, nothing owed after. The
              last artist who took this exact offer came in on the fence, and we ended
              up making his record together.</p>
-          <p>Either way, I'd love to hear about the record. Where's it at, and what
-             do you want it to do once it's out?</p>
+          <p>Worth knowing either way: nothing here has to start as a whole album
+             deal. Plenty of records start with me on one track. We prove the fit on
+             a single song and the rest follows if it makes sense.</p>
+          <p>Either way, I'd love to hear about the record. Where's it at, what do
+             you want it to do once it's out, and what budget are you actually
+             working with? I'd rather build to your number than quote you something
+             useless.</p>
           {OWNER_SIGNATURE_HTML}
         """
 
