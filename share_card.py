@@ -39,6 +39,12 @@ INK = "#0A0A0A"
 BG = "#222020"
 
 _widths = json.loads((ASSETS / "londrina_widths.json").read_text())
+# Codepoints Londrina Solid can actually draw (measured from the bundled TTF).
+# Railway has no fallback fonts, so anything outside this set would render as
+# a tofu box — transliterate the common cases and drop the rest.
+_covered = set(json.loads((ASSETS / "londrina_cover.json").read_text()))
+_TRANSLIT = {"≈": "~", "—": "-", "–": "-", "‘": "'", "’": "'",
+             "“": '"', "”": '"', " ": " "}
 _pie_inner = (ASSETS / "pie_inner.svg").read_text()
 _bg_b64 = base64.b64encode((HERE / "static" / "bg.png").read_bytes()).decode()
 
@@ -104,8 +110,10 @@ def _emotion_list(d: dict) -> list:
 
 
 def _clean(s, cap=60) -> str:
-    """Strip control chars, collapse whitespace, hard cap length."""
+    """Strip control chars and undrawable glyphs, collapse whitespace, cap length."""
     s = re.sub(r"[\x00-\x1f\x7f]", " ", str(s or ""))
+    s = "".join(_TRANSLIT.get(ch, ch) for ch in s)
+    s = "".join(ch for ch in s if ord(ch) in _covered)
     s = re.sub(r"\s+", " ", s).strip()
     if len(s) > cap:
         s = s[:cap - 1].rstrip() + "…"
@@ -146,7 +154,7 @@ def _stat_block(x, y, w, h, value, label, sub=""):
 def build_story_svg(d: dict) -> str:
     """1080x1920 IG-story card from sanitized card data."""
     W, H = 1080, 1920
-    track = _clean(d.get("track"), 40)
+    track = _clean(d.get("track"), 40) or "MY LATEST TRACK"
     artist = _clean(d.get("artist"), 40)
     stats = _stat_list(d)
     genre = _clean(d.get("genre"), 32)
@@ -240,7 +248,7 @@ def build_story_svg(d: dict) -> str:
 def build_og_svg(d: dict) -> str:
     """1200x630 landscape card: pie left, track + key stats right."""
     W, H = 1200, 630
-    track = _clean(d.get("track"), 34)
+    track = _clean(d.get("track"), 34) or "MY LATEST TRACK"
     artist = _clean(d.get("artist"), 34)
     stats = _stat_list(d)[:3]
 
