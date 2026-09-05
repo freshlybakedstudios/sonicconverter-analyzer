@@ -134,7 +134,7 @@ def _resume_enrichment():
 # ---------------------------------------------------------------------------
 _last_api_activity = 0.0          # timestamp of last user-facing API request
 _user_was_active = False          # was a user active in the previous check?
-_IDLE_TIMEOUT = 300               # 5 minutes of no requests = idle
+_IDLE_TIMEOUT = 120               # 2 minutes of no requests = idle (was 300; owner 2026-09-05: release CM quicker)
 _LOCAL_WEBHOOK_URL = os.getenv(
     'LOCAL_PIPELINE_WEBHOOK',
     'http://localhost:7890/webhook/activity'
@@ -284,7 +284,10 @@ from starlette.requests import Request
 class ActivityTrackingMiddleware(BaseHTTPMiddleware):
     """Record timestamps of user-facing API requests."""
     # Paths that indicate a real user (not health checks or internal)
-    USER_PATHS = ('/api/analyze', '/api/deal/', '/api/register', '/api/signup', '/api/login', '/api/analysis/')
+    # login/register/signup REMOVED 2026-09-05: bots scanning auth endpoints
+    # registered as "web users" and kept the local Chartmetric pipeline paused.
+    # Only quota-consuming paths count as activity now.
+    USER_PATHS = ('/api/analyze', '/api/deal/', '/api/analysis/')
 
     async def dispatch(self, request: Request, call_next):
         global _last_api_activity
