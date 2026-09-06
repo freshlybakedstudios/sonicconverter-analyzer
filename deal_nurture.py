@@ -1116,7 +1116,7 @@ def run_daily_digest(supabase) -> dict:
           {f' · <b>{funding_tag}</b>' if funding_tag else ''}
           {f' · nurture sent: {touches}' if touches else ' · no nurture sent yet'}<br>
           {f'<div style="margin:8px 0;padding:8px 12px;background:#f6f6f2;border-left:3px solid #B0C936;font-style:italic;color:#333">“{vision}”</div>' if vision else ''}
-          {f'<div style="margin:4px 0"><a href="{track_url}">🎧 their track</a></div>' if track_url else ''}
+          {(f'<div style="margin:4px 0"><a href="{track_url}">🎧 their track</a></div>' if track_url.startswith('http') else f'<div style="margin:4px 0">🎧 {track_url} (check the Dropbox file request)</div>') if track_url else ''}
           {action}
         </div>"""
 
