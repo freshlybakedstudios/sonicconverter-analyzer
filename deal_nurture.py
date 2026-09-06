@@ -787,10 +787,12 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
     )
     booked = {r["email"].lower() for r in rows if r.get("step") == "paid" and r.get("email")}
     # Cart abandoners — started checkout, never paid. Hottest leads, fast lane.
+    # 'book_reached' (2026-09-06) = pressed Book Now, saw the deposit, left:
+    # same lane.
     hot_emails = {
         r["email"].lower()
         for r in rows
-        if r.get("step") == "checkout_started" and r.get("email")
+        if r.get("step") in ("checkout_started", "book_reached") and r.get("email")
     }
 
     # Earliest 'contact' row per email = the lead's first quote.
@@ -907,10 +909,12 @@ def run_daily_digest(supabase) -> dict:
             continue
         if r.get("step") == "paid":
             paid.append(r)
-        elif r.get("step") in ("contact", "checkout_started"):
-            # keep the most advanced row per email (checkout beats contact)
+        elif r.get("step") in ("contact", "book_reached", "checkout_started"):
+            # keep the most advanced row per email
+            # (checkout > book_reached > contact)
+            rank = {"contact": 0, "book_reached": 1, "checkout_started": 2}
             prev = leads_by_email.get(email)
-            if not prev or r.get("step") == "checkout_started":
+            if not prev or rank[r.get("step")] > rank.get(prev.get("step"), 0):
                 leads_by_email[email] = r
 
     # Drop leads who also paid in the window — they're in the wins section
@@ -942,8 +946,13 @@ def run_daily_digest(supabase) -> dict:
             track_str = f" · {tracks} track{'s' if tracks != 1 else ''}" if tracks else ""
             price_line = f"{val}{track_str}"
         hot = r.get("step") == "checkout_started"
+        reached_pay = r.get("step") == "book_reached"
         nur = meta.get("nurture") or {}
         touches = ("t1" if nur.get("t1_sent_at") else "") + ("+t2" if nur.get("t2_sent_at") else "")
+        # The vision rung: their own words about the record + a track link.
+        # This is the raw material for the personal note — quote it back.
+        vision = (meta.get("vision") or "").strip()
+        track_url = (meta.get("track_url") or "").strip()
         # Funding answer (since 2026-09-06) — the budget-discovery signal the
         # owner asked for: who's paying, before the call.
         funding_names = {"self": "Self-funded", "label": "LABEL-funded", "manager": "MANAGER/team budget"}
@@ -978,10 +987,13 @@ def run_daily_digest(supabase) -> dict:
         return f"""
         <div style="border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:12px{';border-color:#c00' if hot else ''}">
           <b>{who}</b> &lt;{v['email']}&gt;
-          {'<span style="color:#c00;font-weight:bold"> · STARTED CHECKOUT — hottest</span>' if hot else ''}<br>
+          {'<span style="color:#c00;font-weight:bold"> · STARTED CHECKOUT — hottest</span>' if hot else ''}
+          {'<span style="color:#c60;font-weight:bold"> · REACHED PAYMENT SCREEN, didn’t pay</span>' if reached_pay else ''}<br>
           {v['service_str'] or 'services unknown'} · {price_line}
           {f' · <b>{funding_tag}</b>' if funding_tag else ''}
           {f' · nurture sent: {touches}' if touches else ' · no nurture sent yet'}<br>
+          {f'<div style="margin:8px 0;padding:8px 12px;background:#f6f6f2;border-left:3px solid #B0C936;font-style:italic;color:#333">“{vision}”</div>' if vision else ''}
+          {f'<div style="margin:4px 0"><a href="{track_url}">🎧 their track</a></div>' if track_url else ''}
           {action}
         </div>"""
 

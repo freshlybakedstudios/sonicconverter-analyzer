@@ -7162,6 +7162,10 @@ async def deal_lead_capture(data: dict):
                     # Itemized quote (lines/total/deposit) — when present,
                     # nurture touch 1 becomes the written-quote email.
                     'quote': data.get('quote'),
+                    # The vision rung (2026-09-06): what they want the record
+                    # to be, in their words, plus a track link if they gave one.
+                    'vision': (data.get('vision') or '').strip()[:2000] or None,
+                    'track_url': (data.get('track_url') or '').strip()[:500] or None,
                 },
                 'created_at': datetime.utcnow().isoformat(),
             }
@@ -7169,11 +7173,21 @@ async def deal_lead_capture(data: dict):
         except Exception as e:
             print(f"Deal lead save error: {e}")
 
-    # Push notification
-    send_pushover_notification(
-        "Deal Calculator Lead",
-        f"{name}\n{email}\nStep: {step}"
-    )
+    # Push notification. 'book_reached' = they pressed Book Now and are looking
+    # at the deposit — the warmest moment the funnel has (2026-09-06).
+    if step == 'book_reached':
+        dv = data.get('deal_value')
+        dv_str = f"${int(dv):,}" if isinstance(dv, (int, float)) else "value unknown"
+        svcs = ", ".join(data.get('services') or []) or "services unknown"
+        send_pushover_notification(
+            "💳 Reached payment screen",
+            f"{name or email}\n{email}\n{svcs} · {dv_str} · funding: {data.get('funding') or '?'}"
+        )
+    else:
+        send_pushover_notification(
+            "Deal Calculator Lead",
+            f"{name}\n{email}\nStep: {step}"
+        )
 
     return {"ok": True}
 
