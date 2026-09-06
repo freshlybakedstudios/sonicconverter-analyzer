@@ -53,6 +53,12 @@ TOUCH2_DELAY = timedelta(days=1)
 TOUCH2_DELAY_HOT = timedelta(days=1)
 # Touch 3 = long-tail re-engage: 8 days after touch 2 ≈ day 12 of the sequence.
 TOUCH3_DELAY = timedelta(days=8)
+# Deposit-flinch touch (owner-approved copy 2026-09-06): pressed Book Now,
+# stopped at the deposit. Fires FLINCH_DELAY after the book_reached row if
+# nothing else happened; touch 2 then waits FLINCH_T2_DELAY instead of the
+# hot-lane delay so nobody gets three emails in a day.
+FLINCH_DELAY = timedelta(hours=3)
+FLINCH_T2_DELAY = timedelta(days=2)
 LOOKBACK = timedelta(days=30)  # don't chase leads older than this
 
 SERVICE_LABELS = {
@@ -324,6 +330,69 @@ def build_quote_email(lead: dict, quote: dict, campaign: str = "quote"):
          <a href="{CAL_BOOKING_URL}">{CAL_BOOKING_URL}</a></p>
       <p>Even if you're nowhere near booking, I'd love to hear what you're making.
          What's the vision for the record?</p>
+      {OWNER_SIGNATURE_HTML}
+    """
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                max-width:560px;margin:0 auto;color:#111;font-size:15px;line-height:1.5">
+      {body}
+      <p style="color:#999;font-size:11px;margin-top:28px">
+        You got this because you requested a quote at freshlybakedstudios.com ·
+        <a href="{unsub}" style="color:#999">unsubscribe</a>
+      </p>
+    </div>
+    """
+    return subject, html
+
+
+def build_flinch_email(lead: dict, br: dict):
+    """The deposit-flinch touch (owner-approved copy 2026-09-06).
+
+    lead = the contact row (greeting, services); br = the book_reached row
+    (track count, funding, value at the moment they stopped). Plain
+    typed-by-a-person packaging, no bold. One question, one door: was it the
+    number or the timing. The "one song" flex only appears when they priced
+    more than one track on standard rates; otherwise the reserve/split flex.
+    """
+    v = _lead_view(lead)
+    email = v["email"]
+    unsub = f"{PUBLIC_API_BASE}/api/deal/nurture/unsubscribe?e={email}&t={unsub_token(email)}"
+    meta = br.get("metadata") or {}
+    services = meta.get("services") or (lead.get("metadata") or {}).get("services") or []
+    tracks = meta.get("track_count") or (lead.get("metadata") or {}).get("track_count") or 1
+    funded = (meta.get("funding") or "") in ("label", "manager")
+    svc = v["service_str"]
+    project = f"a {svc} project" if svc else "a project"
+
+    first_track_rate = None
+    if not funded and isinstance(tracks, int) and tracks > 1:
+        first_track_rate, _ = price_breakdown(services, 1)
+
+    if first_track_rate:
+        flex = (
+            f"<p>If it's the number, the shape can change without the work changing. "
+            f"Plenty of records here start with me on one song, ${first_track_rate:,} for "
+            f"the first track and the rest only if it earns it. Or $250 holds your slot "
+            f"and the balance waits until the record's actually ready.</p>"
+        )
+    else:
+        flex = (
+            "<p>If it's the number, the shape can change without the work changing. "
+            "$250 holds your slot and the balance waits until the record's actually "
+            "ready, or the deposit itself can split in two at checkout.</p>"
+        )
+
+    subject = "you got as far as the button"
+    body = f"""
+      <p>Hey {v['greet']},</p>
+      <p>You priced out {project} earlier, pressed Book Now, and stopped at the
+         deposit. No judgment. That's exactly where I'd stop too. A number is easy
+         to look at. A deposit is a decision.</p>
+      {flex}
+      <p>If it's the timing, that's fine too. The quote doesn't go anywhere, and
+         neither do I.</p>
+      <p>So I'll ask straight, because the answer changes what I'd suggest: was it
+         the number, or the timing?</p>
       {OWNER_SIGNATURE_HTML}
     """
     html = f"""
@@ -794,6 +863,18 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
         for r in rows
         if r.get("step") in ("checkout_started", "book_reached") and r.get("email")
     }
+    checkout_emails = {
+        r["email"].lower()
+        for r in rows
+        if r.get("step") == "checkout_started" and r.get("email")
+    }
+    # Latest book_reached row per email — the flinch touch keys off it.
+    book_reached = {}
+    for r in rows:
+        if r.get("step") == "book_reached" and r.get("email"):
+            e = r["email"].lower()
+            if not book_reached.get(e) or (r.get("created_at") or "") > (book_reached[e].get("created_at") or ""):
+                book_reached[e] = r
 
     # Earliest 'contact' row per email = the lead's first quote.
     contacts = sorted(
@@ -804,7 +885,7 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
     for r in contacts:
         by_email.setdefault(r["email"].lower(), r)
 
-    t1, t2, t3 = [], [], []
+    t1, t2, t3, flinch = [], [], [], []
     for email, r in by_email.items():
         if email in booked or _is_suppressed_email(email):
             continue
@@ -823,12 +904,21 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
         created = _parse(r.get("created_at"))
         if not created:
             continue
+        # Deposit flinch: pressed Book Now, no checkout since, nothing sent yet.
+        br = book_reached.get(email)
+        if br and not nur.get("flinch_sent_at") and email not in checkout_emails:
+            br_at = _parse(br.get("created_at"))
+            if br_at and now - br_at >= FLINCH_DELAY:
+                flinch.append((r, br))
         if not nur.get("t1_sent_at"):
             if now - created >= TOUCH1_DELAY:
                 t1.append(r)
         elif not nur.get("t2_sent_at"):
             t1_at = _parse(nur.get("t1_sent_at"))
-            delay2 = TOUCH2_DELAY_HOT if email in hot_emails else TOUCH2_DELAY
+            if nur.get("flinch_sent_at"):
+                delay2 = FLINCH_T2_DELAY  # the flinch took the fast slot
+            else:
+                delay2 = TOUCH2_DELAY_HOT if email in hot_emails else TOUCH2_DELAY
             if t1_at and now - t1_at >= delay2:
                 t2.append(r)
         elif not nur.get("t3_sent_at"):
@@ -842,6 +932,7 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
         "touch1_due": len(t1),
         "touch2_due": len(t2),
         "touch3_due": len(t3),
+        "flinch_due": len(flinch),
         "sent": 0,
         "targets": [],
     }
@@ -862,6 +953,11 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
             if _send_email(r["email"], subject, html):
                 _set_nurture_state(supabase, r["id"], {f"t{touch}_sent_at": now.isoformat()})
                 summary["sent"] += 1
+    for r, br in flinch:
+        subject, html = build_flinch_email(r, br)
+        if _send_email(r["email"], subject, html):
+            _set_nurture_state(supabase, r["id"], {"flinch_sent_at": now.isoformat()})
+            summary["sent"] += 1
     return summary
 
 
