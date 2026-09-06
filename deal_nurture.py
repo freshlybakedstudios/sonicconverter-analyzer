@@ -1090,16 +1090,17 @@ def run_daily_digest(supabase) -> dict:
         if whale:
             if vq and vr:
                 # Their own words as the opener: the note is already half-written.
-                opener = (f"Hey {v['greet']}, you wrote “{vq}.” {vr} "
-                          "Before you decide anything, send me the track. I'll listen and tell you "
-                          "exactly what I'd do with it.")
+                # Three sentences, no gushing (owner 2026-09-06): their words,
+                # one line that proves he understood, one ask.
+                opener = f"Hey {v['greet']}, you wrote “{vq}.” {vr} Want to send me the track?"
             else:
                 opener = (f"Hey {v['greet']} — saw you priced out {opener_about}{for_artist}. "
                           "Before you decide anything, send me the track — I'll listen and tell you exactly "
                           "what I'd do with it.")
+            hint = "That line is the whole note. Copy, paste, send. " if (vq and vr) else "Angle: "
             action = ("<span style='color:#c00;font-weight:bold'>WHALE — worth a real note from you.</span> "
                       "<span style='color:#555;font-size:13px'>If you email them personally, the robot stands down "
-                      "(that's by design). Angle: </span>"
+                      f"(that's by design). {hint}</span>"
                       f"<em style='color:#333'>{opener}</em>")
         else:
             action = ("<span style='color:#2a7;font-size:13px'>🤖 Robot's got this one — personalized "
