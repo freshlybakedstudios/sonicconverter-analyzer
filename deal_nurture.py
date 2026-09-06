@@ -261,7 +261,82 @@ def _lead_view(lead: dict) -> dict:
 # settings (users/me/settings/sendAs, almgren@) on 2026-08-15. Touches 2/3 use
 # this so they render identically to an email he typed himself. If he edits his
 # signature in Gmail, re-pull and update this constant.
-OWNER_SIGNATURE_HTML = """<div dir="ltr"><div style="margin-bottom:0pt;margin-top:0pt;line-height:1.38"><p style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline">Alexander Almgren</span></p><p style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline"><br></span></p><p dir="ltr" style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline"><font size="1">(917)-286-7324</font></span></p><p dir="ltr" style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline"><font size="1"><a href="https://www.instagram.com/alexanderalmgren/" style="color:rgb(17,85,204)" target="_blank">@alexanderalmgren</a><br></font></span></p><p style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><font size="1"><a href="http://freshlybakedstudios.com" target="_blank">freshlybakedstudios.com</a></font></p></div></div>"""
+OWNER_SIGNATURE_HTML = """<div dir="ltr"><div style="margin-bottom:0pt;margin-top:0pt;line-height:1.38"><p style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline">Alexander Almgren</span></p><p style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline"><br></span></p><p dir="ltr" style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline"><font size="1">(917) 719-1555</font></span></p><p dir="ltr" style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Arial;color:rgb(0,0,0);background-color:transparent;vertical-align:baseline"><font size="1"><a href="https://www.instagram.com/alexanderalmgren/" style="color:rgb(17,85,204)" target="_blank">@alexanderalmgren</a><br></font></span></p><p style="color:rgb(80,0,80);line-height:1.38;margin-top:0pt;margin-bottom:0pt"><font size="1"><a href="http://freshlybakedstudios.com" target="_blank">freshlybakedstudios.com</a></font></p></div></div>"""
+
+
+def build_quote_email(lead: dict, quote: dict, campaign: str = "quote"):
+    """The "Your quote, in writing" email (owner-approved copy 2026-09-06).
+
+    One template, two entry points, so no lead ever gets both:
+      - instant send when the lead clicks "Email me this quote" on the book
+        step (POST /api/deal/quote-email stamps it as touch 1)
+      - the touch-1 body for abandoners whose lead row carries quote line
+        items (metadata.quote, sent by the contact step since 2026-09-06)
+    Plain typed-by-a-person packaging: no card, no bold. Ends on the approved
+    vision question, so touches 2/3 continue on their normal clocks.
+    quote = {"lines": [{"label","amount"}], "total": n, "deposit": n}
+    """
+    v = _lead_view(lead)
+    email = v["email"]
+    unsub = f"{PUBLIC_API_BASE}/api/deal/nurture/unsubscribe?e={email}&t={unsub_token(email)}"
+    rates = f"{FRONTEND_URL}/rates?utm_source=nurture&utm_medium=email&utm_campaign={campaign}"
+
+    def _amt(n):
+        try:
+            return f"${int(round(float(n))):,}"
+        except (TypeError, ValueError):
+            return str(n)
+
+    rows_html = "".join(
+        f'<tr><td style="padding:3px 24px 3px 0">{l.get("label", "")}</td>'
+        f'<td style="padding:3px 0;text-align:right">{_amt(l.get("amount"))}</td></tr>'
+        for l in (quote.get("lines") or [])
+    )
+    rows_html += (
+        f'<tr><td style="padding:8px 24px 3px 0;border-top:1px solid #ddd">Total</td>'
+        f'<td style="padding:8px 0 3px;text-align:right;border-top:1px solid #ddd">{_amt(quote.get("total"))}</td></tr>'
+    )
+    if quote.get("deposit"):
+        rows_html += (
+            f'<tr><td style="padding:3px 24px 3px 0;color:#555">Deposit to start (50%)</td>'
+            f'<td style="padding:3px 0;color:#555;text-align:right">{_amt(quote.get("deposit"))}</td></tr>'
+        )
+    rows_html += (
+        '<tr><td style="padding:3px 24px 3px 0;color:#555">Or reserve your slot</td>'
+        '<td style="padding:3px 0;color:#555;text-align:right">$250</td></tr>'
+    )
+
+    subject = "Your quote, in writing"
+    body = f"""
+      <p>Hey {v['greet']},</p>
+      <p>Here's your quote from the calculator, written down so you don't have to
+         screenshot anything or run the numbers twice.</p>
+      <table style="border-collapse:collapse;margin:18px 0;color:#111;font-size:15px">{rows_html}</table>
+      <p>A few things about this number. It doesn't expire. There's no countdown
+         attached, no pressure play. The only honest constraint is the calendar,
+         slots fill when they fill, but the math stays the math whether you come
+         back tomorrow or in three months.</p>
+      <p>And if the total feels like a lot in one bite, every project here can
+         start with a single track. Prove the fit on one song, the rest can follow.</p>
+      <p>The calculator's here if you want to change the shape of it:
+         <a href="{rates}">{FRONTEND_URL}/rates</a><br>
+         If you'd rather talk it through first, grab a call:
+         <a href="{CAL_BOOKING_URL}">{CAL_BOOKING_URL}</a></p>
+      <p>Even if you're nowhere near booking, I'd love to hear what you're making.
+         What's the vision for the record?</p>
+      {OWNER_SIGNATURE_HTML}
+    """
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                max-width:560px;margin:0 auto;color:#111;font-size:15px;line-height:1.5">
+      {body}
+      <p style="color:#999;font-size:11px;margin-top:28px">
+        You got this because you requested a quote at freshlybakedstudios.com ·
+        <a href="{unsub}" style="color:#999">unsubscribe</a>
+      </p>
+    </div>
+    """
+    return subject, html
 
 
 def build_touch(lead: dict, touch: int):
@@ -283,6 +358,13 @@ def build_touch(lead: dict, touch: int):
     project_phrase2 = f"your {svc} project" if svc else "your project"
 
     if touch == 1:
+        # Leads captured since 2026-09-06 carry itemized quote lines — they
+        # get the written quote as touch 1 (plain packaging, returns early so
+        # the branded-card wrapper below never applies). Legacy queue leads
+        # without lines keep the original template.
+        quote = (lead.get("metadata") or {}).get("quote") or {}
+        if quote.get("lines") and quote.get("total"):
+            return build_quote_email(lead, quote, campaign="touch1")
         subject = "Your Freshly Baked quote's still warm"
         lead_line = (
             f"You started pricing out {project_phrase}"
@@ -457,7 +539,8 @@ def _html_and_plain(html: str):
         html = f"<html><body>{html}</body></html>"
     import re as _re
     plain = _re.sub(r'<(style|script)[^>]*>.*?</\1>', ' ', html, flags=_re.S | _re.I)
-    plain = _re.sub(r'<br\s*/?>|</p>|</div>', '\n', plain, flags=_re.I)
+    plain = _re.sub(r'</td>', ' ', plain, flags=_re.I)
+    plain = _re.sub(r'<br\s*/?>|</p>|</div>|</tr>', '\n', plain, flags=_re.I)
     plain = _re.sub(r'<[^>]+>', '', plain)
     plain = _re.sub(r'\n{3,}', '\n\n', _re.sub(r'[ \t]+', ' ', plain)).strip()
     return html, plain

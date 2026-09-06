@@ -7159,6 +7159,9 @@ async def deal_lead_capture(data: dict):
                     'deal_value': data.get('deal_value'),
                     'funding': data.get('funding'),
                     'addons': data.get('addons') or [],
+                    # Itemized quote (lines/total/deposit) — when present,
+                    # nurture touch 1 becomes the written-quote email.
+                    'quote': data.get('quote'),
                 },
                 'created_at': datetime.utcnow().isoformat(),
             }
@@ -7558,6 +7561,57 @@ def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
 # Deal Calculator: lead nurture (recover quote-builders who didn't book)
 # ---------------------------------------------------------------------------
 import deal_nurture
+
+
+@app.post("/api/deal/quote-email")
+async def deal_quote_email(data: dict):
+    """'Email me this quote' on the book step (owner-approved 2026-09-06):
+    sends the written quote immediately via the Gmail rail and stamps it as
+    nurture touch 1, so the abandoner sequence continues without ever
+    double-sending. Only works for emails that already exist in deal_leads
+    (i.e. went through the contact gate) — not an open relay."""
+    email = (data.get('email') or '').strip()
+    quote = data.get('quote') or {}
+    if not email or not quote.get('lines') or not quote.get('total'):
+        raise HTTPException(400, "email and quote required")
+    if not supabase:
+        raise HTTPException(503, "database unavailable")
+
+    rows = (supabase.table('deal_leads')
+            .select('id,name,artist_name,email,metadata')
+            .ilike('email', email)
+            .order('created_at', desc=True)
+            .execute().data or [])
+    if not rows:
+        raise HTTPException(404, "no lead on file")
+
+    lead = rows[0]
+    nur = (lead.get('metadata') or {}).get('nurture') or {}
+    if nur.get('unsubscribed'):
+        return {"ok": True}  # honor the flag, don't leak it
+
+    subject, html = deal_nurture.build_quote_email(
+        lead, quote, campaign="quote_button")
+    html_doc, plain = deal_nurture._html_and_plain(html)
+    ok = deal_nurture._send_via_gmail(email, subject, html_doc, plain)
+
+    if ok:
+        now_iso = datetime.utcnow().isoformat()
+        for r in rows:
+            meta = r.get('metadata') or {}
+            n = meta.get('nurture') or {}
+            if not n.get('t1_sent_at'):
+                n['t1_sent_at'] = now_iso
+                n['t1_kind'] = 'quote_button'
+                meta['nurture'] = n
+                meta['quote'] = quote
+                try:
+                    supabase.table('deal_leads').update(
+                        {'metadata': meta}).eq('id', r['id']).execute()
+                except Exception as e:
+                    print(f"quote-email stamp error: {e}")
+
+    return {"ok": bool(ok)}
 
 
 @app.post("/api/deal/nurture/run")
