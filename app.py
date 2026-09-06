@@ -7157,6 +7157,8 @@ async def deal_lead_capture(data: dict):
                     'services': data.get('services') or [],
                     'track_count': data.get('track_count'),
                     'deal_value': data.get('deal_value'),
+                    'funding': data.get('funding'),
+                    'addons': data.get('addons') or [],
                 },
                 'created_at': datetime.utcnow().isoformat(),
             }
