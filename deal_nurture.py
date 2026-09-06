@@ -944,6 +944,13 @@ def run_daily_digest(supabase) -> dict:
         hot = r.get("step") == "checkout_started"
         nur = meta.get("nurture") or {}
         touches = ("t1" if nur.get("t1_sent_at") else "") + ("+t2" if nur.get("t2_sent_at") else "")
+        # Funding answer (since 2026-09-06) — the budget-discovery signal the
+        # owner asked for: who's paying, before the call.
+        funding_names = {"self": "Self-funded", "label": "LABEL-funded", "manager": "MANAGER/team budget"}
+        funding_tag = funding_names.get(meta.get("funding") or "", "")
+        addons = meta.get("addons") or []
+        if addons:
+            funding_tag += (" · " if funding_tag else "") + "add-ons: " + ", ".join(addons)
         opener_about = v["service_str"].lower() if v["service_str"] else "a project"
         # Display name: artist, then real name, then the email's local part —
         # never the "there" greeting fallback
@@ -973,6 +980,7 @@ def run_daily_digest(supabase) -> dict:
           <b>{who}</b> &lt;{v['email']}&gt;
           {'<span style="color:#c00;font-weight:bold"> · STARTED CHECKOUT — hottest</span>' if hot else ''}<br>
           {v['service_str'] or 'services unknown'} · {price_line}
+          {f' · <b>{funding_tag}</b>' if funding_tag else ''}
           {f' · nurture sent: {touches}' if touches else ' · no nurture sent yet'}<br>
           {action}
         </div>"""
