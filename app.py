@@ -3946,13 +3946,25 @@ def _send_curator_report_email(job_id: str, curator_count: int):
     Rides the Gmail rail from deal_nurture (lands in Primary). Fire-and-forget;
     caller wraps in try/except."""
     row = supabase.table('analysis_jobs') \
-        .select('user_email,track_name,artist_name,curator_emails,token') \
+        .select('*') \
         .eq('id', job_id).limit(1).execute()
     job = (row.data or [{}])[0]
     to_email = (job.get('user_email') or '').strip()
     if not to_email or '@' not in to_email:
         print(f"Enrichment [{job_id[:8]}]: no user_email on job, skipping report email")
         return
+    # 2026-09-07: every scan-ready email carries the four-page breakdown PDF
+    # (same report as the Download PDF button). Never blocks the email.
+    attachments = []
+    try:
+        import breakdown_report as _br
+        _pdf = _br.render_pdf(_br.build_breakdown_html(job))
+        attachments.append((_br.safe_filename(job.get('artist_name') or 'Artist',
+                                              job.get('track_name') or 'Track'),
+                            _pdf, 'application/pdf'))
+        print(f"Enrichment [{job_id[:8]}]: breakdown PDF attached ({len(_pdf)//1024} KB)")
+    except Exception as _pdf_err:
+        print(f"Enrichment [{job_id[:8]}]: breakdown PDF skipped ({_pdf_err})")
     track = job.get('track_name') or 'your track'
     curators = job.get('curator_emails') or {}
     if isinstance(curators, str):
@@ -3985,8 +3997,8 @@ def _send_curator_report_email(job_id: str, curator_count: int):
         html = f"""
         <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#1a1a1a;">
           <p>Hey,</p>
-          <p>Your scan of &ldquo;{track}&rdquo; just finished. The full breakdown is saved
-          to your account &mdash; sonic profile, matches, and playlists.</p>
+          <p>Your scan of &ldquo;{track}&rdquo; just finished. The full breakdown is attached
+          as a PDF, and it's saved to your account &mdash; sonic profile, matches, and playlists.</p>
           <p style="margin:22px 0;">
             <a href="{scans_url}" style="{btn}background:#b45309;color:#fff;">Open My Scans</a>
           </p>
@@ -3994,13 +4006,13 @@ def _send_curator_report_email(job_id: str, curator_count: int):
           <p>Alexander<br>Freshly Baked Studios</p>
         </div>
         """
-        plain = (f"Your scan of \"{track}\" just finished. The full breakdown is saved "
-                 f"to your account.\n\nOpen My Scans: {scans_url}\n\n"
+        plain = (f"Your scan of \"{track}\" just finished. The full breakdown is attached "
+                 f"as a PDF and saved to your account.\n\nOpen My Scans: {scans_url}\n\n"
                  f"Alexander\nFreshly Baked Studios")
         subject = f'Your scan of "{track}" is ready'
         try:
             from deal_nurture import _send_via_gmail
-            ok = _send_via_gmail(to_email, subject, html, plain)
+            ok = _send_via_gmail(to_email, subject, html, plain, attachments=attachments)
         except Exception as e:
             print(f"Enrichment [{job_id[:8]}]: gmail rail unavailable ({e})")
             ok = False
@@ -4049,6 +4061,7 @@ def _send_curator_report_email(job_id: str, curator_count: int):
       </table>
       <p style="margin-top:22px;">Your results stay live on the site for two weeks.
       Which playlist are you going after first?</p>
+      <p>The full sonic breakdown is attached as a PDF.</p>
       <p>Alexander<br>Freshly Baked Studios</p>
     </div>
     """
@@ -4057,12 +4070,12 @@ def _send_curator_report_email(job_id: str, curator_count: int):
         f"real contact info, pulled from playlists already running songs that sound "
         f"like yours.\n\nOpen your curator report: {report_url}\nDownload the sheet (CSV): "
         f"{csv_url}\n\nYour results stay live for two weeks. Which playlist are you "
-        f"going after first?\n\nAlexander\nFreshly Baked Studios"
+        f"going after first?\n\nThe full sonic breakdown is attached as a PDF.\n\nAlexander\nFreshly Baked Studios"
     )
     subject = f'Your curator list is ready. {curator_count} contacts for "{track}"'
     try:
         from deal_nurture import _send_via_gmail
-        ok = _send_via_gmail(to_email, subject, html, plain)
+        ok = _send_via_gmail(to_email, subject, html, plain, attachments=attachments)
     except Exception as e:
         print(f"Enrichment [{job_id[:8]}]: gmail rail unavailable ({e})")
         ok = False

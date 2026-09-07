@@ -700,22 +700,41 @@ def _label_nurture_send(tok: str, msg_id: str):
         pass
 
 
-def _send_via_gmail(to_email: str, subject: str, html: str, plain: str) -> bool:
-    import base64
+def _build_gmail_mime(to_email: str, subject: str, html: str, plain: str, attachments=None):
+    """MIME for the Gmail rail. `attachments` = [(filename, bytes, mimetype)] —
+    added 2026-09-07 so the scan-ready email can carry the breakdown PDF."""
+    from email.mime.application import MIMEApplication
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
+
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(plain, "plain"))
+    alt.attach(MIMEText(html, "html"))
+    if attachments:
+        m = MIMEMultipart("mixed")
+        m.attach(alt)
+        for fname, data, mimetype in attachments:
+            maintype, _, subtype = (mimetype or "application/octet-stream").partition("/")
+            part = MIMEApplication(data, _subtype=subtype or "octet-stream")
+            part.add_header("Content-Disposition", "attachment", filename=fname)
+            m.attach(part)
+    else:
+        m = alt
+    m["To"] = to_email
+    m["From"] = f"Alexander Almgren <{NURTURE_GMAIL_FROM}>"
+    m["Reply-To"] = f"Alexander Almgren <{NURTURE_REPLY_TO}>"
+    m["Subject"] = subject
+    return m
+
+
+def _send_via_gmail(to_email: str, subject: str, html: str, plain: str, attachments=None) -> bool:
+    import base64
 
     import requests as _rq
     tok = _gmail_access_token()
     if not tok:
         return False
-    m = MIMEMultipart("alternative")
-    m["To"] = to_email
-    m["From"] = f"Alexander Almgren <{NURTURE_GMAIL_FROM}>"
-    m["Reply-To"] = f"Alexander Almgren <{NURTURE_REPLY_TO}>"
-    m["Subject"] = subject
-    m.attach(MIMEText(plain, "plain"))
-    m.attach(MIMEText(html, "html"))
+    m = _build_gmail_mime(to_email, subject, html, plain, attachments)
     raw = base64.urlsafe_b64encode(m.as_bytes()).decode()
     r = _rq.post(
         "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
