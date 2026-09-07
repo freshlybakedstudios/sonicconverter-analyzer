@@ -1,5 +1,5 @@
 # librsvg -> rsvg-convert, used by share_card.py to rasterize the shareable
 # result cards ("..." keeps nixpacks' default python setup packages).
 [phases.setup]
-# pango/cairo/gdk-pixbuf/fontconfig: WeasyPrint for the per-scan breakdown PDF (2026-09-07).
-nixPkgs = ["...", "librsvg", "pango", "cairo", "gdk-pixbuf", "fontconfig", "glib", "harfbuzz"]
+# pango/cairo/fontconfig/glib/harfbuzz: WeasyPrint (gdk-pixbuf comes via librsvg; listing it twice collides) for the per-scan breakdown PDF (2026-09-07).
+nixPkgs = ["...", "librsvg", "pango", "cairo", "fontconfig", "glib", "harfbuzz"]
