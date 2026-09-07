@@ -3133,6 +3133,42 @@ function downloadCuratorCSV() {
 // Vector cover page + html2canvas snapshot of each visible
 // section, one section per page (split across pages if tall).
 // -------------------------------------------------------
+async function downloadServerPDF() {
+  const d = window._lastAnalysisResult;
+  const jobId = d && d.job_id;
+  const token = accessToken || localStorage.getItem('sc_token');
+  if (!jobId || !token) { alert('Run an analysis first.'); return; }
+  const btn = document.getElementById('pdf-download-btn');
+  const prev = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Building PDF…'; btn.disabled = true; }
+  try {
+    const res = await fetch(`${API_URL}/api/analysis/${encodeURIComponent(jobId)}/pdf?token=${encodeURIComponent(token)}`);
+    if (!res.ok) throw new Error('server ' + res.status);
+    const ct = (res.headers.get('content-type') || '');
+    const blob = await res.blob();
+    if (!ct.includes('pdf')) {
+      // PDF libs unavailable server-side: open the print-ready page instead.
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      return;
+    }
+    const cd = res.headers.get('content-disposition') || '';
+    const m = cd.match(/filename="?([^";]+)"?/);
+    const src = d.source || {};
+    const name = (m && m[1]) || `${src.artist_name || 'Artist'} - ${src.track_name || 'Track'} - Sonic Breakdown.pdf`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  } catch (e) {
+    console.warn('server PDF failed, falling back to in-page export', e);
+    if (btn) { btn.textContent = prev || 'Download PDF'; btn.disabled = false; }
+    return generateAnalysisPDF();
+  } finally {
+    if (btn) { btn.textContent = prev || 'Download PDF'; btn.disabled = false; }
+  }
+}
+
 async function generateAnalysisPDF() {
   const lib = window.jspdf;
   if (!lib || !lib.jsPDF) { alert('PDF library not loaded — please refresh and try again.'); return; }
@@ -3240,7 +3276,9 @@ async function generateAnalysisPDF() {
 }
 (function() {
   const btn = document.getElementById('pdf-download-btn');
-  if (btn) btn.addEventListener('click', generateAnalysisPDF);
+  // 2026-09-07: the PDF is rendered server-side now (same four-page report
+  // for every scan). The html2canvas exporter stays as a fallback only.
+  if (btn) btn.addEventListener('click', downloadServerPDF);
 })();
 
 // -------------------------------------------------------

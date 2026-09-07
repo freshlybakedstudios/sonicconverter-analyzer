@@ -1,0 +1,2 @@
+Londrina Solid (Marcelo Magalhães) and Space Grotesk (Florian Karsten) are licensed under the SIL Open Font License 1.1. https://openfontlicense.org
+Files fetched from github.com/google/fonts (ofl/londrinasolid, ofl/spacegrotesk) on 2026-09-07.

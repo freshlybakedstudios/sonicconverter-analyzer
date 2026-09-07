@@ -5258,6 +5258,42 @@ async def share_card_endpoint(request: Request, format: str = "story"):
         headers={"Content-Disposition": f'inline; filename="fbs-analyzer-card-{fmt}.png"'})
 
 
+@app.get("/api/analysis/{job_id}/pdf")
+async def analysis_pdf(job_id: str, token: str, prepared_for: Optional[str] = None,
+                       format: Optional[str] = None):
+    """Four-page sonic breakdown for one scan (2026-09-07). Server-rendered
+    with WeasyPrint so it looks the same for everyone and never depends on the
+    browser tab staying in front (the old html2canvas exporter froze there).
+    Falls back to print-ready HTML if the PDF libs are missing."""
+    from fastapi.responses import HTMLResponse, Response
+    lead = _validate_session(token)
+    try:
+        res = supabase.table('analysis_jobs').select('*').eq('id', job_id).limit(1).execute()
+        row = (res.data or [None])[0]
+    except Exception:
+        row = None
+    if not row:
+        raise HTTPException(404, "Scan not found")
+    _lead_email = (lead.get('email') or '').strip().lower() if isinstance(lead, dict) else ''
+    owns = (row.get('token') == token or
+            (_lead_email and (row.get('user_email') or '').strip().lower() == _lead_email))
+    if not owns:
+        raise HTTPException(403, "Not your scan")
+    if row.get('status') not in ('complete', 'enriching', 'matching', 'features_ready') or not row.get('result_json'):
+        raise HTTPException(409, "Scan isn't finished yet")
+    import breakdown_report as _br
+    html_out = _br.build_breakdown_html(row, prepared_for=(prepared_for or '').strip()[:80] or None)
+    fname = _br.safe_filename(row.get('artist_name') or 'Artist', row.get('track_name') or 'Track')
+    if (format or '').lower() != 'html':
+        try:
+            pdf = _br.render_pdf(html_out)
+            return Response(content=pdf, media_type='application/pdf',
+                            headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+        except Exception as e:  # missing pango/cairo etc. — serve the HTML instead
+            print(f"breakdown pdf: WeasyPrint unavailable ({e}); serving HTML")
+    return HTMLResponse(html_out)
+
+
 @app.get("/api/analysis/{job_id}/csv")
 async def export_csv(job_id: str):
     """Download playlists + curator contacts as CSV."""
