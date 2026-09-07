@@ -33,6 +33,74 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Owner push on every rig failure (2026-09-07): which track, whose scan, what broke.
+_PUSH_TOKEN = os.getenv('PUSHOVER_APP_TOKEN') or os.getenv('PUSHOVER_API_TOKEN')
+_PUSH_USER = os.getenv('PUSHOVER_USER_KEY')
+_current_job = {}
+
+
+def _push(title: str, message: str):
+    if not (_PUSH_TOKEN and _PUSH_USER):
+        return
+    try:
+        requests.post('https://api.pushover.net/1/messages.json',
+                      data={'token': _PUSH_TOKEN, 'user': _PUSH_USER,
+                            'title': title, 'message': message}, timeout=10)
+    except Exception as e:
+        print(f"push failed: {e}")
+
+
+def _job_push(title: str, job: dict, reason: str = ''):
+    j = job or _current_job or {}
+    _push(title, f"{j.get('artist_name') or '?'} — {j.get('track_name') or '?'}\n"
+                 f"{j.get('user_email') or 'no email'}\njob {str(j.get('id') or '?')[:8]}"
+                 + (f"\n{reason}" if reason else ''))
+
+# --- Rogue-GEMS guard (2026-09-05) -----------------------------------------
+# The pm2 pause below only reaches pm2-managed gems/discovery. A GEMS
+# processor launched by hand in a terminal is invisible to it and fights the
+# capture for Spotify (this broke live analyzer scans on 9/4). Before every
+# capture we SIGSTOP any process whose cmdline matches the GEMS processors
+# (pm2-managed ones are already pm2-stopped by then, so survivors are rogue)
+# and SIGCONT them when the capture is done.
+_ROGUE_GEMS_PIDS = []
+
+def _freeze_rogue_gems():
+    global _ROGUE_GEMS_PIDS
+    import signal
+    import subprocess as _sp
+    pids = []
+    try:
+        out = _sp.run(['pgrep', '-f', 'streamlined_bulk_processor'],
+                      capture_output=True, text=True, timeout=5).stdout
+        for tok in out.split():
+            try:
+                pid = int(tok)
+                if pid == os.getpid():
+                    continue
+                os.kill(pid, signal.SIGSTOP)
+                pids.append(pid)
+            except (ValueError, ProcessLookupError, PermissionError):
+                pass
+        if pids:
+            print(f"  Froze rogue GEMS pids {pids} for capture")
+    except Exception as e:
+        print(f"  Warning: rogue-GEMS freeze failed: {e}")
+    _ROGUE_GEMS_PIDS = pids
+
+def _thaw_rogue_gems():
+    global _ROGUE_GEMS_PIDS
+    import signal
+    for pid in _ROGUE_GEMS_PIDS:
+        try:
+            os.kill(pid, signal.SIGCONT)
+        except Exception:
+            pass
+    if _ROGUE_GEMS_PIDS:
+        print(f"  Thawed rogue GEMS pids {_ROGUE_GEMS_PIDS}")
+    _ROGUE_GEMS_PIDS = []
+# ---------------------------------------------------------------------------
+
 POLL_INTERVAL = 5  # seconds
 SAMPLE_RATE = 48000
 SAMPLE_DURATION = 4  # seconds per sample point
@@ -134,8 +202,11 @@ def claim_job(job_id: str) -> bool:
         return False
 
 
-def update_job(job_id: str, status: str, features: dict = None):
-    """Update job status and features in Supabase."""
+def update_job(job_id: str, status: str, features: dict = None, reason: str = ''):
+    """Update job status and features in Supabase. Failure statuses also push the owner."""
+    if status in ('error', 'capture_failed', 'extraction_failed'):
+        _job_push(f"❌ Rig {status.replace('_', ' ')}", _current_job if _current_job.get('id') == job_id else {'id': job_id},
+                  reason or status)
     payload = {'status': status}
     if features:
         payload['features'] = json.dumps(features)
@@ -680,6 +751,7 @@ def process_job(job: dict, loopback_device: int):
             time.sleep(5)  # Let Spotify fully release previous GEMS track
     except Exception as e:
         print(f"[{job_id[:8]}] Warning: could not pause scripts: {e}")
+    _freeze_rogue_gems()
 
     # Ensure Spotify is active
     device_id = _ensure_device_active()
@@ -867,17 +939,17 @@ def process_job(job: dict, loopback_device: int):
         features = extract_features_from_audio(audio, audio_stereo=audio_stereo)
     except Exception as e:
         print(f"[{job_id[:8]}] Feature extraction failed: {e}")
-        update_job(job_id, 'extraction_failed')
+        update_job(job_id, 'extraction_failed', reason=f"feature extraction: {str(e)[:200]}")
         return
 
     # Validate
     if features.get('lufs_integrated', -100) < -55:
         print(f"[{job_id[:8]}] LUFS too low ({features['lufs_integrated']:.1f}), capture likely failed")
-        update_job(job_id, 'capture_failed')
+        update_job(job_id, 'capture_failed', reason=f"LUFS too low ({features['lufs_integrated']:.1f}) — silent capture")
         return
     if features.get('energy', 0) < 0.001:
         print(f"[{job_id[:8]}] Energy too low ({features['energy']:.4f}), capture likely failed")
-        update_job(job_id, 'capture_failed')
+        update_job(job_id, 'capture_failed', reason=f"energy too low ({features['energy']:.4f}) — silent capture")
         return
 
     # Success
@@ -928,6 +1000,7 @@ def main():
                 time.sleep(5)  # Let Spotify fully release previous GEMS track
         except Exception as e:
             print(f"  Warning: could not pause scripts: {e}")
+        _freeze_rogue_gems()
         return paused
 
     def _resume_local_scripts(paused):
@@ -939,6 +1012,7 @@ def main():
                 pass
         if paused:
             print(f"  Resumed {', '.join(paused)}")
+        _thaw_rogue_gems()
 
     def _ensure_loopback(current_idx):
         """Re-validate loopback device before each job. Returns new index or None."""
@@ -955,10 +1029,12 @@ def main():
             print(f"Loopback recovered: device index {new_idx}")
         else:
             print("Loopback recovery FAILED — skipping job")
+            _job_push("❌ Rig loopback device lost", job, "no Loopback/BlackHole input — job skipped, worker needs a look")
         return new_idx
 
     def _run_job(job, device_idx):
         """Run a job with timeout protection. Returns True if features were delivered."""
+        _current_job.clear(); _current_job.update(job)   # for failure pushes
         paused = _pause_local_scripts()
         success = False
         JOB_TIMEOUT = 120
@@ -972,6 +1048,7 @@ def main():
                     success = True
             except Exception as e:
                 print(f"Job processing error: {e}")
+                _job_push("❌ Rig job crashed", job, str(e)[:300])
                 try:
                     update_job(job['id'], 'error')
                 except Exception:
@@ -982,6 +1059,7 @@ def main():
         t.join(timeout=JOB_TIMEOUT)
         if t.is_alive():
             print(f"[{job['id'][:8]}] Job timed out after {JOB_TIMEOUT}s — moving on")
+            _job_push("❌ Rig job timed out", job, f"no result after {JOB_TIMEOUT}s")
             try:
                 update_job(job['id'], 'error')
             except Exception:

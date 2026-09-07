@@ -87,6 +87,33 @@ def send_pushover_notification(title: str, message: str):
     except Exception as e:
         print(f"Pushover notification failed: {e}")
 
+
+def _scan_push(prefix: str, job_id: str = None, note: str = '', track: str = None,
+               artist: str = None, email: str = None, source: str = None):
+    """Owner push for every analyzer scan (2026-09-07): what landed, what was
+    delivered, whatever broke. Fire-and-forget — never raises."""
+    try:
+        if job_id and not (track or artist or email):
+            try:
+                row = supabase.table('analysis_jobs') \
+                    .select('user_email,track_name,artist_name,scan_source') \
+                    .eq('id', job_id).limit(1).execute()
+                j = (row.data or [{}])[0]
+                track = j.get('track_name'); artist = j.get('artist_name')
+                email = j.get('user_email'); source = source or j.get('scan_source')
+            except Exception:
+                pass
+        lines = [f"{artist or '?'} — {track or '?'}", email or 'no email']
+        if source:
+            lines.append(f"source: {source}")
+        if job_id:
+            lines.append(f"job {job_id[:8]}")
+        if note:
+            lines.append(note)
+        send_pushover_notification(prefix, "\n".join(lines))
+    except Exception as e:
+        print(f"scan push failed: {e}")
+
 # ---------------------------------------------------------------------------
 # Globals
 # ---------------------------------------------------------------------------
@@ -3979,7 +4006,7 @@ def _send_curator_report_email(job_id: str, curator_count: int):
             ok = False
         print(f"Enrichment [{job_id[:8]}]: scan-ready email to {to_email}: "
               f"{'sent' if ok else 'FAILED'}")
-        return
+        return ok
 
     rows_html = ''
     for c in top:
@@ -4041,6 +4068,7 @@ def _send_curator_report_email(job_id: str, curator_count: int):
         ok = False
     print(f"Enrichment [{job_id[:8]}]: curator report email to {to_email}: "
           f"{'sent' if ok else 'FAILED'}")
+    return ok
 
 
 def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = None,
@@ -4669,9 +4697,14 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         # Every scan announces itself when done (fire-and-forget delivery):
         # Pro runs get the curator report, light runs get the scan-ready note.
         try:
-            _send_curator_report_email(job_id, curator_count)
+            _mail_ok = _send_curator_report_email(job_id, curator_count)
+            _scan_push("✅ Scan delivered", job_id,
+                       note=f"{len(matches or [])} matches · email "
+                            f"{'sent' if _mail_ok else 'NOT sent'}"
+                            + (f" · {curators_locked} curators locked (free)" if curators_locked else ''))
         except Exception as _mail_err:
             print(f"Enrichment [{job_id[:8]}]: report email failed: {_mail_err}")
+            _scan_push("❌ Scan email failed", job_id, note=str(_mail_err)[:300])
         # Notify resource-switcher that we're done — local scripts can resume
         _notify_local_pipeline('user_idle')
 
@@ -4679,6 +4712,7 @@ def _run_background_enrichment(job_id: str, matches: list, user_cm_id: int = Non
         print(f"Enrichment [{job_id[:8]}]: Fatal error: {e}")
         job_mgr.update_job(job_id, status='error')
         _sse_publish(job_id, 'error', {'error': str(e)})
+        _scan_push("❌ Scan error (enrichment)", job_id, note=str(e)[:300])
         _notify_local_pipeline('user_idle')
 
 
@@ -5701,8 +5735,14 @@ async def analyze_url(
                     'created_at': now, 'updated_at': now,
                 }).execute()
                 print(f"  URL analysis: created pending_features job {job_id[:8]}")
+                _scan_push("🎧 Scan landed (rig capture)", job_id, track=track_name,
+                           artist=artist_name, email=lead.get('email'),
+                           source='worker_capture',
+                           note=f"{queue_ahead} ahead in queue" if queue_ahead else '')
             except Exception as e:
                 print(f"  URL analysis: job create failed: {e}")
+                _scan_push("❌ Scan job create failed", job_id, track=track_name,
+                           artist=artist_name, email=lead.get('email'), note=str(e)[:300])
         job_mgr._mem[job_id] = {'id': job_id, 'status': 'pending_features', 'spotify_url': spotify_url}
         # CRITICAL: Pause local scripts BEFORE Mac worker captures audio
         # GEMS uses Spotify playback — if it's running it will contaminate the capture
@@ -5757,6 +5797,8 @@ async def analyze_url(
     if not features:
         if job_id:
             job_mgr.update_job(job_id, status='error')
+            _scan_push("❌ Scan failed: rig didn't respond", job_id,
+                       note=f"waited {timeout}s, {queue_ahead} ahead in queue")
         raise HTTPException(
             503,
             "Could not analyze this track — the studio's capture rig didn't respond in time. "
@@ -6112,6 +6154,9 @@ async def analyze_url(
         # dashboard source split shows real rig load, not just link volume.
         'scan_source': 'url' if features_source == 'universe_cache' else 'url_capture',
     })
+    if features_source == 'universe_cache':
+        _scan_push("🎧 Scan landed (cache hit)", new_job_id, track=track_name,
+                   artist=artist_name, email=lead.get('email'), source='url')
 
     # Build user_profile for "Where You Stand" conversion comparison
     user_profile = None
