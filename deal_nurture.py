@@ -117,7 +117,10 @@ SUPPRESS_DOMAINS = {
     "test.com",
 }
 # Specific internal/test addresses (owner's own inboxes on public providers).
-SUPPRESS_EMAILS = {OWNER_EMAIL.strip().lower(), "freshlybakedstudios@gmail.com"}
+SUPPRESS_EMAILS = {OWNER_EMAIL.strip().lower(), "freshlybakedstudios@gmail.com",
+                   # owner's old hotmail — he tests the funnel from it (9/6 $3,700
+                   # funded-tier run showed up as a WHALE in the 9/7 digest)
+                   "pennsylvania_6_5000@hotmail.com"}
 
 
 def _is_suppressed_email(email: str) -> bool:
