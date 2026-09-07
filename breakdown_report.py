@@ -469,8 +469,53 @@ ul.nail{columns:2;column-gap:.3in;padding-left:.18in;margin:.04in 0 0;font-size:
 </body></html>"""
 
 
+_NIX_LIBS = [('*-glib-2.*', 'libglib-2.0.so.0'), ('*-glib-2.*', 'libgobject-2.0.so.0'),
+             ('*-harfbuzz-*', 'libharfbuzz.so.0'), ('*-fontconfig-2.*', 'libfontconfig.so.1'),
+             ('*-cairo-1.*', 'libcairo.so.2'), ('*-pango-1.*', 'libpango-1.0.so.0'),
+             ('*-pango-1.*', 'libpangoft2-1.0.so.0'), ('*-pango-1.*', 'libpangocairo-1.0.so.0')]
+_preloaded = False
+
+
+def _preload_nix_libs():
+    """Railway/nixpacks puts pango, cairo, glib etc. in /nix/store but not on the
+    loader path, so WeasyPrint's dlopen-by-name fails. Loading each library by
+    absolute path (RTLD_GLOBAL) first makes the by-name lookups resolve to the
+    already-loaded copies; their own deps resolve through nix RUNPATHs.
+    Verified in the container 2026-09-07. No-op where /nix/store is absent."""
+    global _preloaded
+    if _preloaded or not os.path.isdir('/nix/store'):
+        return
+    import ctypes
+    import glob
+
+    def newest(pat):
+        ds = [d for d in glob.glob('/nix/store/' + pat) if not d.endswith('.drv') and os.path.isdir(d + '/lib')]
+        return sorted(ds)[-1] if ds else None
+    for pat, so in _NIX_LIBS:
+        d = newest(pat)
+        if not d:
+            continue
+        try:
+            ctypes.CDLL(os.path.join(d, 'lib', so), mode=ctypes.RTLD_GLOBAL)
+        except OSError:
+            pass
+    # fontconfig wants a config file; the nix package ships one, else write a minimal one.
+    if not os.environ.get('FONTCONFIG_FILE'):
+        confs = sorted(glob.glob('/nix/store/*-fontconfig-*/etc/fonts/fonts.conf'))
+        if confs:
+            os.environ['FONTCONFIG_FILE'] = confs[-1]
+        else:
+            conf = '/tmp/fbs-fonts.conf'
+            with open(conf, 'w') as fh:
+                fh.write('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig>'
+                         f'<dir>{FONT_DIR}</dir><cachedir>/tmp/fbs-fc-cache</cachedir></fontconfig>')
+            os.environ['FONTCONFIG_FILE'] = conf
+    _preloaded = True
+
+
 def render_pdf(html_str: str) -> bytes:
     """WeasyPrint render; raises ImportError/OSError when the libs are absent."""
+    _preload_nix_libs()
     from weasyprint import HTML  # lazy: Railway has pango/cairo, dev boxes may not
     return HTML(string=html_str, base_url=STATIC_DIR + '/').write_pdf()
 
