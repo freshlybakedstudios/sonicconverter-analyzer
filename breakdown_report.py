@@ -188,6 +188,288 @@ def _first_genre(m):
     return str(g).split(',')[0].strip()
 
 
+
+# ---------------------------------------------------------------------------
+# v2 builder (2026-09-08, owner: "Sonic Quadrant, A&R pitch comparables, Where
+# your track stands are missing; production recommendations as the ACTUAL graph
+# that appears on the analyzer; a handful of similar artists"). Every component
+# below is a port of the matching renderer in static/app.js so the PDF shows the
+# same bars, the same quadrant plot, the same rec meters as the web result.
+# ---------------------------------------------------------------------------
+import math as _math
+
+FEATURE_PRETTY = {
+    'sub_ratio': 'Sub-bass', 'bass_ratio': 'Bass', 'low_mid_ratio': 'Low-mids', 'mid_ratio': 'Mids',
+    'high_mid_ratio': 'High-mids', 'presence_ratio': 'Presence', 'air_ratio': 'Air',
+    'brightness': 'Brightness (spectral centroid)', 'spectral_rolloff': 'Spectral rolloff',
+    'brightness_variance': 'Brightness movement', 'energy': 'Energy', 'dynamic_range': 'Dynamic range',
+    'loudness_range': 'Loudness range', 'lufs_integrated': 'Master loudness', 'compression_amount': 'Compression',
+    'crest_factor': 'Crest factor', 'true_peak_dbfs': 'True peak', 'beat_strength': 'Beat strength',
+    'onset_rate': 'Onset density', 'attack_time': 'Attack time', 'danceability': 'Danceability',
+    'spectral_complexity': 'Spectral complexity', 'dissonance': 'Dissonance', 'key_strength': 'Tonal anchoring',
+    'zcr': 'Brightness (ZCR)', 'spectral_flux': 'Spectral flux', 'harmonic_distortion': 'Harmonic distortion',
+    'stereo_width': 'Stereo width', 'mid_side_ratio': 'Mid/side ratio', 'stereo_correlation': 'Stereo correlation',
+}
+FEATURE_DIRECTION = {
+    'sub_ratio': ('heavier sub-bass than', 'lighter sub-bass than'), 'bass_ratio': ('heavier bass than', 'lighter bass than'),
+    'low_mid_ratio': ('thicker low-mids than', 'cleaner low-mids than'), 'mid_ratio': ('more forward mids than', 'softer mids than'),
+    'high_mid_ratio': ('more presence / edge than', 'softer upper-mids than'), 'presence_ratio': ('brighter presence than', 'darker presence than'),
+    'air_ratio': ('more high-end air than', 'less high-end air than'), 'brightness': ('brighter spectral center than', 'darker spectral center than'),
+    'spectral_rolloff': ('more high-frequency rolloff than', 'less high-frequency content than'),
+    'brightness_variance': ('more brightness movement than', 'flatter brightness curve than'),
+    'energy': ('higher energy than', 'more restrained than'), 'dynamic_range': ('more dynamic contrast than', 'flatter dynamics than'),
+    'loudness_range': ('wider loudness variation than', 'tighter loudness than'), 'lufs_integrated': ('louder master than', 'quieter master than'),
+    'compression_amount': ('more compressed than', 'more open / less compressed than'), 'crest_factor': ('punchier peaks than', 'flatter peaks than'),
+    'true_peak_dbfs': ('higher peak level than', 'lower peak level than'), 'beat_strength': ('stronger beat than', 'softer beat than'),
+    'onset_rate': ('denser percussion than', 'sparser percussion than'), 'attack_time': ('slower attacks than', 'sharper attacks than'),
+    'danceability': ('more rhythmic pull than', 'looser groove than'), 'spectral_complexity': ('more spectral complexity than', 'simpler spectrum than'),
+    'dissonance': ('more dissonant / edgy than', 'more consonant / clean than'), 'key_strength': ('more tonally anchored than', 'more tonally ambiguous than'),
+    'zcr': ('brighter / noisier than', 'mellower / cleaner than'), 'spectral_flux': ('more spectral movement than', 'more static spectrum than'),
+    'harmonic_distortion': ('more harmonic saturation than', 'cleaner harmonics than'), 'stereo_width': ('wider stereo image than', 'narrower stereo than'),
+    'mid_side_ratio': ('more side energy than', 'more centered mix than'), 'stereo_correlation': ('more decorrelated stereo than', 'more correlated stereo than'),
+}
+EMOTION_LABELS = {'power': 'Power', 'nostalgia': 'Nostalgia', 'tension': 'Tension', 'aggressive': 'Aggression',
+                  'intense': 'Intensity', 'dark': 'Darkness', 'brooding': 'Brooding', 'wonder': 'Wonder',
+                  'tenderness': 'Tenderness', 'joyfulness': 'Joyfulness', 'sadness': 'Sadness',
+                  'peacefulness': 'Peacefulness', 'transcendence': 'Transcendence'}
+
+
+def _num(v):
+    try:
+        if v is None or (isinstance(v, float) and _math.isnan(v)):
+            return None
+        return float(v)
+    except Exception:
+        return None
+
+
+# --- app.js ports: value formatting for the rec meters ----------------------
+def _fmt_feat(kind, v):
+    v = _num(v)
+    if v is None:
+        return '–'
+    if kind == 'pct':
+        return f'{v * 100:.1f}%'
+    if kind == 'db':
+        return f'{v:.1f} dB'
+    if kind == 'lufs':
+        return f'{v:.1f} LUFS'
+    if kind == 'hz':
+        return f'{round(v)} Hz'
+    if kind == 'rate':
+        return f'{v:.1f} /s'
+    if kind == 'ms':
+        return f'{v:.1f} ms'
+    if kind == 'lu':
+        return f'{v:.1f} LU'
+    return f'{v:.3f}'
+
+
+def _fmt_move(kind, you, target):
+    you, target = _num(you), _num(target)
+    if you is None or target is None:
+        return ''
+    def s(v, dp, unit):
+        return ('+' if v >= 0 else '−') + f'{abs(v):.{dp}f}' + unit
+    if kind == 'pct':
+        if you > 0 and target > 0:
+            return s(10 * _math.log10(target / you), 1, ' dB')
+        return s((target - you) * 100, 1, ' pts')
+    if kind in ('db', 'lufs'):
+        return s(target - you, 1, ' dB')
+    if kind == 'lu':
+        return s(target - you, 1, ' LU')
+    if kind == 'hz':
+        return ('+' if target >= you else '−') + f'{abs(round(target - you))} Hz'
+    if kind == 'rate':
+        return s(target - you, 1, ' /s')
+    if kind == 'ms':
+        return s(target - you, 1, ' ms')
+    return s(((target - you) / abs(you)) * 100, 0, '%') if you != 0 else ''
+
+
+def _fmt_range(kind, a, b):
+    A, B = _fmt_feat(kind, a), _fmt_feat(kind, b)
+    m = re.match(r'^([\d.\-−]+)(.*)$', A)
+    if m and B.endswith(m.group(2)):
+        return m.group(1) + '–' + B
+    return A + '–' + B
+
+
+def _move_negligible(kind, you, edge):
+    you, edge = _num(you), _num(edge)
+    if you is None or edge is None:
+        return False
+    if kind == 'pct':
+        return abs(10 * _math.log10(edge / you)) < 0.05 if (you > 0 and edge > 0) else abs((edge - you) * 100) < 0.05
+    if kind in ('db', 'lufs', 'lu', 'rate', 'ms'):
+        return abs(edge - you) < 0.05
+    if kind == 'hz':
+        return abs(edge - you) < 0.5
+    return you != 0 and abs((edge - you) / abs(you)) * 100 < 1.5
+
+
+def _rec_band(r):
+    you = _num(r.get('you'))
+    p = r.get('percentiles') or {}
+    if p:
+        p5, p25, p50, p75, p95 = (_num(p.get(k)) for k in ('p5', 'p25', 'p50', 'p75', 'p95'))
+    else:
+        t = _num(r.get('target_cohort')) or 0.0
+        sp = abs(t - (you or 0)) or (abs(t) * 0.1 + 1e-6)
+        p25, p75, p50 = t - sp * 0.15, t + sp * 0.15, t
+        p5, p95 = t - sp * 0.6, t + sp * 0.6
+    in_zone = you is not None and p25 <= you <= p75
+    if not in_zone and you is not None:
+        edge = p25 if you < p25 else p75
+        if r.get('unit_kind') == 'level':
+            in_zone = _level_label(r.get('levels'), you) == _level_label(r.get('levels'), edge)
+        elif _move_negligible(r.get('unit_kind'), you, edge):
+            in_zone = True
+    return p5, p25, p50, p75, p95, in_zone
+
+
+def _rec_row_html(r, band):
+    you, kind = _num(r.get('you')), r.get('unit_kind')
+    p5, p25, p50, p75, p95, in_zone = band
+    pad = ((p95 - p5) or (abs(p95) * 0.1 + 1e-6)) * 0.06
+    s_min, s_max = p5 - pad, p95 + pad
+    def pos(v):
+        return max(0.0, min(100.0, ((v - s_min) / (s_max - s_min)) * 100))
+    zone_l = pos(p25)
+    zone_w = max(pos(p75) - zone_l, 1.5)
+    off_low, off_high = you < p5, you > p95
+    dot = max(2.0, min(98.0, pos(you)))
+    if in_zone:
+        dot = max(zone_l, min(zone_l + zone_w, dot))
+    dot_cls = ' off-low' if off_low else ' off-high' if off_high else ''
+    edge = p25 if you < p25 else p75
+    is_level = kind == 'level'
+    you_str = _level_label(r.get('levels'), you) if is_level else _fmt_feat(kind, you)
+    if is_level:
+        lo, hi = _level_label(r.get('levels'), p25), _level_label(r.get('levels'), p75)
+        zone_str = lo if lo == hi else f'{lo} – {hi}'
+    else:
+        zone_str = _fmt_range(kind, p25, p75)
+    move = '✓ in the zone' if in_zone else ('aim for ' + _level_label(r.get('levels'), edge)) if is_level else (_fmt_move(kind, you, edge) + ' to land in')
+    agree = r.get('agree') or [0, 0]
+    return (f'<div class="rr"><div class="rr-head"><span class="rr-dom">{_esc(r.get("domain") or "")}</span>'
+            f'<span class="rr-act">{_esc(r.get("action") or "")}</span><span class="rr-move{" inrange" if in_zone else ""}">{_esc(move)}</span></div>'
+            f'<div class="rr-bar"><div class="rr-band" style="left:{zone_l:.1f}%;width:{zone_w:.1f}%"></div>'
+            f'<div class="rr-edge" style="left:{pos(p50):.1f}%"></div><div class="rr-dot{dot_cls}" style="left:{dot:.1f}%"></div></div>'
+            f'<div class="rr-leg"><span class="you">You <b>{_esc(you_str)}</b></span><span class="zone">Target zone <b>{_esc(zone_str)}</b></span>'
+            f'<span class="ag">{agree[0]}/{agree[1]} agree</span></div></div>')
+
+
+def _rec_ranges_html(ranges, f):
+    """Port of renderRecRanges(): loudness row swapped to whole-track units when both sides have it."""
+    you_int = _num(f.get('lufs_whole_track'))
+    if you_int is None:
+        you_int = _num(f.get('lufs_integrated_est'))
+    adjust, strengths = [], []
+    for r in ranges:
+        if _num(r.get('you')) is None:
+            continue
+        rr = dict(r)
+        if r.get('feature') == 'lufs_integrated' and you_int is not None and r.get('percentiles_est'):
+            p = r['percentiles_est']
+            action = r.get('action')
+            ai = r.get('actions_integrated') or {}
+            if you_int < _num(p.get('p25')) and ai.get('higher'):
+                action = ai['higher']
+            elif you_int > _num(p.get('p75')) and ai.get('lower'):
+                action = ai['lower']
+            rr.update({'you': you_int, 'percentiles': p, 'action': action, 'target_cohort': None, 'target_signature': None})
+        band = _rec_band(rr)
+        (strengths if band[5] else adjust).append(_rec_row_html(rr, band))
+    html = ''
+    if adjust:
+        html += '<div class="rr-group">Adjustments to make</div>' + ''.join(adjust)
+    if strengths:
+        html += '<div class="rr-group strengths">✓ What you\'re already nailing</div>' + ''.join(strengths)
+    return html or '<div class="rr-group">No strong consensus from your peer cohort.</div>', len(adjust), len(strengths)
+
+
+# --- app.js ports: the 0–100 percentile bars ---------------------------------
+def _bar_html(fill_pct, dot_pct, labels, ticks=(25, 50, 75, 99), min_gap=9, opp=None, tick_pos=None):
+    """conv-bar with fill, ticks, dot and the collision-aware label row (site rule: higher priority wins)."""
+    kept = []
+    for l in sorted(labels, key=lambda x: -x['pr']):
+        if all(abs(k['pos'] - l['pos']) >= min_gap for k in kept):
+            kept.append(l)
+    ticks_html = ''.join(f'<div class="tick{" target" if t.get("target") else ""}" style="left:{t["pos"]:.1f}%"></div>' for t in (tick_pos or [{'pos': p} for p in ticks]))
+    opp_html = f'<div class="opp" style="left:{opp[0]:.1f}%;width:{max(0.0, opp[1] - opp[0]):.1f}%"></div>' if opp else ''
+    labels_html = ''.join(f'<div class="lab{" you" if l.get("you") else ""}{" tgt" if l.get("tgt") else ""}" style="left:{l["pos"]:.1f}%"><span>{_esc(l["name"])}</span><span>{_esc(l["val"])}</span></div>' for l in kept)
+    return (f'<div class="cbar"><div class="fill" style="width:{fill_pct:.1f}%"></div>{opp_html}{ticks_html}'
+            f'<div class="dot" style="left:{dot_pct:.1f}%"></div></div><div class="cbar-labels">{labels_html}</div>')
+
+
+def _pct_label(pct):
+    if pct is None:
+        return 'no peer data'
+    p = round(pct * 100)
+    return 'top 1%' if p >= 99 else 'top 10%' if p >= 90 else 'top 25%' if p >= 75 else 'above average' if p >= 50 else 'below average' if p >= 25 else 'bottom 25%'
+
+
+def _fmt_num(n):
+    n = _num(n)
+    if n is None:
+        return 'N/A'
+    if 0 < n < 1:
+        return f'{n:.2f}'
+    if n >= 1000:
+        return f'{n:,.0f}'
+    return f'{round(n):,}'
+
+
+def _listeners_str(n):
+    n = _num(n)
+    if not n:
+        return '—'
+    if n >= 1e6:
+        return f'{n / 1e6:.1f}M monthly listeners'
+    if n >= 1e3:
+        return f'{n / 1e3:.0f}K monthly listeners'
+    return f'{n:,.0f} monthly listeners'
+
+
+def _quadrant_svg(tm, so, pitch, cloud):
+    """Port of the Sonic Quadrant scatter: X = performance percentile, Y = originality, cuts at 75/75."""
+    W, H, ML, MR, MT, MB = 640, 460, 60, 30, 30, 50
+    iw, ih = W - ML - MR, H - MT - MB
+    x = lambda v: ML + (v / 100.0) * iw
+    y = lambda v: MT + ((100.0 - v) / 100.0) * ih
+    user_perf = round((_num(tm.get('composite_percentile')) or 0) * 100)
+    user_orig = _num(so.get('composite_score')) or 0
+    s = [f'<svg class="sq" viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg">']
+    for g in (25, 50, 75):
+        s.append(f'<line class="sq-grid" x1="{x(g):.1f}" y1="{MT}" x2="{x(g):.1f}" y2="{MT + ih}"/><line class="sq-grid" x1="{ML}" y1="{y(g):.1f}" x2="{ML + iw}" y2="{y(g):.1f}"/>')
+    s.append(f'<line class="sq-quad" x1="{x(75):.1f}" y1="{MT}" x2="{x(75):.1f}" y2="{MT + ih}"/><line class="sq-quad" x1="{ML}" y1="{y(75):.1f}" x2="{ML + iw}" y2="{y(75):.1f}"/>')
+    s.append(f'<text class="sq-ql" x="{x(50):.1f}" y="{y(95):.1f}" text-anchor="middle">AHEAD OF THE CURVE</text>')
+    s.append(f'<text class="sq-ql success" x="{x(88):.1f}" y="{y(95):.1f}" text-anchor="middle">SIGNATURE OF SUCCESS</text>')
+    s.append(f'<text class="sq-ql stuck" x="{x(50):.1f}" y="{y(8):.1f}" text-anchor="middle">STUCK IN THE PACK</text>')
+    s.append(f'<text class="sq-ql" x="{x(88):.1f}" y="{y(8):.1f}" text-anchor="middle">GENRE-PLAYBOOK WINNER</text>')
+    s.append(f'<line class="sq-axis" x1="{ML}" y1="{MT + ih}" x2="{ML + iw}" y2="{MT + ih}"/><line class="sq-axis" x1="{ML}" y1="{MT}" x2="{ML}" y2="{MT + ih}"/>')
+    for t in (0, 25, 50, 75, 100):
+        s.append(f'<text class="sq-al" x="{x(t):.1f}" y="{MT + ih + 18}" text-anchor="middle">{t}</text><text class="sq-al" x="{ML - 10}" y="{y(t) + 4:.1f}" text-anchor="end">{t}</text>')
+    s.append(f'<text class="sq-at" x="{ML + iw / 2:.1f}" y="{H - 10}" text-anchor="middle">Performance percentile →</text>')
+    s.append(f'<text class="sq-at" x="15" y="{MT + ih / 2:.1f}" text-anchor="middle" transform="rotate(-90 15 {MT + ih / 2:.1f})">Originality score →</text>')
+    pitch = (pitch or [])[:5]
+    names = {p.get('name') for p in pitch}
+    for p in (cloud or []):
+        if p.get('name') in names:
+            continue
+        s.append(f'<circle class="sq-cloud" cx="{x(round((_num(p.get("perf_pct")) or 0) * 100)):.1f}" cy="{y(_num(p.get("orig_score")) or 0):.1f}" r="2.5"/>')
+    for i, p in enumerate(pitch):
+        px, py = x(round((_num(p.get('perf_pct')) or 0) * 100)), y(_num(p.get('orig_score')) or 0)
+        s.append(f'<circle class="sq-peer" cx="{px:.1f}" cy="{py:.1f}" r="5"/>')
+        dx, dy = ((8, 3), (-8, 3), (8, 15), (-8, -9), (8, -9))[i % 5]
+        s.append(f'<text class="sq-pl" x="{px + dx:.1f}" y="{py + dy:.1f}" text-anchor="{"start" if dx > 0 else "end"}">{_esc(p.get("name") or "")}</text>')
+    ux, uy = x(user_perf), y(user_orig)
+    s.append(f'<circle class="sq-user" cx="{ux:.1f}" cy="{uy:.1f}" r="10"/><text class="sq-ul" x="{ux + 14:.1f}" y="{uy + 4:.1f}">You ({user_perf}, {round(user_orig)})</text></svg>')
+    return ''.join(s)
+
+
 def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
     rj = _j(job.get('result_json')) or {}
     f = rj.get('features') or _j(job.get('features')) or {}
@@ -197,223 +479,278 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
     cc = up.get('conversion_comparison') or {}
     so = up.get('sonic_originality') or {}
     quad = up.get('quadrant') or {}
+    pitch = up.get('pitch_comparables') or []
+    cloud = up.get('cohort_scatter') or []
     ranges = rj.get('recommendation_ranges') or []
     matches = rj.get('matches') or []
-    flattery = rj.get('flattery_matches') or []
-    related = [x.get('name') for x in (_j(job.get('related_artists')) or []) if x.get('name')]
+    related = [x.get('name') for x in (_j(job.get('related_artists')) or []) if isinstance(x, dict) and x.get('name')]
 
     track = job.get('track_name') or src.get('track_name') or 'Untitled'
     artist = job.get('artist_name') or src.get('artist_name') or ''
-    listeners = up.get('listeners') or src.get('artist_listeners')
-    followers = up.get('followers')
-    conv = up.get('conversion_rate')
+    listeners = _num(up.get('listeners')) or _num(src.get('artist_listeners'))
+    followers = _num(up.get('followers'))
+    conv = _num(up.get('conversion_rate'))
     tier = (src.get('artist_tier') or rj.get('user_tier') or '').capitalize()
-    peer_count = tm.get('peer_count') or cc.get('peer_pool_total') or len(rj.get('all_matches') or [])
+    peer_count = int(_num(tm.get('peer_count')) or _num(cc.get('peer_pool_total')) or len(rj.get('all_matches') or []) or 0)
     today = _dt.date.today().strftime('%B %-d, %Y')
-    total_tracks = '274,000'
 
-    # ---- page 1: sound ----
-    lufs = f.get('lufs_integrated')
-    lufs_est = f.get('lufs_integrated_est')
+    # ---- page 1: the sound (unchanged) --------------------------------------
+    lufs, lufs_est = _num(f.get('lufs_integrated')), _num(f.get('lufs_integrated_est'))
     key = f"{f.get('key') or '?'} {f.get('scale') or ''}".strip()
-    tiles = [
-        (f"{float(f.get('bpm') or 0):.0f}", 'BPM', ''),
-        (_esc(key), 'Key', ''),
-        (f"{lufs:.1f}" if isinstance(lufs, (int, float)) else '—', 'LUFS',
-         f"integrated · est. {lufs_est:.1f} on streaming" if isinstance(lufs_est, (int, float)) else 'integrated'),
-        (_energy_label(f.get('energy')), 'Energy', ''),
-        (_compression_label(f.get('compression_amount')), 'Compression', ''),
-        (_dance_label(f.get('danceability')), 'Danceability', ''),
-    ]
-    tiles_html = ''.join(
-        f'<div class="tile"><b>{v}</b><span>{lab}</span>{("<small>" + _esc(sub) + "</small>") if sub else ""}</div>'
-        for v, lab, sub in tiles)
-
+    tiles = [(f"{_num(f.get('bpm')) or 0:.0f}", 'BPM', ''), (_esc(key), 'Key', ''),
+             (f"{lufs:.1f}" if lufs is not None else '—', 'LUFS', f"integrated · est. {lufs_est:.1f} on streaming" if lufs_est is not None else 'integrated'),
+             (_energy_label(_num(f.get('energy'))), 'Energy', ''), (_compression_label(_num(f.get('compression_amount'))), 'Compression', ''),
+             (_dance_label(_num(f.get('danceability'))), 'Danceability', '')]
+    tiles_html = ''.join(f'<div class="tile"><b>{v}</b><span>{lab}</span>{("<small>" + _esc(sub) + "</small>") if sub else ""}</div>' for v, lab, sub in tiles)
     rmap = {r['feature']: r for r in ranges if r.get('feature')}
-    out_bands = []
-    rows = ''
+    out_bands, rows = [], ''
     for name, key_ in BANDS:
-        v = f.get(key_)
+        v = _num(f.get(key_))
         if v is None:
             continue
         w = min(100.0, v / 0.30 * 100)
         zone_html, cls = '', ''
         r = rmap.get(key_)
         if r and r.get('percentiles'):
-            p25, p75, in_zone = _band(r)
-            zone_html = (f'<div class="zone" style="left:{p25 / 0.30 * 100:.1f}%;'
-                         f'width:{max(0.5, (p75 - p25) / 0.30 * 100):.1f}%"></div>')
+            _, p25, _, p75, _, in_zone = _rec_band(r)
+            zone_html = f'<div class="zone" style="left:{p25 / 0.30 * 100:.1f}%;width:{max(0.5, (p75 - p25) / 0.30 * 100):.1f}%"></div>'
             if not in_zone:
                 cls = ' out'
                 out_bands.append((name, 'light' if v < p25 else 'heavy'))
-        rows += (f'<div class="row"><div class="lab">{name}</div><div class="track">{zone_html}'
-                 f'<div class="fill{cls}" style="width:{w:.1f}%"></div></div>'
-                 f'<div class="val{cls}">{v * 100:.1f}%</div></div>')
-    cohort_n = so.get('cohort_size') or (rmap.get('mid_ratio') or {}).get('agree', [0, 0])[1] if rmap else 0
+        rows += f'<div class="row"><div class="lab">{name}</div><div class="track">{zone_html}<div class="fill{cls}" style="width:{w:.1f}%"></div></div><div class="val{cls}">{v * 100:.1f}%</div></div>'
+    cohort_n = so.get('cohort_size') or ((rmap.get('mid_ratio') or {}).get('agree') or [0, 0])[1]
     if out_bands:
         plural = {'Mid': 'mids are', 'Low-Mid': 'low-mids are', 'Hi-Mid': 'hi-mids are'}
         parts = [f'the {plural.get(n, n.lower() + " is")} {d}' for n, d in out_bands]
-        band_note = (f'Share of spectral energy per band. Striped zones mark where the {cohort_n} highest-converting '
-                     f'peers in this lane sit. {"One band lands" if len(out_bands) == 1 else str(len(out_bands)) + " bands land"} '
-                     f'outside them: {", ".join(parts)}.')
+        band_note = (f'Share of spectral energy per band. Striped zones mark where the {cohort_n} highest-converting peers in this lane sit. '
+                     f'{"One band lands" if len(out_bands) == 1 else str(len(out_bands)) + " bands land"} outside them: {", ".join(parts)}.')
     else:
-        band_note = (f'Share of spectral energy per band. Striped zones mark where the {cohort_n} highest-converting '
-                     f'peers in this lane sit. Every band lands inside them.')
-
+        band_note = f'Share of spectral energy per band. Striped zones mark where the {cohort_n} highest-converting peers in this lane sit. Every band lands inside them.'
     emos = []
     es = f.get('emotion_summary') or {}
-    for e, s in (es.get('emotions') or [])[:4]:
-        emos.append((e.capitalize(), round(float(s) * 100)))
+    for e, s_ in (es.get('emotions') or [])[:4]:
+        emos.append((str(e).capitalize(), round(float(s_) * 100)))
     if not emos:
         for i in (1, 2, 3, 4):
             if f.get(f'emotion_{i}'):
-                emos.append((str(f[f'emotion_{i}']).capitalize(), round(float(f.get(f'emotion_{i}_score') or 0) * 100)))
-    emo_html = ''.join(f'<span class="chip">{_esc(e)}<b>{s}%</b></span>' for e, s in emos)
-    emo_note = ''
-    if len(emos) >= 2:
-        emo_note = f'{emos[0][0]} and {emos[1][0].lower()} leading' + (f', {emos[2][0].lower()} right behind them.' if len(emos) > 2 else '.')
+                emos.append((str(f[f'emotion_{i}']).capitalize(), round((_num(f.get(f'emotion_{i}_score')) or 0) * 100)))
+    emo_html = ''.join(f'<span class="chip">{_esc(e)}<b>{s_}%</b></span>' for e, s_ in emos)
+    emo_note = (f'{emos[0][0]} and {emos[1][0].lower()} leading' + (f', {emos[2][0].lower()} right behind them.' if len(emos) > 2 else '.')) if len(emos) >= 2 else ''
 
-    # ---- page 2: where it stands ----
-    perf = tm.get('composite_percentile')
-    perf_pct = round(float(perf) * 100) if perf is not None else None
-    perf_note = ('above average' if perf_pct and perf_pct >= 55 else 'around the median' if perf_pct and perf_pct >= 45 else 'below the median') if perf_pct is not None else ''
-    pop_stats, cm_stats, pl_stats = tm.get('pop_stats') or {}, tm.get('cm_stats') or {}, tm.get('playlists_stats') or {}
-
-    def _stat(k, sub, v):
-        return f'<div class="stat"><span class="k">{k}<span class="s">{sub}</span></span><span class="v">{v}</span></div>'
-
-    momentum = ''
-    if perf_pct is not None:
-        momentum += _stat('Performance percentile', f'vs sonic cohort · {perf_note}', perf_pct)
-    if tm.get('scanned_cm_score') is not None:
-        momentum += _stat('Chartmetric score', f"peer median {cm_stats.get('median', 0):.0f} · top 25% starts at {cm_stats.get('p75', 0):.0f}", f"{float(tm['scanned_cm_score']):.0f}")
-    if tm.get('scanned_playlists') is not None:
-        momentum += _stat('Playlist placements', f"peer median {pl_stats.get('median', 0):.0f} · top 25% starts at {pl_stats.get('p75', 0):.0f}", f"{int(tm['scanned_playlists']):,}")
-    if tm.get('scanned_popularity') is not None:
-        momentum += _stat('Spotify popularity', f"recency-weighted · peer median {pop_stats.get('median', 0):.0f}", f"{int(tm['scanned_popularity'])}")
+    # ---- page 2: where your track stands (site's track-momentum panel + audience conversion) ----
+    comp_pct = round((_num(tm.get('composite_percentile')) or 0) * 100)
+    tm_html = ''
+    if tm:
+        labels = [dict(pos=25, name='p25', val='25', pr=1), dict(pos=50, name='Median', val='50', pr=2), dict(pos=75, name='Top 25%', val='75', pr=4),
+                  dict(pos=99, name='Top 1%', val='99', pr=3), dict(pos=comp_pct, name='You', val=str(comp_pct), pr=5, you=True)]
+        bar = _bar_html(comp_pct, comp_pct, labels)
+        if comp_pct >= 90:
+            summ = 'Your track is in the <b>top 10%</b> of its sonic cohort, performing better than nearly every track that sounds like it.'
+        elif comp_pct >= 75:
+            summ = 'Your track is in the <b>top 25%</b> of its sonic cohort, outperforming most tracks that sound like it.'
+        elif comp_pct >= 50:
+            summ = 'Your track is <b>above average</b> for its sonic cohort, doing better than most similar-sounding tracks.'
+        elif comp_pct >= 25:
+            summ = 'Your track is <b>below average</b> for its sonic cohort. There is headroom on the momentum side.'
+        else:
+            summ = 'Your track is in the <b>bottom 25%</b> of its sonic cohort. The biggest lifts here are playlist pitching and Spotify popularity growth.'
+        def tm_row(label, sub, scanned, stats, pct):
+            stats = stats or {}
+            pct_s = (f'<span class="pct">{_pct_label(_num(pct))}</span> of {int(_num(stats.get("count")) or 0):,} sonic peers') if pct is not None else 'no comparable peer data'
+            peer_s = f'<br>peer median {_fmt_num(stats.get("median"))} · top 25% {_fmt_num(stats.get("p75"))} · top 1% {_fmt_num(stats.get("p99"))}' if stats else ''
+            val = _fmt_num(scanned) if scanned is not None else 'N/A'
+            return f'<div class="tmr"><span class="tml">{label}<small>{sub}</small></span><span class="tmv{" na" if scanned is None else ""}">{val}</span><span class="tmp">{pct_s}{peer_s}</span></div>'
+        rows_html = (tm_row('Spotify Popularity', 'Spotify’s 0–100 recency-weighted score', tm.get('scanned_popularity'), tm.get('pop_stats'), tm.get('percentile_popularity'))
+                     + tm_row('Chartmetric Score', 'Multi-platform composite (0–100)', tm.get('scanned_cm_score'), tm.get('cm_stats'), tm.get('percentile_cm_score'))
+                     + tm_row('Playlist Placements', 'Editorial + user playlists combined', tm.get('scanned_playlists'), tm.get('playlists_stats'), tm.get('percentile_playlists')))
+        cur = _num(tm.get('gap_current_revenue')) or 0
+        rate = _num(tm.get('revenue_per_listener'))
+        tier_name, tgt_l, tgt_r, add = 'top 25%', _num(tm.get('gap_target_listeners')), _num(tm.get('gap_target_revenue')), _num(tm.get('gap_additional_revenue'))
+        if comp_pct >= 75 and _num(tm.get('gap_target_listeners_t10')):
+            tier_name, tgt_l, tgt_r, add = 'top 10%', _num(tm.get('gap_target_listeners_t10')), _num(tm.get('gap_target_revenue_t10')), _num(tm.get('gap_additional_revenue_t10'))
+        gap = ''
+        if add and add > 0 and tgt_l and rate:
+            gap = (f'<div class="gap"><b>What “closing the gap” looks like:</b> tracks in the {tier_name} of this sonic cohort belong to artists with a median of <b>{tgt_l:,.0f} monthly listeners</b>, '
+                   f'about ${tgt_r:,.0f} a year at ${rate:.2f} per listener, against ${cur:,.0f} today. Closing it is worth about <b>+${add:,.0f} a year</b>.'
+                   f'<span class="gap-note">Peer-typical correlation from your actual sonic cohort, what artists with tracks at this level typically have. Not a personal forecast.</span></div>')
+        elif comp_pct >= 75 and tgt_l and rate:
+            gap = (f'<div class="gap"><b>You’re pacing the peer tier:</b> artists with tracks in the {tier_name} of this cohort sit at a median of <b>{tgt_l:,.0f} monthly listeners</b>, about ${tgt_r:,.0f} a year.'
+                   f'<span class="gap-note">Peer-typical correlation from your actual sonic cohort. Not a personal forecast.</span></div>')
+        tm_html = (f'<div class="panel-title">Where your track stands <span class="sub">vs {peer_count:,} tracks that sound like yours</span></div>'
+                   f'<div class="tag">How this song is performing right now, compared to tracks that sound like yours.</div>{bar}<div class="summ">{summ}</div><div class="tmrows">{rows_html}</div>{gap}')
 
     conv_html = ''
-    if conv is not None:
-        conv_html += _stat('Listeners becoming followers', 'this artist', f'{float(conv):.2f}%')
-    if cc.get('peer_median') is not None:
-        conv_html += _stat('Peer median', 'same sonic cohort', f"{float(cc['peer_median']):.2f}%")
-    if cc.get('peer_top_25') is not None:
-        conv_html += _stat('Peer top 25%', 'the artists winning in this lane', f"{float(cc['peer_top_25']):.2f}%")
-    if up.get('fol_listener_ratio') is not None:
-        ok = 'ok' if 0.1 <= float(up['fol_listener_ratio']) <= 1.0 else ''
-        conv_html += _stat('Followers per listener', '0.1 – 1.0 is the healthy retention band', f"<span class='{ok}'>{float(up['fol_listener_ratio']):.2f}</span>")
+    if conv is not None or cc.get('peer_median') is not None:
+        cr = conv or 0.0
+        p25, med, p75 = _num(cc.get('peer_bottom_25')) or 0, _num(cc.get('peer_median')) or 0, _num(cc.get('peer_top_25')) or 0
+        p99 = min(_num(cc.get('peer_p99')) or p75 * 2, p75 * 3)
+        at_top = cr >= p75
+        target = p99 if (at_top and p99 > cr) else p75
+        scale_max = max(p99, cr, target) * 1.05 or 1
+        tp = lambda v: max(0.0, min(100.0, (v / scale_max) * 100))
+        labels = [dict(pos=tp(p25), name='Bottom 25%', val=f'{p25:.2f}%', pr=1), dict(pos=tp(med), name='Median', val=f'{med:.2f}%', pr=2), dict(pos=tp(p75), name='Top 25%', val=f'{p75:.2f}%', pr=1)]
+        ticks = [dict(pos=tp(p25)), dict(pos=tp(med)), dict(pos=tp(p75)), dict(pos=tp(p99))]
+        opp = None
+        if conv is not None:
+            labels.append(dict(pos=tp(cr), name='You', val=f'{cr:.2f}%', pr=5, you=True))
+        if target > cr:
+            labels.append(dict(pos=tp(target), name='Top 1%' if at_top else 'Top 25%', val=f'{target:.2f}%', pr=4, tgt=True))
+            ticks.append(dict(pos=tp(target), target=True))
+            opp = (tp(cr), tp(target)) if conv is not None else None
+        if not (at_top and target == p99):
+            labels.append(dict(pos=tp(p99), name='Top 1%', val=f'{p99:.2f}%', pr=1))
+        bar = _bar_html(tp(cr) if conv is not None else 0, tp(cr) if conv is not None else 0, labels, min_gap=8, opp=opp, tick_pos=ticks)
+        fl, bucket = _num(up.get('fol_listener_ratio')), up.get('retention_bucket')
+        small = listeners is not None and 0 < listeners < 500
+        msg = ''
+        if fl is not None and bucket:
+            ratio = f'<b>{fl:.2f} followers per monthly listener</b>'
+            if bucket == 'healthy':
+                msg = f'Your ratio of {ratio} sits in the healthy retention band (0.1–1.0 per Chartlex / Chartmetric benchmarks). Above 0.1 correlates with 2–3× more Spotify Release Radar placement.'
+            elif bucket == 'marginal':
+                msg = f'Your ratio of {ratio} is in the marginal band, close to the threshold where retention becomes a concern. Healthy is above 0.1; below 0.067 indicates audience width without depth.'
+            elif bucket == 'shallow':
+                msg = f'Your ratio of {ratio} is below the shallow-audience threshold (0.067 per Chartlex). Your monthly listener count is growing faster than fan retention, width without depth.'
+            else:
+                msg = f'Your ratio of {ratio} is unusually high, typically seen on superstar accounts with massive cumulative followers, or on accounts whose monthly listener count has dropped off.'
+        elif conv is not None:
+            peer_n = int(_num(cc.get('peer_count')) or 0)
+            fans = int(_num(up.get('additional_fans')) or 0)
+            if fans > 0 and at_top:
+                msg = f'You’re already in the <b>top 25%</b> of {peer_n:,} sonic peers. Reaching the top 1% ({target:.1f}%) would convert an estimated <b>{fans:,} more fans</b>.'
+            elif fans > 0:
+                msg = f'Across {peer_n:,} sonic peers, the top 25% convert at <b>{target:.1f}%</b>. Closing that gap means an estimated <b>{fans:,} additional fans</b>, about {round(fans / 12):,} a month.'
+            else:
+                msg = f'You’re converting at <b>{cr:.1f}%</b>, above the top 1% of {peer_n:,} sonic peers. Your listener-to-follower conversion is exceptional.'
+        if small and msg:
+            msg = f'<b>Small sample:</b> with only {listeners:,.0f} monthly listeners this ratio reflects a tiny audience, often friends and early supporters. ' + msg
+        conv_html = f'<div class="panel-title" style="margin-top:.22in">Audience conversion <span class="sub">listeners becoming followers</span></div>{bar}<div class="summ">{msg}</div>'
 
-    gap_html = ''
-    if tm.get('gap_current_revenue') and tm.get('gap_target_revenue'):
-        cur, tgt = tm['gap_current_revenue'], tm['gap_target_revenue']
-        gap_html = f'''<div class="card"><h3 style="margin-top:0">What closing the gap is worth</h3><div class="grid2">
-<div><div class="big">{_money(cur)}<span class="unit"> / year</span></div><div class="note">Estimated Spotify streaming revenue today, at {_k(listeners)} listeners. Streaming only.</div></div>
-<div><div class="big">{_money(tgt)}<span class="unit"> / year</span></div><div class="note">What artists whose tracks sit in the top 25% of this cohort typically earn, at a median {_k(tm.get('gap_target_listeners'))} listeners. About +{_money(tm.get('gap_additional_revenue', tgt - cur))} a year of headroom on this one track's lane.</div></div>
-</div></div>'''
-
-    orig_html = ''
-    if so.get('composite_score') is not None:
-        score = so['composite_score']
-        devs = ''
-        for d in (so.get('top_deviations') or [])[:4]:
-            z = float(d.get('z') or 0)
-            devs += f'<div class="stat"><span class="k">{DEVIATION_LABELS.get(d.get("feature"), d.get("feature"))}</span><span class="v small">{"+" if z >= 0 else "−"}{abs(z):.2f}<span class="sig"> σ</span></span></div>'
-        qlabel = quad.get('label') or ''
-        if score < 45:
-            read = ('The track is executing the genre playbook more than reinventing it, which means the gap to the '
-                    'winners is production, not identity. That is the good version of this result: it is fixable in the mix.')
-        elif score < 70:
-            read = 'The track sits close to its cohort with a few real signatures of its own. The production notes sharpen what already sets it apart.'
+    # ---- page 3: originality + sonic quadrant + comparables --------------------
+    orig_html, quad_html, pitch_html = '', '', ''
+    score = _num(so.get('composite_score'))
+    if score is not None:
+        sc = round(score)
+        labels = [dict(pos=25, name='Low orig', val='25', pr=1), dict(pos=50, name='Typical', val='50', pr=2), dict(pos=75, name='Distinct', val='75', pr=3),
+                  dict(pos=99, name='Singular', val='99', pr=2), dict(pos=sc, name='You', val=str(sc), pr=5, you=True)]
+        bar = _bar_html(sc, sc, labels)
+        if sc >= 75:
+            summ = 'Your sound is in the <b>top 25% of sonically distinct tracks</b> within your cohort. The deviations below are your signature.'
+        elif sc >= 50:
+            summ = 'Your sound is <b>moderately distinct</b> from your sonic cohort: some signature features, mostly within consensus.'
+        elif sc >= 25:
+            summ = 'Your sound <b>mostly follows cohort consensus</b>. You’re executing the genre playbook more than reinventing it.'
         else:
-            read = 'The track is genuinely distinct from its cohort. The production notes below are about translation, not conformity: keep the signature, close the gaps that cost reach.'
-        orig_html = f'''<div class="card"><h3 style="margin-top:0">Sonic originality</h3><div class="grid2">
-<div><div class="big">{score}<span class="unit"> / 100</span></div><div class="note">Distance from the cohort consensus. 50 is typical, 75 reads as distinct. {read}</div></div>
-<div>{devs}<div class="note">Where the track departs from the consensus.</div></div></div></div>'''
+            summ = 'Your sound <b>closely matches cohort consensus</b> on most dimensions. Strong commercial fit; low sonic differentiation.'
+        qcls = 'signature' if quad.get('quadrant') == 'signature_of_success' else 'stuck' if quad.get('quadrant') == 'stuck_in_pack' else ''
+        qbox = f'<div class="qbox {qcls}"><div class="ql">{_esc(quad.get("label") or "")}</div><div class="qm">{_esc(quad.get("message") or "")}</div></div>' if quad else ''
+        devs = ''.join(f'<div class="orow"><span class="ol">{_esc(FEATURE_PRETTY.get(d.get("feature"), d.get("feature")))}</span><span class="oz">{"+" if (_num(d.get("z")) or 0) > 0 else ""}{(_num(d.get("z")) or 0):.2f}σ</span>'
+                       f'<span class="oc"><i>{_esc((FEATURE_DIRECTION.get(d.get("feature")) or ("higher than", "lower than"))[0 if d.get("direction") == "high" else 1])}</i> cohort consensus · you {_esc(d.get("user_val"))} vs median {_esc(d.get("cohort_mean"))}</span></div>'
+                       for d in (so.get('top_deviations') or [])[:4]) or '<div class="note">No strongly distinctive features: every dimension is within 1σ of your cohort consensus.</div>'
+        fits = ''.join(f'<div class="orow"><span class="ol">{_esc(FEATURE_PRETTY.get(d.get("feature"), d.get("feature")))}</span><span class="oz fits">{"+" if (_num(d.get("z")) or 0) > 0 else ""}{(_num(d.get("z")) or 0):.2f}σ</span>'
+                       f'<span class="oc">matches cohort · you {_esc(d.get("user_val"))} vs median {_esc(d.get("cohort_mean"))}</span></div>'
+                       for d in (so.get('fits_consensus') or [])[:4]) or '<div class="note">No close-consensus dimensions.</div>'
+        orig_html = (f'<div class="panel-title">Sonic originality</div>{qbox}{bar}<div class="summ">{summ}</div>'
+                     f'<div class="grid2" style="margin-top:.1in"><div><h3 style="margin-top:0">Where your sound stands out</h3>{devs}</div><div><h3 style="margin-top:0">Where you match the consensus</h3>{fits}</div></div>')
+    if tm and so:
+        quad_html = f'<div class="panel-title" style="margin-top:.16in">Sonic quadrant <span class="sub">originality × performance, cuts at 75 / 75</span></div><div class="sqwrap">{_quadrant_svg(tm, so, pitch, cloud)}</div>'
+    if pitch:
+        prow = ''
+        for i, p in enumerate(pitch[:5]):
+            name = f'{p.get("name")} — {p.get("track_name")}' if p.get('track_name') else (p.get('name') or '')
+            sim, perf = round((_num(p.get('similarity')) or 0) * 100), round((_num(p.get('perf_pct')) or 0) * 100)
+            og = _num(p.get('orig_score')) or 0
+            cm = f'{round(_num(p.get("cm_track_score")))}' if _num(p.get('cm_track_score')) is not None else 'N/A'
+            if og >= 80 and perf >= 80:
+                angle = 'Distinctive sonic profile AND scaled performance: clean proof your sound rewards distinctiveness in this lane.'
+            elif og >= 80:
+                angle = 'Strong sonic distinctiveness for the tier: proof your kind of sonic edge has commercial traction.'
+            elif perf >= 80:
+                angle = 'Top performer in your sonic neighborhood: a comparable on numbers, not just sound.'
+            else:
+                angle = 'Sits in your sonic lane with both distinctiveness and traction above the cohort floor.'
+            pop = p.get('sp_track_popularity')
+            pop = pop if pop is not None else '—'
+            prow += (f'<div class="prow"><div class="pn">{i + 1}. {_esc(name)}</div><div class="pl">{_listeners_str(p.get("listeners"))}</div>'
+                     f'<div class="pst"><span>{sim}% sonic match</span><span>Popularity {_esc(pop)}</span><span>CM {cm}</span><span>{int(_num(p.get("playlists_total")) or 0):,} playlists</span><span>Originality {round(og)}</span></div>'
+                     f'<div class="pa">{angle}</div></div>')
+        pitch_html = f'<div class="panel-title">A&amp;R pitch comparables <span class="sub">same tier, sonic peers in Signature of Success</span></div><div class="prows">{prow}</div>'
 
-    # ---- page 3: production notes ----
-    adjust, nailing = [], []
-    for r in ranges:
-        if r.get('you') is None:
-            continue
-        p25, p75, in_zone = _band(r)
-        agree = r.get('agree') or [0, 0]
-        entry = {
-            'domain': r.get('domain') or '', 'action': (r.get('action') or '').replace(' — ', ': '),
-            'you': _fmt(r.get('unit_kind'), r['you'], r.get('levels')),
-            'zone': _zone_text(r, p25, p75), 'move': _move_text(r, p25, p75) if not in_zone else '',
-            'agree': f'{agree[0]} of {agree[1]} agree' if agree and agree[1] else '',
-        }
-        (nailing if in_zone else adjust).append(entry)
-    adjust = adjust[:5]
-    adj_html = ''.join(
-        f'<div class="adj"><div class="dom">{_esc(a["domain"])}</div><div><b>{_esc(a["action"])}</b>'
-        f'<div class="yt">You: <em>{_esc(a["you"])}</em> &nbsp;→&nbsp; Target zone: <em>{_esc(a["zone"])}</em>'
-        f'{(" <span class=\"mv\">" + _esc(a["move"]) + "</span>") if a["move"] else ""}</div>'
-        f'<div class="ag">{_esc(a["agree"])}</div></div></div>' for a in adjust)
-    nail_html = ''.join(
-        f'<li><b>{_esc(n["action"].split(":")[0])}</b> · {_esc(n["you"])} <span>{_esc(n["agree"])}</span></li>' for n in nailing[:8])
-    if adjust:
-        moves = [a['action'].split(':')[0].lower() for a in adjust[:3]]
-        one_move = ('Take the top adjustments as one move: ' + ', '.join(moves[:-1]) + (', and ' if len(moves) > 1 else '') + moves[-1] +
-                    '. The record keeps its character and gains what the converting records in this lane all have. It is a mix decision, not a rewrite.')
-    else:
-        one_move = 'Nothing on the production side is holding this record back; every measured choice already sits with the winners in its lane.'
+    # ---- page 4: production recommendations (the site's meters, verbatim port) ----
+    rec_html, n_adj, n_ok = _rec_ranges_html(ranges, f)
 
-    # ---- page 4: neighbours ----
-    my_genres = _genre_tokens(src.get('artist_genres')) | _genre_tokens(src.get('track_genres'))
-    def _overlap(m):
-        return len((_genre_tokens(m.get('artist_genres')) | _genre_tokens(m.get('track_genres'))) & my_genres)
-    # Same order the web result shows (backend ranking), top 8.
+    # ---- page 5: similar artists (site table, top 8) + related + method ----
+    def _mp(m):
+        return min(0.99, max(0.0, (_num(m.get('similarity')) or 0) + (_num(m.get('_tag_aff')) or 0)))
+    def _genres(m):
+        g = []
+        for k in ('primary_genre', 'secondary_genre'):
+            v = m.get(k)
+            if v and str(v).lower() != 'unknown' and v not in g:
+                g.append(v)
+        for v in (m.get('artist_genres') or []):
+            if v and v not in g:
+                g.append(v)
+        return ', '.join(g) if g else '-'
     peers = [m for m in matches if m.get('name')][:8]
-    peer_rows = ''.join(
-        f"<tr><td class='nm'>{_esc(m['name'])}{' <span class=\"tag\">audience match</span>' if m['name'] in related else ''}</td>"
-        f"<td>{_esc(_first_genre(m)) or '—'}</td><td class='num'>{(m.get('similarity') or 0) * 100:.0f}%</td>"
-        f"<td class='num'>{_k(m.get('listeners'))}</td><td class='num'>{float(m.get('conversion_rate') or 0):.2f}%</td></tr>"
-        for m in peers)
-    # Trajectory targets exactly as the site lists them: established artists in backend order.
-    big = [x for x in flattery if x.get('name') and (x.get('listeners') or 0) >= 1e6][:3] \
-        or [x for x in flattery if x.get('name')][:3]
-    traj_rows = ''.join(
-        f"<tr><td class='nm'>{_esc(x['name'])}</td><td class='num'>{_k(x.get('listeners'))}</td><td class='num'>{(x.get('similarity') or 0) * 100:.0f}%</td></tr>"
-        for x in big)
-    rel_html = ''.join(f'<span class="chip">{_esc(n)}</span>' for n in related[:8])
-    audience_note = ''
-    am = [m['name'] for m in peers if m['name'] in related]
-    if am:
-        audience_note = f'{_esc(am[0])} is also a confirmed audience overlap through Chartmetric related artists, not just a sonic match.'
+    sim_rows = ''.join(
+        f'<tr><td>{i + 1}</td><td class="nm">{_esc(m["name"])}{" <span class=\"tag\">audience match</span>" if m["name"] in related else ""}</td>'
+        f'<td class="num">{_mp(m) * 100:.1f}%</td><td class="num">{(_num(m.get("conversion_rate")) or 0):.1f}%</td><td>{_esc(m.get("tier") or "-")}</td>'
+        f'<td class="gn">{_esc(_genres(m))}</td><td class="em">{"".join("<span class=\"mini\">" + _esc(EMOTION_LABELS.get(e, e)) + "</span>" for e in [e for e in (m.get("emotions") or []) if e and e != "neutral"][:3])}</td></tr>'
+        for i, m in enumerate(peers))
+    rel_html = ''.join(f'<span class="chip">{_esc(n)}</span>' for n in related[:10])
 
-    prepared = f'Prepared for {_esc(prepared_for)} · {today}' if prepared_for else f'{today}'
-    fonts = f"""
-@font-face{{font-family:'Londrina Solid';font-weight:400;src:url('fonts/LondrinaSolid-Regular.ttf') format('truetype')}}
-@font-face{{font-family:'Londrina Solid';font-weight:900;src:url('fonts/LondrinaSolid-Black.ttf') format('truetype')}}
-@font-face{{font-family:'Space Grotesk';font-weight:300 700;src:url('fonts/SpaceGrotesk[wght].ttf') format('truetype')}}
-"""
+    prepared = f'Prepared for {_esc(prepared_for)} · {today}' if prepared_for else today
+    foot = lambda n: f'<div class="foot"><span>{_esc(artist)} · {_esc(track)}</span><span>Freshly Baked Studios · Brooklyn</span><span>{n} / 6</span></div>'
+    fonts = ("@font-face{font-family:'Londrina Solid';font-weight:400;src:url('fonts/LondrinaSolid-Regular.ttf') format('truetype')}"
+             "@font-face{font-family:'Londrina Solid';font-weight:900;src:url('fonts/LondrinaSolid-Black.ttf') format('truetype')}"
+             "@font-face{font-family:'Space Grotesk';font-weight:300 700;src:url('fonts/SpaceGrotesk[wght].ttf') format('truetype')}")
     css = fonts + """
 @page{size:letter;margin:0}
 *{box-sizing:border-box}
-html,body{margin:0;background:#171614;color:#DEE6B8;font-family:'Space Grotesk',Helvetica,Arial,sans-serif;font-size:11.5pt;line-height:1.45;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.pg{width:8.5in;height:11in;padding:.7in .75in .6in;position:relative;page-break-after:always;background:#171614;overflow:hidden}
+html,body{margin:0;background:#171614;color:#DEE6B8;font-family:'Space Grotesk',Helvetica,Arial,sans-serif;font-size:11pt;line-height:1.42;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.pg{width:8.5in;height:11in;padding:.62in .7in .55in;position:relative;page-break-after:always;background:#171614;overflow:hidden}
 .pg:last-child{page-break-after:auto}
 .eyebrow{font-size:8.5pt;letter-spacing:.18em;text-transform:uppercase;color:#8D8F59}
 h1{font-family:'Londrina Solid',Impact,sans-serif;font-weight:900;font-size:42pt;line-height:.95;margin:.12in 0 0;color:#D8E166}
-h2{font-family:'Londrina Solid',Impact,sans-serif;font-weight:400;font-size:22pt;margin:0 0 .1in;color:#D8E166}
-h3{font-size:9pt;letter-spacing:.14em;text-transform:uppercase;color:#8D8F59;margin:.22in 0 .08in;font-weight:700}
+h2{font-family:'Londrina Solid',Impact,sans-serif;font-weight:400;font-size:22pt;margin:0 0 .08in;color:#D8E166}
+h3{font-size:8.5pt;letter-spacing:.14em;text-transform:uppercase;color:#8D8F59;margin:.2in 0 .07in;font-weight:700}
 .artist{font-size:18pt;color:#DEE6B8;margin-top:.06in}
 .meta{display:flex;gap:.28in;margin-top:.22in;padding-top:.16in;border-top:1px solid #33322c;flex-wrap:wrap}
 .meta div{min-width:1.1in} .meta b{display:block;font-size:17pt;color:#fff;font-weight:700;line-height:1.1} .meta span{font-size:8pt;letter-spacing:.12em;text-transform:uppercase;color:#8D8F59}
-.card{background:#201f1c;border:1px solid #2f2e29;border-radius:8px;padding:.16in .2in;margin-top:.14in}
-.tiles{display:flex;gap:.08in} .tile{flex:1;background:#201f1c;border:1px solid #2f2e29;border-radius:8px;padding:.12in .06in;text-align:center} .tile b{display:block;font-family:'Londrina Solid',Impact,sans-serif;font-weight:400;font-size:19pt;color:#D8E166;line-height:1} .tile span{font-size:7.5pt;letter-spacing:.12em;text-transform:uppercase;color:#8D8F59;display:block;margin-top:.05in} .tile small{display:block;font-size:7pt;color:#6f7050;margin-top:.02in}
-.row{display:flex;align-items:center;gap:.12in;margin:.055in 0} .lab{width:.85in;font-size:9.5pt;color:#BABC95} .track{position:relative;flex:1;height:.14in;background:#2a2925;border-radius:3px;overflow:hidden} .fill{position:absolute;left:0;top:0;bottom:0;background:#B0C936;border-radius:3px} .fill.out{background:#D8E166} .zone{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,#3d3d2e 0 3px,#4a4a37 3px 6px)} .val{width:.55in;font-size:9.5pt;text-align:right;color:#BABC95} .val.out{color:#D8E166;font-weight:700}
-.chips{display:flex;gap:.08in;flex-wrap:wrap} .chip{border:1px solid #4a4a37;border-radius:999px;padding:.04in .14in;font-size:9.5pt;color:#DEE6B8} .chip b{color:#D8E166;font-weight:700;margin-left:.06in}
+.card{background:#201f1c;border:1px solid #2f2e29;border-radius:8px;padding:.14in .18in;margin-top:.12in}
+.tiles{display:flex;gap:.08in} .tile{flex:1;background:#201f1c;border:1px solid #2f2e29;border-radius:8px;padding:.12in .06in;text-align:center} .tile b{display:block;font-family:'Londrina Solid',Impact,sans-serif;font-size:22pt;color:#D8E166;line-height:1} .tile span{display:block;font-size:8pt;letter-spacing:.12em;text-transform:uppercase;color:#8D8F59;margin-top:.04in} .tile small{display:block;font-size:7.5pt;color:#6f7050;margin-top:.02in}
+.row{display:flex;align-items:center;gap:.12in;margin:.055in 0} .lab{width:.85in;font-size:9.5pt;color:#BABC95} .track{position:relative;flex:1;height:.14in;background:#2a2925;border-radius:3px;overflow:hidden} .track .fill{position:absolute;left:0;top:0;bottom:0;background:#B5C851;border-radius:3px} .track .fill.out{background:#D8E166} .track .zone{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,#D8E166 0,#D8E166 2px,transparent 2px,transparent 6px);opacity:.45} .val{width:.55in;text-align:right;font-size:9.5pt;color:#BABC95} .val.out{color:#D8E166;font-weight:700}
+.chips{display:flex;gap:.08in;flex-wrap:wrap} .chip{border:1px solid #4a4a37;border-radius:999px;padding:.03in .13in;font-size:9.5pt;color:#DEE6B8} .chip b{color:#D8E166;font-weight:700;margin-left:.06in}
 .note{font-size:9.5pt;color:#8D8F59;margin-top:.08in}
 .grid2{display:flex;gap:.14in} .grid2>*{flex:1;min-width:0}
-.stat{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #2f2e29;padding:.06in 0} .stat:last-child{border-bottom:0} .stat .k{color:#BABC95;font-size:10pt} .stat .v{font-family:'Londrina Solid',Impact,sans-serif;font-size:18pt;color:#D8E166;white-space:nowrap} .stat .v.small{font-size:13pt} .stat .s{font-size:8.5pt;color:#8D8F59;display:block} .sig{font-family:'Space Grotesk',Arial,sans-serif;font-size:11pt;font-weight:700}
-.big{font-family:'Londrina Solid',Impact,sans-serif;font-size:30pt;color:#D8E166;line-height:1} .unit{font-size:11pt;color:#8D8F59;font-family:'Space Grotesk',Arial,sans-serif}
-.adj{display:flex;gap:.14in;padding:.12in 0;border-bottom:1px solid #2f2e29} .adj:last-child{border-bottom:0} .adj .dom{width:1.25in;flex:none;font-size:8pt;letter-spacing:.12em;text-transform:uppercase;color:#8D8F59;padding-top:.04in} .adj b{display:block;font-size:12pt;color:#fff;font-weight:700} .adj .yt{margin:.04in 0;font-size:10pt} .adj .yt em{font-style:normal;color:#D8E166;font-weight:700} .adj .mv{color:#BABC95;font-size:9.5pt;margin-left:.06in} .adj .ag{font-size:8.5pt;color:#8D8F59}
-table{width:100%;border-collapse:collapse;font-size:10pt} th{text-align:left;font-size:8pt;letter-spacing:.12em;text-transform:uppercase;color:#8D8F59;padding:.04in .06in;border-bottom:1px solid #3a3931;font-weight:700} td{padding:.055in .06in;border-bottom:1px solid #26251f} td.nm{color:#fff;font-weight:500} td.num,th.num{text-align:right} .tag{font-size:7.5pt;letter-spacing:.1em;text-transform:uppercase;color:#171614;background:#D8E166;border-radius:999px;padding:.01in .07in;margin-left:.06in;font-weight:700}
-ul.nail{columns:2;column-gap:.3in;padding-left:.18in;margin:.04in 0 0;font-size:10pt} ul.nail li{margin:.03in 0;color:#BABC95} ul.nail li b{color:#DEE6B8;font-weight:500} ul.nail li span{color:#6f7050;font-size:8.5pt}
-.foot{position:absolute;left:.75in;right:.75in;bottom:.4in;display:flex;justify-content:space-between;font-size:8pt;color:#6f7050;border-top:1px solid #2f2e29;padding-top:.08in}
-.ok{color:#B0C936}
+.panel-title{font-size:13pt;font-weight:700;color:#DEE6B8;margin:.04in 0 .02in} .panel-title .sub{font-size:9pt;font-weight:400;color:#8D8F59;margin-left:.08in}
+.tag{font-size:9.5pt;color:#8D8F59;margin-bottom:.1in}
+/* conv-bar port */
+.cbar{position:relative;height:.16in;background:#3a3636;border-radius:.08in;overflow:visible;margin-top:.06in}
+.cbar .fill{position:absolute;left:0;top:0;height:.16in;border-radius:.08in 0 0 .08in;background:linear-gradient(90deg,#5a5a3a 0%,#888899 100%)}
+.cbar .opp{position:absolute;top:0;height:.16in;background:repeating-linear-gradient(135deg,#D8E166 0,#D8E166 3px,transparent 3px,transparent 7px);opacity:.4}
+.cbar .tick{position:absolute;top:0;width:2px;height:.16in;background:rgba(64,56,58,.9)} .cbar .tick.target{background:#D8E166}
+.cbar .dot{position:absolute;top:-.02in;width:.2in;height:.2in;border-radius:50%;background:#B5C851;border:2px solid #201f1c;transform:translateX(-50%)}
+.cbar-labels{position:relative;height:.34in;margin-top:.04in} .cbar-labels .lab{position:absolute;transform:translateX(-50%);font-size:8pt;color:#888899;line-height:1.25;text-align:center;width:.9in} .cbar-labels .lab span{display:block} .cbar-labels .lab.you{color:#B5C851;font-weight:700} .cbar-labels .lab.tgt{color:#D8E166}
+.summ{font-size:10pt;color:#DEE6B8;margin:.04in 0 .08in} .summ b{color:#D8E166}
+.tmrows{border-top:1px solid #2f2e29} .tmr{display:flex;align-items:flex-start;gap:.12in;padding:.06in 0;border-bottom:1px solid #2f2e29} .tml{width:1.7in;color:#ccc;font-weight:500;font-size:10pt} .tml small{display:block;color:#777;font-size:8pt;font-weight:400} .tmv{width:.8in;text-align:right;font-weight:700;color:#B5C851;font-size:14pt} .tmv.na{color:#666;font-weight:400;font-style:italic;font-size:10pt} .tmp{flex:1;color:#888;font-size:8.5pt;line-height:1.4} .tmp .pct{color:#B5C851;font-weight:600}
+.gap{margin-top:.1in;background:rgba(78,205,196,.06);border-left:3px solid rgba(78,205,196,.5);padding:.08in .12in;border-radius:4px;font-size:9.5pt} .gap b{color:#4ecdc4} .gap-note{display:block;color:#8D8F59;font-size:8pt;margin-top:.04in}
+/* originality + quadrant */
+.qbox{background:rgba(78,205,196,.07);border:1px solid rgba(78,205,196,.25);border-radius:8px;padding:.1in .15in;margin:.06in 0 .08in} .qbox .ql{font-size:9pt;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4ecdc4;margin-bottom:.03in} .qbox .qm{font-size:9.5pt;color:#DEE6B8} .qbox.signature .ql{color:#d4be8e} .qbox.stuck .ql{color:#a89568}
+.orow{display:flex;gap:.08in;align-items:baseline;padding:.025in 0;border-bottom:1px solid #2f2e29;font-size:8.5pt} .ol{width:1.1in;color:#DEE6B8;font-weight:600} .oz{width:.5in;color:#D8E166;font-weight:700} .oz.fits{color:#B0C936} .oc{flex:1;color:#8D8F59} .oc i{color:#BABC95;font-style:normal}
+.sqwrap{width:4.6in;margin:0 auto} .sq{width:100%;height:auto;display:block} .sq-grid{stroke:rgba(255,255,255,.06);stroke-width:1} .sq-quad{stroke:rgba(78,205,196,.5);stroke-width:1.5;stroke-dasharray:4 4} .sq-axis{stroke:rgba(255,255,255,.2);stroke-width:1} .sq-al{fill:#888;font-size:12px;font-family:'Space Grotesk',Helvetica,sans-serif} .sq-ql{fill:rgba(78,205,196,.7);font-size:11px;font-weight:700;letter-spacing:.5px;font-family:'Space Grotesk',Helvetica,sans-serif} .sq-ql.success{fill:rgba(212,190,142,.85)} .sq-ql.stuck{fill:rgba(168,149,104,.8)} .sq-cloud{fill:rgba(78,205,196,.22)} .sq-peer{fill:rgba(78,205,196,.6);stroke:rgba(78,205,196,.9);stroke-width:1} .sq-pl{fill:#ccc;font-size:10px;font-family:'Space Grotesk',Helvetica,sans-serif} .sq-user{fill:#d4be8e;stroke:#fff;stroke-width:2} .sq-ul{fill:#d4be8e;font-size:12px;font-weight:700;font-family:'Space Grotesk',Helvetica,sans-serif} .sq-at{fill:#aaa;font-size:12px;font-weight:600;font-family:'Space Grotesk',Helvetica,sans-serif}
+/* pitch comparables */
+.prows{margin-top:.02in} .prow{padding:.035in 0;border-bottom:1px solid rgba(255,255,255,.06)} .prow:last-child{border-bottom:0} .pn{font-size:10pt;font-weight:600;color:#B5C851;display:inline-block;width:5.2in} .pl{display:inline-block;width:1.7in;text-align:right;font-size:9pt;color:#aaa;vertical-align:top} .pst{margin-top:.03in;font-size:8pt} .pst span{display:inline-block;padding:1px 7px;background:rgba(78,205,196,.08);border:1px solid rgba(78,205,196,.2);border-radius:999px;margin-right:5px;color:#d4be8e} .pa{font-size:8.5pt;color:#d8d8d8;margin-top:0} .pa::before{content:"→ ";color:#4ecdc4;font-weight:700}
+/* rec meters (rec-range port) */
+.rr-group{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#888899;margin:.1in 0 .04in} .rr-group.strengths{color:#B0C936;margin-top:.14in}
+.rr{margin:.06in 0 .1in} .rr-head{display:flex;align-items:baseline;gap:.08in;font-size:9.5pt;color:#e8e8f0;margin-bottom:.05in} .rr-dom{font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#B5C851;background:rgba(216,225,102,.25);padding:1px 6px;border-radius:4px;white-space:nowrap} .rr-act{flex:1} .rr-move{white-space:nowrap;font-size:9pt;font-weight:700;color:#D8E166} .rr-move.inrange{color:#B0C936}
+.rr-bar{position:relative;height:.14in;background:#3a3636;border-radius:.07in;margin-bottom:.04in} .rr-band{position:absolute;top:0;height:.14in;border-radius:3px;background:repeating-linear-gradient(135deg,#D8E166 0,#D8E166 3px,transparent 3px,transparent 7px);opacity:.5} .rr-edge{position:absolute;top:0;width:2px;height:.14in;background:#B5C851} .rr-dot{position:absolute;top:-.03in;width:.18in;height:.18in;border-radius:50%;background:#B5C851;border:2px solid #231f20;transform:translateX(-50%)}
+.rr-dot.off-low::after,.rr-dot.off-high::after{content:'';position:absolute;top:4px;border:5px solid transparent} .rr-dot.off-low::after{left:15px;border-left-color:#B5C851} .rr-dot.off-high::after{right:15px;border-right-color:#B5C851}
+.rr-leg{display:flex;gap:.16in;font-size:8.5pt;color:#888899} .rr-leg b{color:#e8e8f0;font-weight:600} .rr-leg .you b{color:#B5C851} .rr-leg .zone b{color:#D8E166}
+/* tables */
+table{width:100%;border-collapse:collapse;font-size:9pt} th{text-align:left;font-size:7.5pt;letter-spacing:.12em;text-transform:uppercase;color:#8D8F59;padding:.04in .05in;border-bottom:1px solid #3a3936} td{padding:.045in .05in;border-bottom:1px solid #2a2925;vertical-align:top} td.nm{color:#DEE6B8;font-weight:500} td.num{text-align:right;font-variant-numeric:tabular-nums} td.gn{color:#8D8F59;font-size:8pt} td.em{white-space:nowrap} td.em .mini{display:inline-block;border:1px solid #4a4a37;border-radius:999px;padding:0 5px;font-size:7.5pt;color:#BABC95;margin:1px 2px 1px 0} .tag{font-size:7pt;letter-spacing:.08em;text-transform:uppercase;color:#4ecdc4;margin-left:.06in}
+.foot{position:absolute;left:.7in;right:.7in;bottom:.35in;display:flex;justify-content:space-between;font-size:8pt;color:#6f7050;border-top:1px solid #2f2e29;padding-top:.07in}
 """
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>{_esc(track)} — Sonic Breakdown</title><style>{css}</style></head><body>
 <div class="pg">
@@ -423,9 +760,9 @@ ul.nail{columns:2;column-gap:.3in;padding-left:.18in;margin:.04in 0 0;font-size:
   <div class="meta">
     <div><b>{_k(listeners)}</b><span>Monthly listeners</span></div>
     <div><b>{_k(followers)}</b><span>Followers</span></div>
-    <div><b>{f'{float(conv):.2f}%' if conv is not None else '—'}</b><span>Listener → follower</span></div>
+    <div><b>{f'{conv:.2f}%' if conv is not None else '—'}</b><span>Listener → follower</span></div>
     <div><b>{_esc(tier) or '—'}</b><span>Tier</span></div>
-    <div><b>{int(peer_count):,}</b><span>Sonic peers compared</span></div>
+    <div><b>{peer_count:,}</b><span>Sonic peers compared</span></div>
   </div>
   <h3>The sound</h3>
   <div class="tiles">{tiles_html}</div>
@@ -434,37 +771,39 @@ ul.nail{columns:2;column-gap:.3in;padding-left:.18in;margin:.04in 0 0;font-size:
   <h3>Emotional character</h3>
   <div class="chips">{emo_html}</div>
   <div class="note">{emo_note}</div>
-  <div class="foot"><span>{prepared}</span><span>Matched against a {total_tracks}-track sonic database</span><span>1 / 4</span></div>
+  <div class="foot"><span>{prepared}</span><span>Matched against a 300,000-track sonic database</span><span>1 / 6</span></div>
 </div>
 <div class="pg">
-  <h2>Where the record stands</h2>
-  <div class="note" style="margin:0 0 .12in">Every figure below is live Spotify or Chartmetric data for this track against the {int(peer_count):,} tracks that sound most like it.</div>
-  <div class="grid2">
-    <div class="card"><h3 style="margin-top:0">Track momentum</h3>{momentum}</div>
-    <div class="card"><h3 style="margin-top:0">Audience conversion</h3>{conv_html}</div>
-  </div>
-  {gap_html}
-  {orig_html}
-  <div class="foot"><span>{_esc(artist)} · {_esc(track)}</span><span>Freshly Baked Studios · Brooklyn</span><span>2 / 4</span></div>
+  <h2>Where you stand</h2>
+  <div class="note" style="margin:0 0 .1in">This track’s momentum against its sonic peers’ tracks, plus artist-level context. Every signal is live Spotify or Chartmetric data.</div>
+  <div class="card">{tm_html or '<div class="note">Track momentum was not available for this scan.</div>'}</div>
+  <div class="card">{conv_html or '<div class="note">Audience conversion was not available for this scan.</div>'}</div>
+  {foot(2)}
 </div>
 <div class="pg">
-  <h2>Production notes</h2>
-  <div class="note" style="margin:0 0 .1in">Each target zone is where the highest-converting peers in this lane actually sit. "Agree" is how many of those winners share that choice.</div>
-  <div class="card"><h3 style="margin-top:0">Adjustments to make</h3>{adj_html or '<div class="note">Nothing outside the zone.</div>'}</div>
-  <div class="card"><h3 style="margin-top:0"><span class="ok">✓</span> Already in the zone</h3><ul class="nail">{nail_html}</ul></div>
-  <div class="card"><h3 style="margin-top:0">Read as one move</h3><p style="margin:0;font-size:10.5pt">{_esc(one_move)}</p></div>
-  <div class="foot"><span>{_esc(artist)} · {_esc(track)}</span><span>Freshly Baked Studios · Brooklyn</span><span>3 / 4</span></div>
+  <h2>Sonic originality</h2>
+  <div class="card" style="margin-top:.04in">{orig_html or '<div class="note">Originality was not available for this scan.</div>'}</div>
+  {foot(3)}
 </div>
 <div class="pg">
-  <h2>Sonic neighbours</h2>
-  <div class="note" style="margin:0 0 .1in">Artists at the same tier whose records measure closest to this one. Conversion is each artist's own listener-to-follower rate, so the column shows what the same sound is doing for other people.</div>
-  <div class="card"><table><thead><tr><th>Artist</th><th>Lane</th><th class="num">Sonic match</th><th class="num">Listeners</th><th class="num">Conversion</th></tr></thead><tbody>{peer_rows}</tbody></table>{('<div class="note">' + audience_note + '</div>') if audience_note else ''}</div>
-  <div class="grid2" style="margin-top:.14in">
-    <div class="card" style="margin-top:0"><h3 style="margin-top:0">Chartmetric related artists</h3><div class="chips">{rel_html or '<span class="note">Not available for this scan.</span>'}</div></div>
-    <div class="card" style="margin-top:0"><h3 style="margin-top:0">Trajectory targets</h3><table><thead><tr><th>Artist, 1M+ listeners</th><th class="num">Listeners</th><th class="num">Match</th></tr></thead><tbody>{traj_rows}</tbody></table><div class="note">Highest sonic matches among established artists. Proof the sound scales.</div></div>
-  </div>
-  <div class="card" style="margin-top:.14in;padding:.12in .2in"><h3 style="margin-top:0">How this was measured</h3><p style="margin:0;font-size:9.5pt;color:#BABC95">Sixty-three audio features from the released master (loudness, dynamics, spectral balance, harmony, rhythm, an emotion model), compared against {total_tracks} analysed tracks and the live Spotify and Chartmetric numbers behind them. The cohort is the {cohort_n} tracks in this lane whose artists convert listeners into followers at the highest rate. Targets are where they sit, not where a formula says a record should be.</p></div>
-  <div class="foot"><span>Alexander Almgren · almgren@freshlybakedstudios.com · freshlybakedstudios.com</span><span>4 / 4</span></div>
+  <h2>Sonic quadrant and comparables</h2>
+  <div class="card" style="margin-top:.04in">{quad_html or '<div class="note">Quadrant needs both momentum and originality.</div>'}</div>
+  <div class="card">{pitch_html or '<div class="note">No pitch comparables for this scan.</div>'}</div>
+  {foot(4)}
+</div>
+<div class="pg">
+  <h2>Similar artists</h2>
+  <div class="card" style="margin-top:.04in"><div class="panel-title">Closest records <span class="sub">from the 300,000-track universe, same order as the analyzer</span></div>
+  <table><thead><tr><th>#</th><th>Artist</th><th class="num">Match</th><th class="num">Conversion</th><th>Tier</th><th>Genre</th><th>Emotions</th></tr></thead><tbody>{sim_rows}</tbody></table></div>
+  <div class="grid2"><div class="card"><h3 style="margin-top:0">Chartmetric related artists</h3><div class="chips">{rel_html or '<span class="note">Not available for this scan.</span>'}</div></div>
+  <div class="card"><h3 style="margin-top:0">How this was measured</h3><p style="margin:0;font-size:8.5pt;color:#BABC95">Sixty-three audio features from the record itself (loudness, spectrum, dynamics, rhythm, tonality, stereo) matched against the Freshly Baked Studios universe of 300,000+ measured tracks. Peers are same-tier artists whose records measure closest; target zones come from the highest-converting peers in the lane. Performance is Spotify popularity, Chartmetric score and playlist reach, ranked against those peers. Not a forecast.</p></div></div>
+  {foot(5)}
+</div>
+<div class="pg">
+  <h2>Production recommendations</h2>
+  <div class="note" style="margin:0 0 .06in">Each meter is the same one on the analyzer: the striped band is where the highest-converting peers in this lane sit (25th to 75th percentile), the thin line is their median, the dot is this record. {n_adj} adjustment{'s' if n_adj != 1 else ''}, {n_ok} already in the zone.</div>
+  <div class="card">{rec_html}</div>
+  <div class="foot"><span>Alexander Almgren · almgren@freshlybakedstudios.com · freshlybakedstudios.com</span><span>6 / 6</span></div>
 </div>
 </body></html>"""
 
