@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Free Loudness Checker: LUFS, True Peak, and What Spotify Will Do to Your Master | Freshly Baked Studios</title>
+<meta name="description" content="Upload a master and get integrated LUFS, short-term max, loudness range, true peak, and exactly how many dB Spotify, Apple Music, YouTube, Tidal and Deezer will turn it up or down. Measured against 314,876 real masters by genre.">
+<link rel="canonical" href="https://analyze.freshlybakedstudios.com/loudness-checker">
+<style>
+@font-face{font-family:'Londrina Solid';src:url('/static/fonts/LondrinaSolid-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
+@font-face{font-family:'Space Grotesk';src:url('/static/fonts/SpaceGrotesk[wght].ttf') format('truetype');font-weight:300 700;font-display:swap}
+:root{--bg:#0d0d0c;--fg:#EDEBE2;--muted:#8f8d84;--line:#2a2a28;--acc:#d9a326;--good:#199e70;--warn:#d95926;--blue:#3987e5}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 'Space Grotesk',system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:40px 20px 80px}
+h1{font-family:'Londrina Solid',Impact,sans-serif;font-weight:400;font-size:clamp(34px,6vw,54px);line-height:1.05;margin:0 0 10px}
+h2{font-family:'Londrina Solid',Impact,sans-serif;font-weight:400;font-size:28px;margin:40px 0 10px}
+p.lead{color:var(--muted);font-size:18px;margin:0 0 26px}
+.drop{border:2px dashed var(--line);border-radius:14px;padding:38px 20px;text-align:center;cursor:pointer;transition:border-color .2s}
+.drop.on{border-color:var(--acc)}.drop input{display:none}.drop b{color:var(--acc)}
+.small{color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:22px 0}
+.tile{background:#151513;border:1px solid var(--line);border-radius:12px;padding:14px}
+.tile .v{font-family:'Londrina Solid',Impact,sans-serif;font-size:34px;line-height:1}.tile .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-top:6px}
+table{width:100%;border-collapse:collapse;margin:10px 0 6px;font-variant-numeric:tabular-nums}th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--muted);font-weight:500;font-size:13px}
+td.n{text-align:right}.down{color:var(--warn)}.up{color:var(--good)}.ok{color:var(--good)}.bad{color:var(--warn)}
+.verdict{background:#151513;border-left:4px solid var(--acc);padding:14px 16px;border-radius:0 10px 10px 0;margin:18px 0}
+.cta{display:inline-block;background:var(--acc);color:#0d0d0c;font-weight:700;padding:14px 22px;border-radius:10px;text-decoration:none;margin-top:8px}
+select{background:#151513;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+#status{margin:14px 0;color:var(--muted)}[hidden]{display:none!important}
+a{color:var(--blue)}
+</style></head><body><main>
+<h1>Free Loudness Checker</h1>
+<p class="lead">Drop a master. Get integrated LUFS, true peak, loudness range, and exactly what Spotify, Apple Music and YouTube will do to it. Nothing is stored.</p>
+<label class="drop" id="drop"><input type="file" id="file" accept=".wav,.mp3,.flac,.aiff,.aif,.m4a,.aac,.ogg"><div><b>Choose a file</b> or drag it here<br><span class="small">WAV, AIFF, FLAC, MP3, M4A · up to 80 MB · measured in about 5 seconds</span></div></label>
+<div style="margin:14px 0"><label class="small">Compare against your genre: <select id="genre"></select></label></div>
+<div id="status" hidden></div>
+<section id="results" hidden>
+  <div class="grid">
+    <div class="tile"><div class="v" id="lufs">–</div><div class="k">Integrated LUFS</div></div>
+    <div class="tile"><div class="v" id="tp">–</div><div class="k">True peak dBTP</div></div>
+    <div class="tile"><div class="v" id="lra">–</div><div class="k">Loudness range LU</div></div>
+    <div class="tile"><div class="v" id="stmax">–</div><div class="k">Short-term max LUFS</div></div>
+    <div class="tile"><div class="v" id="crest">–</div><div class="k">Crest factor dB</div></div>
+    <div class="tile"><div class="v" id="clip">–</div><div class="k">Clipped samples</div></div>
+  </div>
+  <div class="verdict" id="verdict"></div>
+  <h2>What each platform will do to it</h2>
+  <table><thead><tr><th>Platform</th><th>Normalizes to</th><th class="n">Gain applied</th><th>Meaning</th></tr></thead><tbody id="plat"></tbody></table>
+  <p class="small">Platform targets are the published defaults (Spotify −14, Apple Music −16, YouTube −14, Amazon −14, Tidal −14, Deezer −15 LUFS). A negative gain means the platform turns your master down; you paid for loudness nobody hears. Spotify does not turn quiet masters up past their true peak, so a quiet, peaky master stays quiet.</p>
+  <h2>Against your genre</h2>
+  <div id="genrebox"></div>
+  <p class="small">Genre medians and middle-50% ranges come from our <a href="https://freshlybakedstudios.com/blog/average-lufs-by-genre">314,876-track loudness study</a>. Same pipeline, same numbers.</p>
+  <h2>Want the whole picture?</h2>
+  <p>Loudness is one lever. The full Sonic Analyzer scan measures tonal balance, dynamics and stereo image against the tracks in your tier and genre that are actually converting listeners into fans, and tells you which lever is dragging.</p>
+  <a class="cta" href="/?utm_source=loudness-checker&utm_medium=tool&utm_campaign=free-scan">Run the full scan</a>
+</section>
+<h2 style="margin-top:56px">How it measures</h2>
+<p class="small">Whole file, both channels, ITU-R BS.1770-4 K-weighting with gating (integrated). Short-term is a 3-second window, loudness range is the 95th minus 10th percentile of gated short-term blocks, true peak is measured at 4× oversampling. This is the same standard the streaming platforms use for normalization, so the numbers you see here are the numbers they see.</p>
+<script>
+const GENRES=[["Metal",-8.4,-9.7,-7.3],["Punk / Emo",-8.5,-10.2,-7.4],["Dance / EDM",-8.7,-10.4,-7.4],["House",-9.1,-10.4,-8.0],["Alternative",-9.2,-10.9,-8.0],["Rock",-9.2,-11.0,-7.8],["Electronic",-9.3,-11.0,-8.0],["Latin",-9.4,-11.0,-8.2],["Pop",-9.5,-11.2,-8.1],["Afrobeats",-9.5,-10.8,-8.4],["Indie",-9.6,-11.3,-8.3],["R&B / Soul",-9.6,-11.2,-8.3],["Country / Folk",-9.6,-11.4,-8.2],["Hip-Hop / Rap",-9.7,-11.2,-8.5],["Christian / Gospel",-9.9,-12.2,-8.5],["Reggae / Dancehall",-10.1,-11.6,-8.7],["Singer/Songwriter",-10.6,-12.4,-9.2],["Jazz",-12.8,-15.2,-10.8],["Instrumental / Score",-12.9,-16.5,-10.1],["Ambient",-14.1,-17.4,-11.4]];
+const sel=document.getElementById('genre');GENRES.forEach((g,i)=>{const o=document.createElement('option');o.value=i;o.textContent=g[0];if(g[0]==='Pop')o.selected=true;sel.appendChild(o)});
+const drop=document.getElementById('drop'),inp=document.getElementById('file'),st=document.getElementById('status'),res=document.getElementById('results');
+let last=null;
+['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('on')}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('on')}));
+drop.addEventListener('drop',ev=>{if(ev.dataTransfer.files[0])run(ev.dataTransfer.files[0])});
+inp.addEventListener('change',()=>{if(inp.files[0])run(inp.files[0])});
+sel.addEventListener('change',()=>{if(last)renderGenre(last)});
+async function run(file){res.hidden=true;st.hidden=false;st.textContent='Measuring '+file.name+'…';const fd=new FormData();fd.append('file',file);
+ try{const r=await fetch('/api/loudness-check',{method:'POST',body:fd});const j=await r.json();if(!r.ok)throw new Error(j.detail||'Failed');last=j;render(j);st.hidden=true;res.hidden=false;
+  try{if(window.gtag)gtag('event','loudness_check',{lufs:j.lufs_integrated})}catch(e){}}
+ catch(e){st.textContent='Could not measure that file: '+e.message}}
+function fmt(v){return (v>0?'+':'')+v.toFixed(1)}
+function render(j){document.getElementById('lufs').textContent=j.lufs_integrated.toFixed(1);document.getElementById('tp').textContent=(j.true_peak_dbtp>0?'+':'')+j.true_peak_dbtp.toFixed(2);
+ document.getElementById('lra').textContent=j.loudness_range_lu.toFixed(1);document.getElementById('stmax').textContent=j.lufs_short_term_max.toFixed(1);document.getElementById('crest').textContent=j.crest_factor_db.toFixed(1);
+ const c=document.getElementById('clip');c.textContent=j.clipped_samples.toLocaleString();c.className='v '+(j.clipped_samples?'bad':'ok');
+ const tp=document.getElementById('tp');tp.className='v '+(j.true_peak_dbtp>-1?'bad':'ok');
+ const pb=document.getElementById('plat');pb.innerHTML='';const targets={"Spotify":-14,"Apple Music":-16,"YouTube":-14,"Amazon Music":-14,"Tidal":-14,"Deezer":-15};
+ for(const [name,g] of Object.entries(j.platform_gain_db)){const tr=document.createElement('tr');const meaning=g<-0.5?'turned down '+Math.abs(g).toFixed(1)+' dB':(g>0.5?'turned up '+g.toFixed(1)+' dB (if peaks allow)':'played as is');
+  tr.innerHTML=`<td>${name}</td><td>${targets[name]} LUFS</td><td class="n ${g<-0.5?'down':(g>0.5?'up':'')}">${fmt(g)} dB</td><td>${meaning}</td>`;pb.appendChild(tr)}
+ const v=document.getElementById('verdict');const parts=[];
+ if(j.true_peak_dbtp>-1)parts.push(`True peak is ${j.true_peak_dbtp.toFixed(2)} dBTP. Anything above −1 dBTP can distort after lossy encoding; Apple Digital Masters requires −1 or lower.`);
+ if(j.clipped_samples)parts.push(`${j.clipped_samples.toLocaleString()} samples sit at full scale. That is clipping, not loudness.`);
+ if(j.loudness_range_lu<3)parts.push(`Loudness range is ${j.loudness_range_lu.toFixed(1)} LU, flatter than most released masters (the 2026 median is about 2.5 to 3 LU in our study, so you are in the crowd, but there is nothing left to give).`);
+ if(!parts.length)parts.push('Peaks are safe and nothing is clipping. The only question left is whether this level suits your genre, which is the table below.');
+ v.innerHTML=parts.map(p=>`<p style="margin:6px 0">${p}</p>`).join('');renderGenre(j)}
+function renderGenre(j){const g=GENRES[sel.value];const L=j.lufs_integrated;const d=L-g[1];const inBand=L>=g[2]&&L<=g[3];
+ document.getElementById('genrebox').innerHTML=`<table><tr><th>${g[0]} median</th><td class="n">${g[1].toFixed(1)} LUFS</td></tr><tr><th>Middle 50% of ${g[0]} masters</th><td class="n">${g[2].toFixed(1)} to ${g[3].toFixed(1)} LUFS</td></tr><tr><th>Your master</th><td class="n ${inBand?'ok':'bad'}">${L.toFixed(1)} LUFS (${fmt(d)} dB vs median, ${inBand?'inside the band':(L<g[2]?'quieter than the band':'louder than the band')})</td></tr></table>`}
+</script>
+</main></body></html>

@@ -281,6 +281,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Sonic Analyzer", lifespan=lifespan)
 
+# Free loudness checker (2026-09-08) — OFF until the owner flips
+# LOUDNESS_CHECKER_ENABLED=1 on Railway (it is a free upload surface next to
+# the $49 Pro upload; his call). Everything lives in loudness_check.py.
+if os.getenv('LOUDNESS_CHECKER_ENABLED') == '1':
+    try:
+        from loudness_check import router as _loudness_router
+        app.include_router(_loudness_router)
+        print("loudness checker: enabled at /loudness-checker")
+    except Exception as _e:
+        print(f"loudness checker: failed to mount ({_e})")
+
 # CORS — allow the Firebase-hosted frontend + localhost dev + Railway
 app.add_middleware(
     CORSMiddleware,
