@@ -103,6 +103,8 @@ def _scan_push(prefix: str, job_id: str = None, note: str = '', track: str = Non
                 email = j.get('user_email'); source = source or j.get('scan_source')
             except Exception:
                 pass
+        if email and str(email).lower().startswith('scantest-'):
+            return  # daily 7:15am canary scan (Vance Joy / Riptide) stays silent
         lines = [f"{artist or '?'} — {track or '?'}", email or 'no email']
         if source:
             lines.append(f"source: {source}")
