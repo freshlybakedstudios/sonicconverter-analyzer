@@ -329,6 +329,54 @@ def _rec_band(r):
     return p5, p25, p50, p75, p95, in_zone
 
 
+
+def _hatch_lines(x0, x1, h, color, opacity, step=7.0, width=2.2):
+    """45° hatch strictly inside [x0, x1] × [0, h] as explicit lines: no CSS gradients, no patterns, so every
+    PDF viewer draws it (repeating-linear-gradient was invisible in some viewers)."""
+    out = []
+    x = x0 - h
+    while x < x1:
+        ax, ay, bx, by = x, h, x + h, 0.0
+        if ax < x0:
+            ay = h - (x0 - ax); ax = x0
+        if bx > x1:
+            by = bx - x1; bx = x1
+        if bx > ax:
+            out.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{bx:.1f}" y2="{by:.1f}" stroke="{color}" stroke-opacity="{opacity}" stroke-width="{width}"/>')
+        x += step
+    return ''.join(out)
+
+
+def _meter_svg(width_in, zone_l, zone_w, median, dot, dot_cls, fill_to=None, opp=None, ticks=None, h=14.0):
+    """One horizontal meter drawn as inline SVG (units = 1/100 in). Ports .rec-range-bar / .conv-bar."""
+    W = width_in * 100.0
+    px = lambda pct: pct / 100.0 * W
+    top = 5.0
+    s = [f'<svg width="{width_in:.2f}in" height="{(h + 10) / 100:.2f}in" viewBox="0 0 {W:.0f} {h + 10:.0f}" xmlns="http://www.w3.org/2000/svg" style="display:block;overflow:visible">']
+    s.append(f'<defs><linearGradient id="cf" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#5a5a3a"/><stop offset="1" stop-color="#888899"/></linearGradient></defs>')
+    s.append(f'<rect x="0" y="{top}" width="{W:.1f}" height="{h}" rx="{h / 2}" fill="#3a3636"/>')
+    if fill_to is not None and fill_to > 0:
+        s.append(f'<rect x="0" y="{top}" width="{px(fill_to):.1f}" height="{h}" rx="{h / 2}" fill="url(#cf)"/>')
+    if opp and opp[1] > opp[0]:
+        s.append(_hatch_lines(px(opp[0]), px(opp[1]), h, '#D8E166', 0.45).replace('y1="', f'y1="').replace('<line ', f'<g transform="translate(0,{top})"><line ').replace('/>', '/></g>') if False else f'<g transform="translate(0,{top})">' + _hatch_lines(px(opp[0]), px(opp[1]), h, '#D8E166', 0.45) + '</g>')
+    if zone_w:
+        s.append(f'<rect x="{px(zone_l):.1f}" y="{top}" width="{px(zone_w):.1f}" height="{h}" rx="3" fill="#D8E166" fill-opacity="0.16"/>')
+        s.append(f'<g transform="translate(0,{top})">' + _hatch_lines(px(zone_l), px(zone_l + zone_w), h, '#D8E166', 0.55) + '</g>')
+    for t in (ticks or []):
+        s.append(f'<rect x="{px(t["pos"]) - 1:.1f}" y="{top}" width="2" height="{h}" fill="{"#D8E166" if t.get("target") else "#2a2628"}"/>')
+    if median is not None:
+        s.append(f'<rect x="{px(median) - 1:.1f}" y="{top}" width="2" height="{h}" fill="#B5C851"/>')
+    if dot is not None:
+        cx, cy, r = px(dot), top + h / 2, 9.0
+        s.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="#B5C851" stroke="#231f20" stroke-width="2"/>')
+        if dot_cls == 'off-low':
+            s.append(f'<polygon points="{cx + 13:.1f},{cy - 5:.1f} {cx + 20:.1f},{cy:.1f} {cx + 13:.1f},{cy + 5:.1f}" fill="#B5C851"/>')
+        elif dot_cls == 'off-high':
+            s.append(f'<polygon points="{cx - 13:.1f},{cy - 5:.1f} {cx - 20:.1f},{cy:.1f} {cx - 13:.1f},{cy + 5:.1f}" fill="#B5C851"/>')
+    s.append('</svg>')
+    return ''.join(s)
+
+
 def _rec_row_html(r, band):
     you, kind = _num(r.get('you')), r.get('unit_kind')
     p5, p25, p50, p75, p95, in_zone = band
@@ -355,8 +403,7 @@ def _rec_row_html(r, band):
     agree = r.get('agree') or [0, 0]
     return (f'<div class="rr"><div class="rr-head"><span class="rr-dom">{_esc(r.get("domain") or "")}</span>'
             f'<span class="rr-act">{_esc(r.get("action") or "")}</span><span class="rr-move{" inrange" if in_zone else ""}">{_esc(move)}</span></div>'
-            f'<div class="rr-bar"><div class="rr-band" style="left:{zone_l:.1f}%;width:{zone_w:.1f}%"></div>'
-            f'<div class="rr-edge" style="left:{pos(p50):.1f}%"></div><div class="rr-dot{dot_cls}" style="left:{dot:.1f}%"></div></div>'
+            f'<div class="rr-bar">{_meter_svg(6.55, zone_l, zone_w, pos(p50), dot, dot_cls.strip())}</div>'
             f'<div class="rr-leg"><span class="you">You <b>{_esc(you_str)}</b></span><span class="zone">Target zone <b>{_esc(zone_str)}</b></span>'
             f'<span class="ag">{agree[0]}/{agree[1]} agree</span></div></div>')
 
@@ -400,8 +447,9 @@ def _bar_html(fill_pct, dot_pct, labels, ticks=(25, 50, 75, 99), min_gap=9, opp=
     ticks_html = ''.join(f'<div class="tick{" target" if t.get("target") else ""}" style="left:{t["pos"]:.1f}%"></div>' for t in (tick_pos or [{'pos': p} for p in ticks]))
     opp_html = f'<div class="opp" style="left:{opp[0]:.1f}%;width:{max(0.0, opp[1] - opp[0]):.1f}%"></div>' if opp else ''
     labels_html = ''.join(f'<div class="lab{" you" if l.get("you") else ""}{" tgt" if l.get("tgt") else ""}" style="left:{l["pos"]:.1f}%"><span>{_esc(l["name"])}</span><span>{_esc(l["val"])}</span></div>' for l in kept)
-    return (f'<div class="cbar"><div class="fill" style="width:{fill_pct:.1f}%"></div>{opp_html}{ticks_html}'
-            f'<div class="dot" style="left:{dot_pct:.1f}%"></div></div><div class="cbar-labels">{labels_html}</div>')
+    svg = _meter_svg(6.55, 0, 0, None, dot_pct if fill_pct is not None else None, '', fill_to=fill_pct, opp=opp,
+                     ticks=(tick_pos or [{'pos': p} for p in ticks]))
+    return f'<div class="cbar">{svg}</div><div class="cbar-labels">{labels_html}</div>'
 
 
 def _pct_label(pct):
@@ -434,39 +482,48 @@ def _listeners_str(n):
 
 
 def _quadrant_svg(tm, so, pitch, cloud):
-    """Port of the Sonic Quadrant scatter: X = performance percentile, Y = originality, cuts at 75/75."""
+    """Port of the Sonic Quadrant scatter: X = performance percentile, Y = originality, cuts at 75/75.
+    Every style is an inline presentation attribute: WeasyPrint does not apply CSS classes inside inline SVG."""
     W, H, ML, MR, MT, MB = 640, 460, 60, 30, 30, 50
     iw, ih = W - ML - MR, H - MT - MB
     x = lambda v: ML + (v / 100.0) * iw
     y = lambda v: MT + ((100.0 - v) / 100.0) * ih
+    FONT = "font-family=\"'Space Grotesk',Helvetica,Arial,sans-serif\""
     user_perf = round((_num(tm.get('composite_percentile')) or 0) * 100)
     user_orig = _num(so.get('composite_score')) or 0
-    s = [f'<svg class="sq" viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg">']
+    s = [f'<svg viewBox="0 0 {W} {H}" width="{W}" height="{H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;background:#1d1c19;border-radius:6px">']
     for g in (25, 50, 75):
-        s.append(f'<line class="sq-grid" x1="{x(g):.1f}" y1="{MT}" x2="{x(g):.1f}" y2="{MT + ih}"/><line class="sq-grid" x1="{ML}" y1="{y(g):.1f}" x2="{ML + iw}" y2="{y(g):.1f}"/>')
-    s.append(f'<line class="sq-quad" x1="{x(75):.1f}" y1="{MT}" x2="{x(75):.1f}" y2="{MT + ih}"/><line class="sq-quad" x1="{ML}" y1="{y(75):.1f}" x2="{ML + iw}" y2="{y(75):.1f}"/>')
-    s.append(f'<text class="sq-ql" x="{x(50):.1f}" y="{y(95):.1f}" text-anchor="middle">AHEAD OF THE CURVE</text>')
-    s.append(f'<text class="sq-ql success" x="{x(88):.1f}" y="{y(95):.1f}" text-anchor="middle">SIGNATURE OF SUCCESS</text>')
-    s.append(f'<text class="sq-ql stuck" x="{x(50):.1f}" y="{y(8):.1f}" text-anchor="middle">STUCK IN THE PACK</text>')
-    s.append(f'<text class="sq-ql" x="{x(88):.1f}" y="{y(8):.1f}" text-anchor="middle">GENRE-PLAYBOOK WINNER</text>')
-    s.append(f'<line class="sq-axis" x1="{ML}" y1="{MT + ih}" x2="{ML + iw}" y2="{MT + ih}"/><line class="sq-axis" x1="{ML}" y1="{MT}" x2="{ML}" y2="{MT + ih}"/>')
+        s.append(f'<line x1="{x(g):.1f}" y1="{MT}" x2="{x(g):.1f}" y2="{MT + ih}" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>'
+                 f'<line x1="{ML}" y1="{y(g):.1f}" x2="{ML + iw}" y2="{y(g):.1f}" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>')
+    s.append(f'<line x1="{x(75):.1f}" y1="{MT}" x2="{x(75):.1f}" y2="{MT + ih}" stroke="#4ecdc4" stroke-opacity="0.55" stroke-width="1.5" stroke-dasharray="4 4"/>'
+             f'<line x1="{ML}" y1="{y(75):.1f}" x2="{ML + iw}" y2="{y(75):.1f}" stroke="#4ecdc4" stroke-opacity="0.55" stroke-width="1.5" stroke-dasharray="4 4"/>')
+    ql = f'font-size="11" font-weight="700" letter-spacing="0.5" {FONT}'
+    s.append(f'<text x="{x(37.5):.1f}" y="{y(95):.1f}" text-anchor="middle" fill="#4ecdc4" fill-opacity="0.75" {ql}>AHEAD OF THE CURVE</text>')
+    s.append(f'<text x="{x(99):.1f}" y="{y(95):.1f}" text-anchor="end" fill="#d4be8e" fill-opacity="0.9" {ql}>SIGNATURE OF SUCCESS</text>')
+    s.append(f'<text x="{x(37.5):.1f}" y="{y(6):.1f}" text-anchor="middle" fill="#a89568" fill-opacity="0.85" {ql}>STUCK IN THE PACK</text>')
+    s.append(f'<text x="{x(99):.1f}" y="{y(6):.1f}" text-anchor="end" fill="#4ecdc4" fill-opacity="0.75" {ql}>GENRE-PLAYBOOK WINNER</text>')
+    s.append(f'<line x1="{ML}" y1="{MT + ih}" x2="{ML + iw}" y2="{MT + ih}" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1"/>'
+             f'<line x1="{ML}" y1="{MT}" x2="{ML}" y2="{MT + ih}" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1"/>')
+    al = f'font-size="12" fill="#888888" {FONT}'
     for t in (0, 25, 50, 75, 100):
-        s.append(f'<text class="sq-al" x="{x(t):.1f}" y="{MT + ih + 18}" text-anchor="middle">{t}</text><text class="sq-al" x="{ML - 10}" y="{y(t) + 4:.1f}" text-anchor="end">{t}</text>')
-    s.append(f'<text class="sq-at" x="{ML + iw / 2:.1f}" y="{H - 10}" text-anchor="middle">Performance percentile →</text>')
-    s.append(f'<text class="sq-at" x="15" y="{MT + ih / 2:.1f}" text-anchor="middle" transform="rotate(-90 15 {MT + ih / 2:.1f})">Originality score →</text>')
+        s.append(f'<text x="{x(t):.1f}" y="{MT + ih + 18}" text-anchor="middle" {al}>{t}</text><text x="{ML - 10}" y="{y(t) + 4:.1f}" text-anchor="end" {al}>{t}</text>')
+    at = f'font-size="12" font-weight="600" fill="#aaaaaa" {FONT}'
+    s.append(f'<text x="{ML + iw / 2:.1f}" y="{H - 10}" text-anchor="middle" {at}>Performance percentile →</text>')
+    s.append(f'<text x="15" y="{MT + ih / 2:.1f}" text-anchor="middle" transform="rotate(-90 15 {MT + ih / 2:.1f})" {at}>Originality score →</text>')
     pitch = (pitch or [])[:5]
     names = {p.get('name') for p in pitch}
     for p in (cloud or []):
         if p.get('name') in names:
             continue
-        s.append(f'<circle class="sq-cloud" cx="{x(round((_num(p.get("perf_pct")) or 0) * 100)):.1f}" cy="{y(_num(p.get("orig_score")) or 0):.1f}" r="2.5"/>')
+        s.append(f'<circle cx="{x(round((_num(p.get("perf_pct")) or 0) * 100)):.1f}" cy="{y(_num(p.get("orig_score")) or 0):.1f}" r="2.4" fill="#4ecdc4" fill-opacity="0.22"/>')
     for i, p in enumerate(pitch):
         px, py = x(round((_num(p.get('perf_pct')) or 0) * 100)), y(_num(p.get('orig_score')) or 0)
-        s.append(f'<circle class="sq-peer" cx="{px:.1f}" cy="{py:.1f}" r="5"/>')
+        s.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="5" fill="#4ecdc4" fill-opacity="0.6" stroke="#4ecdc4" stroke-opacity="0.9" stroke-width="1"/>')
         dx, dy = ((8, 3), (-8, 3), (8, 15), (-8, -9), (8, -9))[i % 5]
-        s.append(f'<text class="sq-pl" x="{px + dx:.1f}" y="{py + dy:.1f}" text-anchor="{"start" if dx > 0 else "end"}">{_esc(p.get("name") or "")}</text>')
+        s.append(f'<text x="{px + dx:.1f}" y="{py + dy:.1f}" text-anchor="{"start" if dx > 0 else "end"}" font-size="10" fill="#cccccc" {FONT}>{_esc(p.get("name") or "")}</text>')
     ux, uy = x(user_perf), y(user_orig)
-    s.append(f'<circle class="sq-user" cx="{ux:.1f}" cy="{uy:.1f}" r="10"/><text class="sq-ul" x="{ux + 14:.1f}" y="{uy + 4:.1f}">You ({user_perf}, {round(user_orig)})</text></svg>')
+    s.append(f'<circle cx="{ux:.1f}" cy="{uy:.1f}" r="10" fill="#d4be8e" stroke="#ffffff" stroke-width="2"/>'
+             f'<text x="{ux + 14:.1f}" y="{uy + 4:.1f}" font-size="12" font-weight="700" fill="#d4be8e" {FONT}>You ({user_perf}, {round(user_orig)})</text></svg>')
     return ''.join(s)
 
 
@@ -510,14 +567,23 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
             continue
         w = min(100.0, v / 0.30 * 100)
         zone_html, cls = '', ''
+        p25 = p75 = 0.0
         r = rmap.get(key_)
         if r and r.get('percentiles'):
             _, p25, _, p75, _, in_zone = _rec_band(r)
-            zone_html = f'<div class="zone" style="left:{p25 / 0.30 * 100:.1f}%;width:{max(0.5, (p75 - p25) / 0.30 * 100):.1f}%"></div>'
             if not in_zone:
                 cls = ' out'
                 out_bands.append((name, 'light' if v < p25 else 'heavy'))
-        rows += f'<div class="row"><div class="lab">{name}</div><div class="track">{zone_html}<div class="fill{cls}" style="width:{w:.1f}%"></div></div><div class="val{cls}">{v * 100:.1f}%</div></div>'
+        zl = (p25 / 0.30 * 100) if (r and r.get('percentiles')) else 0
+        zw = max(0.5, (p75 - p25) / 0.30 * 100) if (r and r.get('percentiles')) else 0
+        FW = 500.0
+        tr = (f'<svg width="5.0in" height=".16in" viewBox="0 0 {FW:.0f} 16" xmlns="http://www.w3.org/2000/svg" style="display:block">'
+              f'<rect x="0" y="1" width="{FW:.0f}" height="14" rx="3" fill="#2a2925"/>'
+              f'<rect x="0" y="1" width="{min(100, w) / 100 * FW:.1f}" height="14" rx="3" fill="{"#D8E166" if cls else "#B5C851"}"/>'
+              + (f'<rect x="{zl / 100 * FW:.1f}" y="1" width="{zw / 100 * FW:.1f}" height="14" fill="#D8E166" fill-opacity="0.18"/>'
+                 f'<g transform="translate(0,1)">{_hatch_lines(zl / 100 * FW, (zl + zw) / 100 * FW, 14, "#D8E166", 0.7)}</g>' if zw else '')
+              + '</svg>')
+        rows += f'<div class="row"><div class="lab">{name}</div><div class="track">{tr}</div><div class="val{cls}">{v * 100:.1f}%</div></div>'
     cohort_n = so.get('cohort_size') or ((rmap.get('mid_ratio') or {}).get('agree') or [0, 0])[1]
     if out_bands:
         plural = {'Mid': 'mids are', 'Low-Mid': 'low-mids are', 'Hi-Mid': 'hi-mids are'}
@@ -720,14 +786,14 @@ h3{font-size:8.5pt;letter-spacing:.14em;text-transform:uppercase;color:#8D8F59;m
 .meta div{min-width:1.1in} .meta b{display:block;font-size:17pt;color:#fff;font-weight:700;line-height:1.1} .meta span{font-size:8pt;letter-spacing:.12em;text-transform:uppercase;color:#8D8F59}
 .card{background:#201f1c;border:1px solid #2f2e29;border-radius:8px;padding:.14in .18in;margin-top:.12in}
 .tiles{display:flex;gap:.08in} .tile{flex:1;background:#201f1c;border:1px solid #2f2e29;border-radius:8px;padding:.12in .06in;text-align:center} .tile b{display:block;font-family:'Londrina Solid',Impact,sans-serif;font-size:22pt;color:#D8E166;line-height:1} .tile span{display:block;font-size:8pt;letter-spacing:.12em;text-transform:uppercase;color:#8D8F59;margin-top:.04in} .tile small{display:block;font-size:7.5pt;color:#6f7050;margin-top:.02in}
-.row{display:flex;align-items:center;gap:.12in;margin:.055in 0} .lab{width:.85in;font-size:9.5pt;color:#BABC95} .track{position:relative;flex:1;height:.14in;background:#2a2925;border-radius:3px;overflow:hidden} .track .fill{position:absolute;left:0;top:0;bottom:0;background:#B5C851;border-radius:3px} .track .fill.out{background:#D8E166} .track .zone{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,#D8E166 0,#D8E166 2px,transparent 2px,transparent 6px);opacity:.45} .val{width:.55in;text-align:right;font-size:9.5pt;color:#BABC95} .val.out{color:#D8E166;font-weight:700}
+.row{display:flex;align-items:center;gap:.12in;margin:.055in 0} .lab{width:.85in;font-size:9.5pt;color:#BABC95} .track{flex:1;height:.16in} .track .fill{position:absolute;left:0;top:0;bottom:0;background:#B5C851;border-radius:3px} .track .fill.out{background:#D8E166} .track .zone{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,#D8E166 0,#D8E166 2px,transparent 2px,transparent 6px);opacity:.45} .val{width:.55in;text-align:right;font-size:9.5pt;color:#BABC95} .val.out{color:#D8E166;font-weight:700}
 .chips{display:flex;gap:.08in;flex-wrap:wrap} .chip{border:1px solid #4a4a37;border-radius:999px;padding:.03in .13in;font-size:9.5pt;color:#DEE6B8} .chip b{color:#D8E166;font-weight:700;margin-left:.06in}
 .note{font-size:9.5pt;color:#8D8F59;margin-top:.08in}
 .grid2{display:flex;gap:.14in} .grid2>*{flex:1;min-width:0}
 .panel-title{font-size:13pt;font-weight:700;color:#DEE6B8;margin:.04in 0 .02in} .panel-title .sub{font-size:9pt;font-weight:400;color:#8D8F59;margin-left:.08in}
 .tag{font-size:9.5pt;color:#8D8F59;margin-bottom:.1in}
 /* conv-bar port */
-.cbar{position:relative;height:.16in;background:#3a3636;border-radius:.08in;overflow:visible;margin-top:.06in}
+.cbar{margin-top:.04in}
 .cbar .fill{position:absolute;left:0;top:0;height:.16in;border-radius:.08in 0 0 .08in;background:linear-gradient(90deg,#5a5a3a 0%,#888899 100%)}
 .cbar .opp{position:absolute;top:0;height:.16in;background:repeating-linear-gradient(135deg,#D8E166 0,#D8E166 3px,transparent 3px,transparent 7px);opacity:.4}
 .cbar .tick{position:absolute;top:0;width:2px;height:.16in;background:rgba(64,56,58,.9)} .cbar .tick.target{background:#D8E166}
@@ -745,7 +811,7 @@ h3{font-size:8.5pt;letter-spacing:.14em;text-transform:uppercase;color:#8D8F59;m
 /* rec meters (rec-range port) */
 .rr-group{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#888899;margin:.1in 0 .04in} .rr-group.strengths{color:#B0C936;margin-top:.14in}
 .rr{margin:.06in 0 .1in} .rr-head{display:flex;align-items:baseline;gap:.08in;font-size:9.5pt;color:#e8e8f0;margin-bottom:.05in} .rr-dom{font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#B5C851;background:rgba(216,225,102,.25);padding:1px 6px;border-radius:4px;white-space:nowrap} .rr-act{flex:1} .rr-move{white-space:nowrap;font-size:9pt;font-weight:700;color:#D8E166} .rr-move.inrange{color:#B0C936}
-.rr-bar{position:relative;height:.14in;background:#3a3636;border-radius:.07in;margin-bottom:.04in} .rr-band{position:absolute;top:0;height:.14in;border-radius:3px;background:repeating-linear-gradient(135deg,#D8E166 0,#D8E166 3px,transparent 3px,transparent 7px);opacity:.5} .rr-edge{position:absolute;top:0;width:2px;height:.14in;background:#B5C851} .rr-dot{position:absolute;top:-.03in;width:.18in;height:.18in;border-radius:50%;background:#B5C851;border:2px solid #231f20;transform:translateX(-50%)}
+.rr-bar{margin-bottom:.03in} .rr-band{position:absolute;top:0;height:.14in;border-radius:3px;background:repeating-linear-gradient(135deg,#D8E166 0,#D8E166 3px,transparent 3px,transparent 7px);opacity:.5} .rr-edge{position:absolute;top:0;width:2px;height:.14in;background:#B5C851} .rr-dot{position:absolute;top:-.03in;width:.18in;height:.18in;border-radius:50%;background:#B5C851;border:2px solid #231f20;transform:translateX(-50%)}
 .rr-dot.off-low::after,.rr-dot.off-high::after{content:'';position:absolute;top:4px;border:5px solid transparent} .rr-dot.off-low::after{left:15px;border-left-color:#B5C851} .rr-dot.off-high::after{right:15px;border-right-color:#B5C851}
 .rr-leg{display:flex;gap:.16in;font-size:8.5pt;color:#888899} .rr-leg b{color:#e8e8f0;font-weight:600} .rr-leg .you b{color:#B5C851} .rr-leg .zone b{color:#D8E166}
 /* tables */
