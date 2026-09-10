@@ -306,6 +306,10 @@ def send_results_email(name: str, email: str, analysis: Dict) -> bool:
     # analyzer@ has no inbox — route replies to the owner (audit 2026-07-20).
     from sendgrid.helpers.mail import ReplyTo as _ReplyTo
     message.reply_to = _ReplyTo('almgren@freshlybakedstudios.com', 'Alexander Almgren')
+    # Transactional stream rides production_pool2 (159.183.213.233), same as the
+    # deal nurture and password-reset mail; cold outreach is pinned to pool1 (2026-09-10).
+    from sendgrid.helpers.mail import IpPoolName as _IpPoolName
+    message.ip_pool_name = _IpPoolName('production_pool2')
 
     try:
         sg = SendGridAPIClient(api_key)
