@@ -7854,6 +7854,14 @@ async def _nurture_loop():
     while True:
         try:
             await asyncio.sleep(_NURTURE_POLL_SECONDS)
+            # 2026-09-11: the supabase-py client's HTTP/2 connection is closed by
+            # the server during the 10-min idle sleep; the first call after idle
+            # raises ConnectionTerminated. Build a fresh client right before each
+            # tick (cheap, no network) so every tick starts on a live connection.
+            _url, _key = os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_SERVICE_KEY')
+            if _url and _key:
+                supabase = create_client(_url, _key)
+                job_mgr.set_supabase(supabase)
             if os.getenv('NURTURE_ENABLED', 'false').lower() == 'true' and supabase:
                 loop = asyncio.get_event_loop()
                 res = await loop.run_in_executor(
