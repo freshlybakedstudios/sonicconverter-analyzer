@@ -7860,7 +7860,15 @@ async def _nurture_loop():
             # tick (cheap, no network) so every tick starts on a live connection.
             _url, _key = os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_SERVICE_KEY')
             if _url and _key:
-                supabase = create_client(_url, _key)
+                # postgrest-py 2.31 opens httpx with http2=True; Supabase's edge
+                # answers GOAWAY (ConnectionTerminated, last_stream_id:3) partway
+                # through the tick's request burst. Hand supabase-py an HTTP/1.1
+                # client instead: postgrest passes absolute URLs + its own headers
+                # to session.request(), so a bare httpx.Client is enough.
+                import httpx as _httpx
+                from supabase.lib.client_options import SyncClientOptions as _SyncOpts
+                supabase = create_client(_url, _key, options=_SyncOpts(
+                    httpx_client=_httpx.Client(http2=False, timeout=30, follow_redirects=True)))
                 job_mgr.set_supabase(supabase)
             if os.getenv('NURTURE_ENABLED', 'false').lower() == 'true' and supabase:
                 loop = asyncio.get_event_loop()
@@ -7895,7 +7903,8 @@ async def _nurture_loop():
                           f"precall={bres.get('precall_due')} noshow={bres.get('noshow_due')} "
                           f"sent={bres.get('sent')}", flush=True)
         except Exception as e:
-            print(f"[nurture] scheduler error: {e}", flush=True)
+            import traceback as _tb
+            print(f"[nurture] scheduler error: {e}\n{_tb.format_exc()[-600:]}", flush=True)
             # 2026-09-11: after an idle stretch the shared supabase-py client's
             # HTTP/2 connection dies (h2 ConnectionTerminated / RemoteProtocolError)
             # and never recovers, so every later tick fails silently. Rebuild the
