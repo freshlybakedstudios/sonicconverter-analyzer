@@ -7847,6 +7847,7 @@ _NURTURE_POLL_SECONDS = 600  # every 10 min; touch-1 due 30 min after abandon â†
 
 
 async def _nurture_loop():
+    global supabase
     """In-app poller (started from lifespan) so follow-ups fire ~30 min after a
     lead leaves the site, without an external cron. Single uvicorn worker =>
     no duplicate sends. Only sends when NURTURE_ENABLED=true (read fresh each loop)."""
@@ -7887,6 +7888,19 @@ async def _nurture_loop():
                           f"sent={bres.get('sent')}", flush=True)
         except Exception as e:
             print(f"[nurture] scheduler error: {e}", flush=True)
+            # 2026-09-11: after an idle stretch the shared supabase-py client's
+            # HTTP/2 connection dies (h2 ConnectionTerminated / RemoteProtocolError)
+            # and never recovers, so every later tick fails silently. Rebuild the
+            # client so the next tick starts on a fresh connection.
+            if 'ConnectionTerminated' in str(e) or 'RemoteProtocolError' in type(e).__name__ or 'ConnectionTerminated' in type(e).__name__:
+                try:
+                    _url, _key = os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_SERVICE_KEY')
+                    if _url and _key:
+                        supabase = create_client(_url, _key)
+                        job_mgr.set_supabase(supabase)
+                        print("[nurture] supabase client rebuilt after dead connection", flush=True)
+                except Exception as e2:
+                    print(f"[nurture] client rebuild failed: {e2}", flush=True)
 
 
 # ---------------------------------------------------------------------------
