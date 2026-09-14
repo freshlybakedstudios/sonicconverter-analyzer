@@ -163,7 +163,9 @@ def poll_retryable_jobs():
     """
     try:
         from datetime import datetime, timezone, timedelta
-        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=RETRY_WINDOW)).isoformat()
+        # 2026-09-14: isoformat() emits "+00:00"; the raw "+" reaches PostgREST as a space -> HTTP 400,
+        # so this poll silently matched nothing since it was written. "Z" form is accepted.
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=RETRY_WINDOW)).strftime("%Y-%m-%dT%H:%M:%SZ")
         resp = requests.get(
             f"{SUPABASE_URL}/rest/v1/analysis_jobs"
             f"?status=in.(error,capture_failed,extraction_failed)"
