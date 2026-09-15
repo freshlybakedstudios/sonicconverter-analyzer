@@ -4823,6 +4823,32 @@ async def stream_enrichment(job_id: str):
 # ---------------------------------------------------------------------------
 # Restore-on-refresh: the session's most recent scan, full payload
 # ---------------------------------------------------------------------------
+
+_SPOTIFY_TRACK_RE = re.compile(r'spotify\.com/(?:intl-[a-z]{2,3}(?:-[a-z]{2})?/)?track/([A-Za-z0-9]{22})')
+
+def _normalize_spotify_track_url(raw: str):
+    """Accept every shape a Spotify share sheet produces and return the canonical
+    https://open.spotify.com/track/<id> form, or None if it isn't a track link.
+    2026-09-14: the old check was a literal 'open.spotify.com/track/' substring, so
+    locale links (open.spotify.com/intl-de/track/...) and the phone app's
+    spotify.link short links were rejected as "not a valid Spotify track URL"."""
+    u = (raw or '').strip()
+    if not u:
+        return None
+    if 'spotify:track:' in u:
+        tid = u.split('spotify:track:')[1].split('?')[0].split('&')[0][:22]
+        return f'https://open.spotify.com/track/{tid}' if len(tid) == 22 else None
+    if 'spotify.link/' in u or 'spotify.app.link/' in u:
+        try:
+            r = requests.get(u, allow_redirects=True, timeout=8,
+                             headers={'User-Agent': 'Mozilla/5.0'})
+            u = r.url or u
+        except Exception as e:
+            print(f"  spotify.link resolve failed: {e}")
+            return None
+    m = _SPOTIFY_TRACK_RE.search(u)
+    return f'https://open.spotify.com/track/{m.group(1)}' if m else None
+
 @app.post("/api/analyze-url-queue")
 async def analyze_url_queue(
     spotify_url: str = Form(...),
@@ -4835,8 +4861,10 @@ async def analyze_url_queue(
     report page, and the completion email."""
     lead = _validate_session(token)
     _check_scan_cap(lead)
-    if 'open.spotify.com/track/' not in spotify_url and 'spotify:track:' not in spotify_url:
+    _canon = _normalize_spotify_track_url(spotify_url)
+    if not _canon:
         raise HTTPException(400, "Please provide a valid Spotify track URL")
+    spotify_url = _canon
 
     import uuid as _uuid
     jid = str(_uuid.uuid4())
@@ -5418,8 +5446,10 @@ async def analyze_url(
             queued_job_id = None
 
     # Validate Spotify URL
-    if 'open.spotify.com/track/' not in spotify_url and 'spotify:track:' not in spotify_url:
+    _canon = _normalize_spotify_track_url(spotify_url)
+    if not _canon:
         raise HTTPException(400, "Please provide a valid Spotify track URL")
+    spotify_url = _canon
 
     # Extract track ID
     if 'spotify:track:' in spotify_url:

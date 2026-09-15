@@ -625,19 +625,37 @@ document.addEventListener('DOMContentLoaded', () => {
 $('#analyze-btn').addEventListener('click', analyzeTrack);
 
 async function analyzeTrack() {
-  if (!accessToken) return;
+  // 2026-09-14: these two used to `return` silently, which read as "the
+  // scan button does nothing". Say why and send them to the right place.
+  if (!accessToken) {
+    alert('Your session ended — please log in again to scan.');
+    show($('#auth-section'));
+    scrollToRegister();
+    return;
+  }
   const genre = $('#genre-select').value;
 
   if (inputMode === 'file') {
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      alert('Choose an audio file first (MP3, WAV, AIFF, FLAC, OGG, M4A, AAC).');
+      return;
+    }
     if (!genre) {
       alert('Please select a genre before analyzing.');
       return;
     }
   } else {
-    const urlVal = ($('#spotify-track-url') || {}).value || '';
-    if (!urlVal.includes('spotify.com/track/') && !urlVal.includes('spotify:track:')) {
-      alert('Please enter a valid Spotify track URL');
+    const urlVal = (($('#spotify-track-url') || {}).value || '').trim();
+    // Accept every shape the Spotify share sheet produces: open.spotify.com/track/…,
+    // locale links (open.spotify.com/intl-de/track/…), spotify:track:…, and the phone
+    // app's spotify.link short links (the server resolves those).
+    const looksLikeTrack = /spotify\.com\/(?:intl-[a-z]{2,3}(?:-[a-z]{2})?\/)?track\//i.test(urlVal)
+      || urlVal.includes('spotify:track:')
+      || /spotify(\.app)?\.link\//i.test(urlVal);
+    if (!looksLikeTrack) {
+      alert(/spotify\.com\/(album|artist|playlist)\//i.test(urlVal)
+        ? 'That is a Spotify album, artist, or playlist link. Paste the link to one track.'
+        : 'Please paste a Spotify track link (Share → Copy link on the song).');
       return;
     }
     // Genre is optional for URL mode — CM will provide it
