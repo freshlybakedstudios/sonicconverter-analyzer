@@ -695,6 +695,7 @@ def extract_features_from_audio(audio: np.ndarray, audio_stereo: np.ndarray = No
 # ---------------------------------------------------------------------------
 def process_job(job: dict, loopback_device: int):
     """Process a single pending_features job using GEMS-style capture."""
+    global _WEDGED_RESTART
     job_id = job['id']
     spotify_url = job.get('spotify_url', '')
     # Fallback: check progress field (older jobs stored URL there)
@@ -809,6 +810,34 @@ def process_job(job: dict, loopback_device: int):
         except Exception:
             return False
 
+    # 2026-09-15 pre-flight: a stale CoreAudio handle fails to OPEN (PaErrorCode
+    # -9986). That is not "no signal", and nudging Spotify five times cannot fix
+    # it. Refresh the device list once; if it still won't open, hand the job back
+    # to the queue and restart for fresh devices instead of burning 45 s, the job,
+    # and the scanner's patience.
+    def _can_open(idx):
+        try:
+            sd.rec(int(0.2 * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=2,
+                   device=idx, blocking=True)
+            return True
+        except Exception as e:
+            print(f"[{job_id[:8]}] pre-flight open failed on device {idx}: {str(e)[:90]}")
+            return False
+    if not _can_open(loopback_device):
+        _fresh = _find_loopback_device(retry_coreaudio=False)
+        if _fresh is not None and _can_open(_fresh):
+            print(f"[{job_id[:8]}] audio device refreshed -> index {_fresh}, continuing")
+            loopback_device = _fresh
+        else:
+            _WEDGED_RESTART = True
+            try:
+                _pause_playback()
+            except Exception:
+                pass
+            update_job(job_id, 'pending_features')
+            print(f"[{job_id[:8]}] audio device wedged before capture — job requeued, restarting worker for fresh CoreAudio devices")
+            return
+
     for routing_try in range(5):
         if _loopback_has_signal():
             if routing_try:
@@ -903,7 +932,6 @@ def process_job(job: dict, loopback_device: int):
             # the process kept living with the wedged PortAudio state and
             # every later capture failed too (2026-08-18, the Shot In The
             # Dark scan). Set the flag; the MAIN thread exits after cleanup.
-            global _WEDGED_RESTART
             _WEDGED_RESTART = True
             print("Audio input stream is wedged (stale CoreAudio device) — flagging for restart after cleanup")
         return
@@ -1018,6 +1046,17 @@ def main():
 
     def _ensure_loopback(current_idx):
         """Re-validate loopback device before each job. Returns new index or None."""
+        # 2026-09-15: the name check below passes on a STALE handle (the cached
+        # index still reads "spotify loopback" while every open fails with
+        # PaErrorCode -9986: Loopback/Audio Hijack/iPhone-mic/Pro Tools bridges
+        # churn the CoreAudio device list under us). Re-enumerate PortAudio
+        # before every job; it costs milliseconds and clears the stale state.
+        try:
+            fresh = _find_loopback_device(retry_coreaudio=False)
+            if fresh is not None:
+                return fresh
+        except Exception as e:
+            print(f"device refresh failed (falling back to cached index): {e}")
         try:
             dev = sd.query_devices(current_idx)
             name = dev['name'].lower()
