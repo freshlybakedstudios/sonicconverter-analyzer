@@ -1449,7 +1449,12 @@ def _genres_from_meta(meta: dict) -> str | None:
             names.append(primary['name'])
         elif isinstance(primary, str) and primary.strip():
             names.append(primary.strip())
-        for s in (g.get('secondary') or []):
+        _sec = g.get('secondary') or []
+        if isinstance(_sec, str):
+            # CM sometimes sends a bare string here; iterating it char-splits
+            # ("Others" -> O, t, h, e, r, s). Seen on 4 of 65 scans, 2026-09-16.
+            _sec = [_sec]
+        for s in _sec:
             if isinstance(s, dict) and s.get('name'):
                 names.append(s['name'])
             elif isinstance(s, str) and s.strip():
@@ -1465,7 +1470,10 @@ def _genres_from_meta(meta: dict) -> str | None:
     if not names and isinstance(meta.get('genre'), str) and meta['genre'].strip():
         names.append(meta['genre'].strip())
     if not names:
-        for t in (meta.get('tags') or []):
+        _tags = meta.get('tags') or []
+        if isinstance(_tags, str):
+            _tags = [_tags]
+        for t in _tags:
             if isinstance(t, str) and t.strip():
                 names.append(t.strip())
     seen, out = set(), []

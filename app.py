@@ -955,6 +955,26 @@ TIER_RANGES = {
 }
 
 
+def _thin_identity_scan(dropdown_genre, user_tier: str, sp_artist_genres) -> bool:
+    """Should this scan skip the genre lane and rank on measured sound alone?
+
+    2026-09-19 (Martin Brown, artist name "Spencer Brown"): a 55-follower
+    artist with NO genres on Spotify was filed under dance/electronic because
+    Chartmetric carried the tags of a famous namesake; the lane then produced
+    club neighbours for a 70 BPM ballad, and a different lane on every re-scan
+    (pop, rock, dance). At micro tier, when Spotify itself lists no genre,
+    every other genre source is an uncorroborated guess, and the candidates at
+    that tier are mostly genre-less too (13 of 20 sampled). So: no lane, rank
+    on the sonics we measure on both sides. The user's explicit dropdown pick
+    always wins. Unknown Spotify state (lookup failed) keeps the old path.
+    """
+    if dropdown_genre:
+        return False
+    if user_tier != 'micro':
+        return False
+    return isinstance(sp_artist_genres, list) and len(sp_artist_genres) == 0
+
+
 def _listeners_to_tier(listeners: int) -> str:
     for tier, (lo, hi) in TIER_RANGES.items():
         if lo <= listeners < hi:
@@ -5472,6 +5492,10 @@ async def analyze_url(
     cm_data = None
     user_cm_id = None
 
+    # Spotify's OWN genre list for the primary artist (None = lookup unknown,
+    # [] = Spotify lists nothing). Drives the thin-identity rule below.
+    sp_artist_genres = None
+    _thin_identity = False
     # Try primary Spotify credentials, fall back to backup on 429
     sp_creds = [(sp_token, sp_secret)]
     sp_backup_id = os.getenv('SPOTIFY_CLIENT_ID_BACKUP')
@@ -5512,6 +5536,21 @@ async def analyze_url(
                     if artists:
                         ext_urls = artists[0].get('external_urls', {})
                         artist_spotify_url = ext_urls.get('spotify', '')
+                        # Thin-identity check (2026-09-19, the Spencer Brown
+                        # case): Spotify's OWN genre list for the artist. An
+                        # empty list at micro tier means every other genre
+                        # source (CM tags, gems snapshot) is a guess that can
+                        # be inherited from a namesake. One extra call, ~200ms.
+                        try:
+                            _sp_art = requests.get(
+                                f"https://api.spotify.com/v1/artists/{artists[0].get('id')}",
+                                headers={'Authorization': f'Bearer {sp_bearer}'},
+                                timeout=10,
+                            )
+                            if _sp_art.status_code == 200:
+                                sp_artist_genres = list(_sp_art.json().get('genres') or [])
+                        except Exception as _e:
+                            print(f"  URL analysis: Spotify artist genres lookup failed: {_e}")
                     break
         except Exception as e:
             print(f"Spotify API failed: {e}")
@@ -5925,8 +5964,19 @@ async def analyze_url(
     user_tier = _listeners_to_tier(user_monthly) if user_monthly else 'micro'
     fetch_n = 20000
 
+    # Thin-identity scans (micro tier, Spotify lists no genre for the artist)
+    # skip the genre lane entirely: no genre hints into the matcher, no family
+    # filter below. See _thin_identity_scan for the Spencer Brown case.
+    _thin_identity = _thin_identity_scan(dropdown_genre, user_tier, sp_artist_genres)
+    if _thin_identity:
+        print(f"  Thin-identity scan: tier={user_tier}, Spotify genres=[] -> genre lane OFF, "
+              f"ranking on measured sound only (ignored: track='{track_genre}' "
+              f"artist='{artist_genre}' pick='{genre}')")
+
     all_found = matcher.find_matches(
-        features, genre_hint=genre or '', artist_genre_hint=artist_genre or '',
+        features,
+        genre_hint='' if _thin_identity else (genre or ''),
+        artist_genre_hint='' if _thin_identity else (artist_genre or ''),
         top_n=fetch_n, threshold=0.55,
     )
 
@@ -6027,6 +6077,14 @@ async def analyze_url(
     artist_user_families = user_lane_families(artist_genre or '')
     # Kept broad (track ∪ artist) for the looser flattery pass downstream.
     user_families = track_user_families | artist_user_families
+    if _thin_identity:
+        # No lane at all: match_in_lane passes everything on an empty set, the
+        # lane-conditional trajectory gates below skip, so the pool IS the
+        # sonic ranking (holiday/children's stay blocked by is_blocked_genre).
+        track_user_families = set()
+        artist_user_families = set()
+        user_families = set()
+        _faith_filter = False
 
     # Canonical gate — shared single source of truth in track_matcher.py
     # (match_in_lane / in_lane_families). Rules: sparse-data drop, cf-overlap
@@ -6523,6 +6581,10 @@ async def analyze_url(
             'track_genres': track_genre_display or track_genre or '',
             'artist_genres': artist_genre or '',
             'match_genre': genre or '',   # what actually drove the match (dropdown > track > artist)
+            # 2026-09-19: 'sonic_only' = thin-identity scan, the genre lane was skipped
+            'lane_mode': 'sonic_only' if _thin_identity else 'genre_lane',
+            'lane_note': ('Spotify lists no genre for this artist yet, so matches are ranked '
+                          'on measured sound alone, not on genre labels.') if _thin_identity else '',
             'artist_tier': track_artist_cm_data.get('tier', '') if track_artist_cm_data else '',
             'artist_listeners': track_artist_cm_data.get('listeners', 0) if track_artist_cm_data else 0,
             'preview_used': features is not None and preview_url is not None,
