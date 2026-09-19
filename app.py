@@ -5496,6 +5496,7 @@ async def analyze_url(
     # [] = Spotify lists nothing). Drives the thin-identity rule below.
     sp_artist_genres = None
     _thin_identity = False
+    _inferred_lane = set()
     # Try primary Spotify credentials, fall back to backup on 429
     sp_creds = [(sp_token, sp_secret)]
     sp_backup_id = os.getenv('SPOTIFY_CLIENT_ID_BACKUP')
@@ -5980,6 +5981,27 @@ async def analyze_url(
         top_n=fetch_n, threshold=0.55,
     )
 
+    # Sound-inferred lane (2026-09-19, step two of the thin-identity fix):
+    # with no trustworthy tags on the user's side, let the track's own sonic
+    # neighbourhood name the lane. Count primary-genre families over the top
+    # 500 sonic neighbours; any family carrying >= 15% of them is the lane.
+    # Martin Brown's 70 BPM ballad: pop 30%, country/electronic ~11% -> lane
+    # {pop}; the top 20 went from a genre grab-bag (dnb, hip-hop, blues) to
+    # art pop / indie pop neighbours. Nothing dominant -> stays laneless.
+    _inferred_lane = set()
+    if _thin_identity and all_found:
+        _k = min(500, len(all_found))
+        _fam_counts = {}
+        for _m in all_found[:_k]:
+            _p = (_m.get('primary_genre') or '').strip()
+            for _f in (_genre_families(_p) if _p else set()):
+                _fam_counts[_f] = _fam_counts.get(_f, 0) + 1
+        _inferred_lane = {f for f, c in _fam_counts.items() if c >= 0.15 * _k}
+        _top_fams = {f: round(100 * c / _k, 1)
+                     for f, c in sorted(_fam_counts.items(), key=lambda x: -x[1])[:6]}
+        print(f"  Thin-identity lane from sound: top {_k} neighbours -> {_top_fams} "
+              f"=> lane {sorted(_inferred_lane) or '(none, sonic rank only)'}")
+
     # Track-to-track genre family filter. The user side is the TRACK's OWN genre
     # (the tightening) — never the artist's back-catalog union, which is what used
     # to let an alternative track inherit a country/reggae lane. The candidate side
@@ -6078,13 +6100,15 @@ async def analyze_url(
     # Kept broad (track ∪ artist) for the looser flattery pass downstream.
     user_families = track_user_families | artist_user_families
     if _thin_identity:
-        # No lane at all: match_in_lane passes everything on an empty set, the
-        # lane-conditional trajectory gates below skip, so the pool IS the
+        # Lane = the sound-inferred families (or none). The inherited tags
+        # never reach the gates. On an empty lane match_in_lane passes
+        # everything and the lane-conditional gates skip, so the pool IS the
         # sonic ranking (holiday/children's stay blocked by is_blocked_genre).
-        track_user_families = set()
+        track_user_families = set(_inferred_lane)
         artist_user_families = set()
-        user_families = set()
+        user_families = set(_inferred_lane)
         _faith_filter = False
+        _lane_vetoed = True   # downstream reads aggression/primary from the lane, never the tags
 
     # Canonical gate — shared single source of truth in track_matcher.py
     # (match_in_lane / in_lane_families). Rules: sparse-data drop, cf-overlap
@@ -6110,6 +6134,11 @@ async def analyze_url(
     # Safety relax — if the track lane starves the pool, widen to the artist
     # family union so the user never gets a near-empty result.
     MIN_AFTER_TRACK_FILTER = 25
+    if _thin_identity and track_user_families and len(track_filtered) < MIN_AFTER_TRACK_FILTER:
+        print(f"  Thin-identity lane {sorted(track_user_families)} starved the pool "
+              f"({len(track_filtered)} < {MIN_AFTER_TRACK_FILTER}); dropping the lane, sonic rank only")
+        track_user_families = set(); user_families = set(); _inferred_lane = set()
+        track_filtered = list(all_found)
     if (track_user_families and artist_user_families
             and len(track_filtered) < MIN_AFTER_TRACK_FILTER):
         relaxed = track_user_families | artist_user_families
@@ -6580,11 +6609,20 @@ async def analyze_url(
             # `track_genre` (gems-first) — display divergence is intentional.
             'track_genres': track_genre_display or track_genre or '',
             'artist_genres': artist_genre or '',
-            'match_genre': genre or '',   # what actually drove the match (dropdown > track > artist)
-            # 2026-09-19: 'sonic_only' = thin-identity scan, the genre lane was skipped
+            # What actually drove the match (dropdown > track > artist). For a
+            # thin-identity scan it is the lane the SOUND pointed at, or nothing.
+            'match_genre': (', '.join(sorted(_inferred_lane)) if _thin_identity else (genre or '')),
+            # 2026-09-19: 'sonic_only' = thin-identity scan, tag-derived lane skipped
             'lane_mode': 'sonic_only' if _thin_identity else 'genre_lane',
-            'lane_note': ('Spotify lists no genre for this artist yet, so matches are ranked '
-                          'on measured sound alone, not on genre labels.') if _thin_identity else '',
+            'inferred_lane': ', '.join(sorted(_inferred_lane)) if _thin_identity else '',
+            'lane_note': (
+                ('Spotify lists no genre for this artist yet, so the genre labels were ignored: '
+                 'matches were ranked on measured sound, and the sound sits closest to '
+                 + ', '.join(sorted(_inferred_lane)) + ', which set the lane.')
+                if _inferred_lane else
+                'Spotify lists no genre for this artist yet, so matches are ranked on measured '
+                'sound alone, not on genre labels.'
+            ) if _thin_identity else '',
             'artist_tier': track_artist_cm_data.get('tier', '') if track_artist_cm_data else '',
             'artist_listeners': track_artist_cm_data.get('listeners', 0) if track_artist_cm_data else 0,
             'preview_used': features is not None and preview_url is not None,
