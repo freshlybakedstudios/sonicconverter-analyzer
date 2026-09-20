@@ -50,6 +50,15 @@ def _j(v):
     return v
 
 
+def _dejargon(s):
+    """Old jobs stored the pre-2026-09-20 quadrant wording; swap the word a
+    tester flagged as jargon at render time so saved scans read the same as
+    new ones (owner call, Martin Brown feedback 2026-09-16)."""
+    return (str(s or '')
+            .replace('your cohort', 'your peers')
+            .replace('cohort consensus', 'the peer consensus'))
+
+
 def _esc(s):
     return _html.escape(str(s if s is not None else ''))
 
@@ -709,7 +718,7 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
         else:
             summ = 'Your sound <b>closely matches the peer consensus</b> on most dimensions. Strong commercial fit; low sonic differentiation.'
         qcls = 'signature' if quad.get('quadrant') == 'signature_of_success' else 'stuck' if quad.get('quadrant') == 'stuck_in_pack' else ''
-        qbox = f'<div class="qbox {qcls}"><div class="ql">{_esc(quad.get("label") or "")}</div><div class="qm">{_esc(quad.get("message") or "")}</div></div>' if quad else ''
+        qbox = f'<div class="qbox {qcls}"><div class="ql">{_esc(quad.get("label") or "")}</div><div class="qm">{_esc(_dejargon(quad.get("message")))}</div></div>' if quad else ''
         devs = ''.join(f'<div class="orow"><span class="ol">{_esc(FEATURE_PRETTY.get(d.get("feature"), d.get("feature")))}</span><span class="oz">{"+" if (_num(d.get("z")) or 0) > 0 else ""}{(_num(d.get("z")) or 0):.2f}σ</span>'
                        f'<span class="oc"><i>{_esc((FEATURE_DIRECTION.get(d.get("feature")) or ("higher than", "lower than"))[0 if d.get("direction") == "high" else 1])}</i> the peer consensus · you {_esc(d.get("user_val"))} vs median {_esc(d.get("cohort_mean"))}</span></div>'
                        for d in (so.get('top_deviations') or [])[:4]) or '<div class="note">No strongly distinctive features: every dimension is within 1σ of the peer consensus.</div>'
