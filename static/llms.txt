@@ -8,7 +8,7 @@
 - Matches the track against 300,000+ profiled tracks to find sonic peers: artists who sound similar, at the artist's own career tier
 - Shows listener-to-follower conversion benchmarks against same-tier sonic peers
 - Gives specific production recommendations based on what the best-converting records in the same genre lane actually share (peer consensus, not opinion)
-- Sonic originality score: how distinctive the sound is vs. the top performers in its cohort
+- Sonic originality score: how distinctive the sound is vs. the top performers among its sonic peers
 - Pro tier adds playlist discovery, curator contacts with pre-written pitches, and a campaign forecast
 
 ## Who It's For

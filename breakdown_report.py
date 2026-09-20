@@ -434,7 +434,7 @@ def _rec_ranges_html(ranges, f):
         html += '<div class="rr-group">Adjustments to make</div>' + ''.join(adjust)
     if strengths:
         html += '<div class="rr-group strengths">✓ What you\'re already nailing</div>' + ''.join(strengths)
-    return html or '<div class="rr-group">No strong consensus from your peer cohort.</div>', len(adjust), len(strengths)
+    return html or '<div class="rr-group">No strong consensus from your peers.</div>', len(adjust), len(strengths)
 
 
 # --- app.js ports: the 0–100 percentile bars ---------------------------------
@@ -611,15 +611,15 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
                   dict(pos=99, name='Top 1%', val='99', pr=3), dict(pos=comp_pct, name='You', val=str(comp_pct), pr=5, you=True)]
         bar = _bar_html(comp_pct, comp_pct, labels)
         if comp_pct >= 90:
-            summ = 'Your track is in the <b>top 10%</b> of its sonic cohort, performing better than nearly every track that sounds like it.'
+            summ = 'Your track is in the <b>top 10%</b> of its sonic peers, performing better than nearly every track that sounds like it.'
         elif comp_pct >= 75:
-            summ = 'Your track is in the <b>top 25%</b> of its sonic cohort, outperforming most tracks that sound like it.'
+            summ = 'Your track is in the <b>top 25%</b> of its sonic peers, outperforming most tracks that sound like it.'
         elif comp_pct >= 50:
-            summ = 'Your track is <b>above average</b> for its sonic cohort, doing better than most similar-sounding tracks.'
+            summ = 'Your track is <b>above average</b> for its sonic peers, doing better than most similar-sounding tracks.'
         elif comp_pct >= 25:
-            summ = 'Your track is <b>below average</b> for its sonic cohort. There is headroom on the momentum side.'
+            summ = 'Your track is <b>below average</b> for its sonic peers. There is headroom on the momentum side.'
         else:
-            summ = 'Your track is in the <b>bottom 25%</b> of its sonic cohort. The biggest lifts here are playlist pitching and Spotify popularity growth.'
+            summ = 'Your track is in the <b>bottom 25%</b> of its sonic peers. The biggest lifts here are playlist pitching and Spotify popularity growth.'
         def tm_row(label, sub, scanned, stats, pct):
             stats = stats or {}
             pct_s = (f'<span class="pct">{_pct_label(_num(pct))}</span> of {int(_num(stats.get("count")) or 0):,} sonic peers') if pct is not None else 'no comparable peer data'
@@ -636,12 +636,12 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
             tier_name, tgt_l, tgt_r, add = 'top 10%', _num(tm.get('gap_target_listeners_t10')), _num(tm.get('gap_target_revenue_t10')), _num(tm.get('gap_additional_revenue_t10'))
         gap = ''
         if add and add > 0 and tgt_l and rate:
-            gap = (f'<div class="gap"><b>What “closing the gap” looks like:</b> tracks in the {tier_name} of this sonic cohort belong to artists with a median of <b>{tgt_l:,.0f} monthly listeners</b>, '
+            gap = (f'<div class="gap"><b>What “closing the gap” looks like:</b> tracks in the {tier_name} among your sonic peers belong to artists with a median of <b>{tgt_l:,.0f} monthly listeners</b>, '
                    f'about ${tgt_r:,.0f} a year at ${rate:.2f} per listener, against ${cur:,.0f} today. Closing it is worth about <b>+${add:,.0f} a year</b>.'
-                   f'<span class="gap-note">Peer-typical correlation from your actual sonic cohort, what artists with tracks at this level typically have. Not a personal forecast.</span></div>')
+                   f'<span class="gap-note">Peer-typical correlation from your actual sonic peers, what artists with tracks at this level typically have. Not a personal forecast.</span></div>')
         elif comp_pct >= 75 and tgt_l and rate:
-            gap = (f'<div class="gap"><b>You’re pacing the peer tier:</b> artists with tracks in the {tier_name} of this cohort sit at a median of <b>{tgt_l:,.0f} monthly listeners</b>, about ${tgt_r:,.0f} a year.'
-                   f'<span class="gap-note">Peer-typical correlation from your actual sonic cohort. Not a personal forecast.</span></div>')
+            gap = (f'<div class="gap"><b>You’re pacing the peer tier:</b> artists with tracks in the {tier_name} among your sonic peers sit at a median of <b>{tgt_l:,.0f} monthly listeners</b>, about ${tgt_r:,.0f} a year.'
+                   f'<span class="gap-note">Peer-typical correlation from your actual sonic peers. Not a personal forecast.</span></div>')
         tm_html = (f'<div class="panel-title">Where your track stands <span class="sub">vs {peer_count:,} tracks that sound like yours</span></div>'
                    f'<div class="tag">How this song is performing right now, compared to tracks that sound like yours.</div>{bar}<div class="summ">{summ}</div><div class="tmrows">{rows_html}</div>{gap}')
 
@@ -701,20 +701,20 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
                   dict(pos=99, name='Singular', val='99', pr=2), dict(pos=sc, name='You', val=str(sc), pr=5, you=True)]
         bar = _bar_html(sc, sc, labels)
         if sc >= 75:
-            summ = 'Your sound is in the <b>top 25% of sonically distinct tracks</b> within your cohort. The deviations below are your signature.'
+            summ = 'Your sound is in the <b>top 25% of sonically distinct tracks</b> among your sonic peers. The deviations below are your signature.'
         elif sc >= 50:
-            summ = 'Your sound is <b>moderately distinct</b> from your sonic cohort: some signature features, mostly within consensus.'
+            summ = 'Your sound is <b>moderately distinct</b> from your sonic peers: some signature features, mostly within consensus.'
         elif sc >= 25:
-            summ = 'Your sound <b>mostly follows cohort consensus</b>. You’re executing the genre playbook more than reinventing it.'
+            summ = 'Your sound <b>mostly follows the peer consensus</b>. You’re executing the genre playbook more than reinventing it.'
         else:
-            summ = 'Your sound <b>closely matches cohort consensus</b> on most dimensions. Strong commercial fit; low sonic differentiation.'
+            summ = 'Your sound <b>closely matches the peer consensus</b> on most dimensions. Strong commercial fit; low sonic differentiation.'
         qcls = 'signature' if quad.get('quadrant') == 'signature_of_success' else 'stuck' if quad.get('quadrant') == 'stuck_in_pack' else ''
         qbox = f'<div class="qbox {qcls}"><div class="ql">{_esc(quad.get("label") or "")}</div><div class="qm">{_esc(quad.get("message") or "")}</div></div>' if quad else ''
         devs = ''.join(f'<div class="orow"><span class="ol">{_esc(FEATURE_PRETTY.get(d.get("feature"), d.get("feature")))}</span><span class="oz">{"+" if (_num(d.get("z")) or 0) > 0 else ""}{(_num(d.get("z")) or 0):.2f}σ</span>'
-                       f'<span class="oc"><i>{_esc((FEATURE_DIRECTION.get(d.get("feature")) or ("higher than", "lower than"))[0 if d.get("direction") == "high" else 1])}</i> cohort consensus · you {_esc(d.get("user_val"))} vs median {_esc(d.get("cohort_mean"))}</span></div>'
-                       for d in (so.get('top_deviations') or [])[:4]) or '<div class="note">No strongly distinctive features: every dimension is within 1σ of your cohort consensus.</div>'
+                       f'<span class="oc"><i>{_esc((FEATURE_DIRECTION.get(d.get("feature")) or ("higher than", "lower than"))[0 if d.get("direction") == "high" else 1])}</i> the peer consensus · you {_esc(d.get("user_val"))} vs median {_esc(d.get("cohort_mean"))}</span></div>'
+                       for d in (so.get('top_deviations') or [])[:4]) or '<div class="note">No strongly distinctive features: every dimension is within 1σ of the peer consensus.</div>'
         fits = ''.join(f'<div class="orow"><span class="ol">{_esc(FEATURE_PRETTY.get(d.get("feature"), d.get("feature")))}</span><span class="oz fits">{"+" if (_num(d.get("z")) or 0) > 0 else ""}{(_num(d.get("z")) or 0):.2f}σ</span>'
-                       f'<span class="oc">matches cohort · you {_esc(d.get("user_val"))} vs median {_esc(d.get("cohort_mean"))}</span></div>'
+                       f'<span class="oc">matches your peers · you {_esc(d.get("user_val"))} vs median {_esc(d.get("cohort_mean"))}</span></div>'
                        for d in (so.get('fits_consensus') or [])[:4]) or '<div class="note">No close-consensus dimensions.</div>'
         orig_html = (f'<div class="panel-title">Sonic originality</div>{qbox}{bar}<div class="summ">{summ}</div>'
                      f'<div class="grid2" style="margin-top:.1in"><div><h3 style="margin-top:0">Where your sound stands out</h3>{devs}</div><div><h3 style="margin-top:0">Where you match the consensus</h3>{fits}</div></div>')
@@ -734,7 +734,7 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
             elif perf >= 80:
                 angle = 'Top performer in your sonic neighborhood: a comparable on numbers, not just sound.'
             else:
-                angle = 'Sits in your sonic lane with both distinctiveness and traction above the cohort floor.'
+                angle = 'Sits in your sonic lane with both distinctiveness and traction above the peer floor.'
             pop = p.get('sp_track_popularity')
             pop = pop if pop is not None else '—'
             prow += (f'<div class="prow"><div class="pn">{i + 1}. {_esc(name)}</div><div class="pl">{_listeners_str(p.get("listeners"))}</div>'

@@ -1273,11 +1273,11 @@ function renderResults(data) {
 
     // === Plain-English summary line ===
     let summary;
-    if (compPct >= 90) summary = `Your track is in the <strong>top 10%</strong> of its sonic cohort — performing better than nearly every track that sounds like it.`;
-    else if (compPct >= 75) summary = `Your track is in the <strong>top 25%</strong> of its sonic cohort — outperforming most tracks that sound like it.`;
-    else if (compPct >= 50) summary = `Your track is <strong>above average</strong> for its sonic cohort — doing better than most similar-sounding tracks.`;
-    else if (compPct >= 25) summary = `Your track is <strong>below average</strong> for its sonic cohort — there's headroom on the momentum side.`;
-    else summary = `Your track is in the <strong>bottom 25%</strong> of its sonic cohort — the biggest lifts here are playlist pitching and Spotify popularity growth.`;
+    if (compPct >= 90) summary = `Your track is in the <strong>top 10%</strong> of its sonic peers — performing better than nearly every track that sounds like it.`;
+    else if (compPct >= 75) summary = `Your track is in the <strong>top 25%</strong> of its sonic peers — outperforming most tracks that sound like it.`;
+    else if (compPct >= 50) summary = `Your track is <strong>above average</strong> for its sonic peers — doing better than most similar-sounding tracks.`;
+    else if (compPct >= 25) summary = `Your track is <strong>below average</strong> for its sonic peers — there's headroom on the momentum side.`;
+    else summary = `Your track is in the <strong>bottom 25%</strong> of its sonic peers — the biggest lifts here are playlist pitching and Spotify popularity growth.`;
     $('#tm-summary').innerHTML = summary;
 
     // === Three metric rows (cleaner labels) ===
@@ -1319,12 +1319,12 @@ function renderResults(data) {
       tgtL = tm.gap_target_listeners_t10; tgtR = tm.gap_target_revenue_t10; add = tm.gap_additional_revenue_t10;
     }
     if (add && add > 0 && tgtL && rate) {
-      gapEl.innerHTML = `<strong>What "closing the gap" looks like:</strong> tracks in the ${tierName} of this sonic cohort belong to artists with a median of <strong>${tgtL.toLocaleString()} monthly listeners</strong> — typically earning <strong>$${(tgtR || 0).toLocaleString()}/year</strong> in Spotify streaming royalties (at $${rate}/listener, Loud &amp; Clear 2025). You're currently at $${cur}/year. <strong>+$${add.toLocaleString()}/year potential</strong> if your track reached that peer tier.
-        <span class="gap-note">Peer-typical correlation from your actual sonic cohort — what artists with tracks at this level typically have. Not a personal forecast.</span>`;
+      gapEl.innerHTML = `<strong>What "closing the gap" looks like:</strong> tracks in the ${tierName} among your sonic peers belong to artists with a median of <strong>${tgtL.toLocaleString()} monthly listeners</strong> — typically earning <strong>$${(tgtR || 0).toLocaleString()}/year</strong> in Spotify streaming royalties (at $${rate}/listener, Loud &amp; Clear 2025). You're currently at $${cur}/year. <strong>+$${add.toLocaleString()}/year potential</strong> if your track reached that peer tier.
+        <span class="gap-note">Peer-typical correlation from your actual sonic peers — what artists with tracks at this level typically have. Not a personal forecast.</span>`;
       gapEl.style.display = 'block';
     } else if (compPct >= 75 && tgtL && rate) {
-      gapEl.innerHTML = `<strong>You're pacing the peer tier:</strong> artists with tracks in the ${tierName} of this cohort sit at a median of <strong>${tgtL.toLocaleString()} monthly listeners</strong> (about $${(tgtR || 0).toLocaleString()}/year in Spotify royalties at $${rate}/listener). You're at $${cur}/year — at or above where the tier typically lands. The play here is holding it: playlist coverage and release cadence.
-        <span class="gap-note">Peer-typical correlation from your actual sonic cohort. Not a personal forecast.</span>`;
+      gapEl.innerHTML = `<strong>You're pacing the peer tier:</strong> artists with tracks in the ${tierName} among your sonic peers sit at a median of <strong>${tgtL.toLocaleString()} monthly listeners</strong> (about $${(tgtR || 0).toLocaleString()}/year in Spotify royalties at $${rate}/listener). You're at $${cur}/year — at or above where the tier typically lands. The play here is holding it: playlist coverage and release cadence.
+        <span class="gap-note">Peer-typical correlation from your actual sonic peers. Not a personal forecast.</span>`;
       gapEl.style.display = 'block';
     } else {
       gapEl.style.display = 'none';
@@ -1423,7 +1423,7 @@ function renderResults(data) {
                    : '';
       qEl.className = 'orig-quadrant ' + qClass;
       qEl.innerHTML = `<div class="orig-quadrant-label">${quadrant.label}</div>
-                       <div class="orig-quadrant-message">${quadrant.message}</div>`;
+                       <div class="orig-quadrant-message">${String(quadrant.message || '').replace(/your cohort/g, 'your peers').replace(/cohort consensus/g, 'the peer consensus')}</div>`;
       qEl.style.display = 'block';
     } else {
       qEl.style.display = 'none';
@@ -1459,10 +1459,10 @@ function renderResults(data) {
 
     // Summary line
     let origSummary;
-    if (origScore >= 75)      origSummary = `Your sound is in the <strong>top 25% of sonically distinct tracks</strong> within your cohort. The deviations below are your signature.`;
-    else if (origScore >= 50) origSummary = `Your sound is <strong>moderately distinct</strong> from your sonic cohort — some signature features, mostly within consensus.`;
-    else if (origScore >= 25) origSummary = `Your sound <strong>mostly follows cohort consensus</strong>. You're executing the genre playbook more than reinventing it.`;
-    else                       origSummary = `Your sound <strong>closely matches cohort consensus</strong> on most dimensions. Strong commercial fit; low sonic differentiation.`;
+    if (origScore >= 75)      origSummary = `Your sound is in the <strong>top 25% of sonically distinct tracks</strong> among your sonic peers. The deviations below are your signature.`;
+    else if (origScore >= 50) origSummary = `Your sound is <strong>moderately distinct</strong> from your sonic peers — some signature features, mostly within consensus.`;
+    else if (origScore >= 25) origSummary = `Your sound <strong>mostly follows the peer consensus</strong>. You're executing the genre playbook more than reinventing it.`;
+    else                       origSummary = `Your sound <strong>closely matches the peer consensus</strong> on most dimensions. Strong commercial fit; low sonic differentiation.`;
     $('#orig-summary').innerHTML = origSummary;
 
     // Deviation rows ("Where your sound stands out")
@@ -1470,7 +1470,7 @@ function renderResults(data) {
     devEl.innerHTML = '';
     const deviations = (orig.top_deviations || []);
     if (deviations.length === 0) {
-      devEl.innerHTML = '<div class="orig-context" style="padding:10px 0">No strongly distinctive features — every dimension is within 1σ of your cohort consensus.</div>';
+      devEl.innerHTML = '<div class="orig-context" style="padding:10px 0">No strongly distinctive features — every dimension is within 1σ of the peer consensus.</div>';
     } else {
       for (const d of deviations) {
         const labels = FEATURE_DIRECTION_LABELS[d.feature] || {high: 'higher than', low: 'lower than'};
@@ -1482,7 +1482,7 @@ function renderResults(data) {
         div.innerHTML = `
           <span class="orig-label">${pretty}</span>
           <span class="orig-z">${zStr}</span>
-          <span class="orig-context"><span class="orig-direction">${dirLabel}</span> cohort consensus &middot; you ${d.user_val} vs median ${d.cohort_mean}</span>`;
+          <span class="orig-context"><span class="orig-direction">${dirLabel}</span> the peer consensus &middot; you ${d.user_val} vs median ${d.cohort_mean}</span>`;
         devEl.appendChild(div);
       }
     }
@@ -1492,7 +1492,7 @@ function renderResults(data) {
     fitsEl.innerHTML = '';
     const fits = (orig.fits_consensus || []);
     if (fits.length === 0) {
-      fitsEl.innerHTML = '<div class="orig-context" style="padding:10px 0">No close-consensus dimensions — your sound deviates from cohort on every measured feature.</div>';
+      fitsEl.innerHTML = '<div class="orig-context" style="padding:10px 0">No close-consensus dimensions — your sound deviates from your peers on every measured feature.</div>';
     } else {
       for (const f of fits) {
         const pretty = FEATURE_PRETTY[f.feature] || f.feature;
@@ -1502,7 +1502,7 @@ function renderResults(data) {
         div.innerHTML = `
           <span class="orig-label">${pretty}</span>
           <span class="orig-z fits">${zStr}</span>
-          <span class="orig-context">matches cohort &middot; you ${f.user_val} vs median ${f.cohort_mean}</span>`;
+          <span class="orig-context">matches your peers &middot; you ${f.user_val} vs median ${f.cohort_mean}</span>`;
         fitsEl.appendChild(div);
       }
     }
@@ -1637,7 +1637,7 @@ function renderResults(data) {
       } else if (perfPct >= 80) {
         angle = `Top performer in your sonic neighborhood — a comparable on numbers, not just sound.`;
       } else {
-        angle = `Sits in your sonic lane with both distinctiveness and traction above the cohort floor.`;
+        angle = `Sits in your sonic lane with both distinctiveness and traction above the peer floor.`;
       }
       div.innerHTML = `
         <div class="pitch-name">${i + 1}. ${nameLink}</div>
@@ -2232,7 +2232,7 @@ function renderRecRanges(ranges) {
   if (strengths.length) {
     html += `<div class="rec-group-label strengths">✓ What you're already nailing</div>` + strengths.join('');
   }
-  wrap.innerHTML = html || `<div class="rec-group-label">No strong consensus from your peer cohort.</div>`;
+  wrap.innerHTML = html || `<div class="rec-group-label">No strong consensus from your peers.</div>`;
 }
 
 // -------------------------------------------------------

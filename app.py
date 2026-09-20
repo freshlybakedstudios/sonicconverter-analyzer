@@ -1433,13 +1433,13 @@ def _classify_quadrant(originality_score, performance_percentile):
         return {
             'quadrant': 'signature_of_success',
             'label': 'Signature of Success',
-            'message': "You're distinct AND winning — your sound's deviation from cohort consensus IS your edge. The production recommendations below are informational, not prescriptive: adopting them risks closing the very gap that's working for you.",
+            'message': "You're distinct AND winning — your sound's deviation from the peer consensus IS your edge. The production recommendations below are informational, not prescriptive: adopting them risks closing the very gap that's working for you.",
         }
     if not orig_high and perf_high:
         return {
             'quadrant': 'genre_playbook_winner',
             'label': 'Genre-Playbook Winner',
-            'message': "You sound like your cohort AND you're winning. You're executing the genre consensus well. Production recommendations are useful as fine-tuning, not redirection.",
+            'message': "You sound like your peers AND you're winning. You're executing the genre consensus well. Production recommendations are useful as fine-tuning, not redirection.",
         }
     if orig_high and not perf_high:
         return {
@@ -1450,7 +1450,7 @@ def _classify_quadrant(originality_score, performance_percentile):
     return {
         'quadrant': 'stuck_in_pack',
         'label': 'Stuck in the Pack',
-        'message': "You sound like your cohort but aren't getting their results. The production recommendations below are genuinely actionable here — closing the gap is the move, since distinctiveness isn't currently the differentiator either.",
+        'message': "You sound like your peers but aren't getting their results. The production recommendations below are genuinely actionable here — closing the gap is the move, since distinctiveness isn't currently the differentiator either.",
     }
 
 
