@@ -5973,6 +5973,22 @@ async def analyze_url(
         print(f"  Thin-identity scan: tier={user_tier}, Spotify genres=[] -> genre lane OFF, "
               f"ranking on measured sound only (ignored: track='{track_genre}' "
               f"artist='{artist_genre}' pick='{genre}')")
+        # 2026-09-22: the emotion pass above still ran on the ignored tag, so
+        # Martin's 70 BPM ballad was scored on the bass_heavy (electronic)
+        # threshold profile. Redo it genre-neutral before matching, so neither
+        # the emotion labels nor the emotion_overlap term lean on the namesake.
+        emo = _emotion_detector.detect(features, '')
+        top_emo = emo.get('emotions', [])
+        for i in range(4):
+            if i < len(top_emo):
+                features[f'emotion_{i+1}'] = top_emo[i][0]
+                features[f'emotion_{i+1}_score'] = top_emo[i][1]
+            else:
+                features[f'emotion_{i+1}'] = 'neutral'
+                features[f'emotion_{i+1}_score'] = 0.0
+        features['emotion_summary'] = emo
+        print(f"  Thin-identity scan: emotions re-detected genre-neutral -> "
+              f"{[e[0] for e in top_emo[:3]]} (was group={ (features.get('emotion_summary') or {}).get('genre_group') })")
 
     all_found = matcher.find_matches(
         features,
