@@ -6607,8 +6607,16 @@ async def analyze_url(
             # Display uses the richer CM-live track tags when available (gems
             # snapshot can be a stale subset). Lane resolution upstream uses
             # `track_genre` (gems-first) — display divergence is intentional.
-            'track_genres': track_genre_display or track_genre or '',
-            'artist_genres': artist_genre or '',
+            # 2026-09-22 (Martin Brown, 2nd report): for a thin-identity scan the
+            # tags were ignored for matching but STILL SHIPPED here, so the artist
+            # card kept showing the namesake's "dance, electronic". Ship the lane
+            # the sound chose instead; keep the raw tags under ignored_genres.
+            'track_genres': '' if _thin_identity else (track_genre_display or track_genre or ''),
+            'artist_genres': (', '.join(sorted(_inferred_lane)) if _thin_identity
+                              else (artist_genre or '')),
+            'ignored_genres': (', '.join(g for g in dict.fromkeys(
+                [t.strip() for t in ((track_genre_display or track_genre or '') + ',' + (artist_genre or '')).split(',')]
+            ) if g) if _thin_identity else ''),
             # What actually drove the match (dropdown > track > artist). For a
             # thin-identity scan it is the lane the SOUND pointed at, or nothing.
             'match_genre': (', '.join(sorted(_inferred_lane)) if _thin_identity else (genre or '')),

@@ -1050,8 +1050,13 @@ function renderResults(data) {
     const followers = up.followers || 0;
     const conversion = up.conversion_rate;
     const splitGenres = (s) => (s || '').split(',').map(x => x.trim()).filter(Boolean);
-    const trackTags = splitGenres(src.track_genres);
-    const artistTags = splitGenres(src.artist_genres);
+    // 2026-09-22: a thin-identity scan (Spotify lists no genre, tags ignored,
+    // lane chosen from the sound) must show THAT lane, not the database tags
+    // it ignored. Older stored results still carry the ignored tags in
+    // track_genres/artist_genres, so decide here, on lane_mode, not on the data.
+    const sonicOnly = src.lane_mode === 'sonic_only';
+    const trackTags = sonicOnly ? [] : splitGenres(src.track_genres);
+    const artistTags = sonicOnly ? splitGenres(src.inferred_lane) : splitGenres(src.artist_genres);
     const tier = src.artist_tier || data.user_tier || '';
 
     const trackName = src.track_name || '';
@@ -1068,7 +1073,16 @@ function renderResults(data) {
     $('#artist-card-conversion').textContent = conversion != null ? conversion.toFixed(2) + '%' : '-';
     const escGenre = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const genreEl = $('#artist-card-genres');
-    if (!trackTags.length && !artistTags.length) {
+    if (sonicOnly) {
+      const lane = artistTags.length ? artistTags : [];
+      genreEl.innerHTML =
+        (lane.length
+          ? lane.map(g => `<span class="genre-tag genre-tag-track" title="Lane chosen from the measured sound">${escGenre(g)}</span>`).join('')
+          : `<span class="genre-tag genre-tag-artist" title="No genre on Spotify yet">none on Spotify yet</span>`) +
+        `<div class="genre-lane-note" style="margin-top:6px;font-size:0.78em;line-height:1.35;opacity:0.75;">` +
+        escGenre(src.lane_note || 'Spotify lists no genre for this artist yet, so matches were ranked on measured sound alone.') +
+        `</div>`;
+    } else if (!trackTags.length && !artistTags.length) {
       genreEl.textContent = '-';
     } else {
       // Track genres (green chips) always visible — they're the song-specific
