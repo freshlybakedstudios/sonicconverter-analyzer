@@ -1073,6 +1073,12 @@ function renderResults(data) {
     $('#artist-card-conversion').textContent = conversion != null ? conversion.toFixed(2) + '%' : '-';
     const escGenre = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const genreEl = $('#artist-card-genres');
+    // The heading over the chips is static "GENRES" in index.html; on a
+    // thin-identity scan the chip is the lane the SOUND chose, so say that.
+    const genreLabel = genreEl.previousElementSibling;
+    if (genreLabel && genreLabel.classList.contains('artist-card-stat-label')) {
+      genreLabel.textContent = sonicOnly ? 'CLOSEST SOUND' : 'GENRES';
+    }
     if (sonicOnly) {
       const lane = artistTags.length ? artistTags : [];
       genreEl.innerHTML =
