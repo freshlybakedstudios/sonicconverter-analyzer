@@ -2389,29 +2389,38 @@ body {
 }
 .share-card-close:hover { color: var(--text); }
 
-/* ---- REVIEW CARD ----------------------------------------------------- */
-/* 2026-09-24. Damion Yang offered this line unprompted after the key bug he
-   caught got fixed ("Here's a line you can quote"). Sits between the hero and
-   the sign-up form because that is where the page asks for the account.
-   No Review structured data on purpose — a first-party review of our own tool
+/* ---- REVIEWS ---------------------------------------------------------- */
+/* 2026-09-24. The first two artists to send written feedback on the analyzer.
+   Damion Yang offered his line unprompted ("Here's a line you can quote");
+   Martin Brown's came from his 9/16 written review. Lives INSIDE the hero so
+   it hides with it the moment someone logs in — this is sign-in social proof,
+   not something a logged-in user should keep seeing.
+   No Review structured data on purpose: a first-party review of our own tool
    is exactly the self-serving markup Google discounts. */
+.reviews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 920px;
+  margin: 44px auto 0;
+  text-align: left;
+}
 .review-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 28px 30px 24px;
-  max-width: 640px;
-  margin: 40px auto 0;
-  text-align: left;
+  padding: 26px 26px 20px;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 .review-card::before {
   content: '\201C';
   position: absolute;
-  top: 10px;
-  left: 16px;
+  top: 8px;
+  left: 14px;
   font-family: Georgia, 'Times New Roman', serif;
-  font-size: 72px;
+  font-size: 64px;
   line-height: 1;
   color: var(--accent);
   opacity: 0.16;
@@ -2420,7 +2429,7 @@ body {
 .review-lead {
   position: relative;
   color: var(--text);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   line-height: 1.4;
   margin: 0 0 12px;
@@ -2430,13 +2439,14 @@ body {
   font-size: 14px;
   line-height: 1.65;
   margin: 0;
+  flex: 1;
 }
 .review-by {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: 18px;
+  padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 .review-initial {
@@ -2459,8 +2469,9 @@ body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
-@media (max-width: 600px) {
-  .review-card { padding: 22px 20px 20px; margin-top: 32px; }
-  .review-card::before { font-size: 56px; left: 10px; }
+@media (max-width: 760px) {
+  .reviews { grid-template-columns: 1fr; gap: 14px; margin-top: 32px; }
+  .review-card { padding: 22px 20px 18px; }
+  .review-card::before { font-size: 54px; left: 10px; }
   .review-lead { font-size: 16px; }
 }
