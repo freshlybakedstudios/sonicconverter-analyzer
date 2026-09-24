@@ -230,6 +230,12 @@ def update_job(job_id: str, status: str, features: dict = None, reason: str = ''
 _spotify_bearer = None
 _spotify_bearer_ts = 0
 _using_backup = False
+# 2026-09-24: Spotify rate-limited this Mac's IP for 11 hours (three different
+# apps, identical Retry-After). The old code burned every job to 'error' and
+# pushed the owner on each retry, every 30s. Now: remember when the block
+# lifts, tell him once, and have the main loop wait it out.
+_spotify_blocked_until = 0.0
+_spotify_block_pushed = 0.0
 
 
 def _get_spotify_token(force_backup=False):
@@ -292,6 +298,7 @@ def _extract_track_id(url: str) -> str | None:
 
 def _get_track_info(track_id: str) -> dict | None:
     """Get track metadata (duration, playability). Retries on 429."""
+    global _spotify_blocked_until, _spotify_block_pushed
     token = _get_spotify_token()
     if not token:
         return None
@@ -307,11 +314,22 @@ def _get_track_info(track_id: str) -> dict | None:
         if resp.status_code == 429:
             retry_after = int(resp.headers.get('Retry-After', 5))
             if retry_after > 60:
-                # Long ban — switch to backup credentials
-                print(f"Track info 429 — Retry-After {retry_after}s, switching to backup")
-                token = _switch_to_backup()
-                if token:
-                    continue
+                if not _using_backup:
+                    # Long ban — try the backup app once
+                    print(f"Track info 429 — Retry-After {retry_after}s, switching to backup")
+                    token = _switch_to_backup()
+                    if token:
+                        continue
+                # Backup is blocked too, so it is the IP, not the app. Stop.
+                _spotify_blocked_until = time.time() + retry_after
+                lifts = time.strftime('%-I:%M %p', time.localtime(_spotify_blocked_until))
+                print(f"Spotify is blocking this Mac (primary + backup) — deferring scans until ~{lifts}")
+                if time.time() - _spotify_block_pushed > 3600:
+                    _spotify_block_pushed = time.time()
+                    _push("🚫 Spotify is blocking this Mac",
+                          f"429 on primary AND backup, Retry-After {retry_after // 60} min. "
+                          f"Scans deferred until ~{lifts}. No retries, no more pushes until then.")
+                return None
             else:
                 print(f"Track info 429 — waiting {retry_after}s (attempt {attempt+1}/5)")
                 time.sleep(retry_after)
@@ -736,6 +754,11 @@ def process_job(job: dict, loopback_device: int):
     # Get track info for duration
     info = _get_track_info(track_id)
     if not info:
+        if time.time() < _spotify_blocked_until:
+            # Not this job's fault. Hand it back untouched — no error, no push.
+            print(f"[{job_id[:8]}] Spotify blocked — job back to pending, no retry until the block lifts")
+            update_job(job_id, 'pending_features')
+            return
         print(f"[{job_id[:8]}] Cannot get track info")
         update_job(job_id, 'error')
         return
@@ -1140,6 +1163,10 @@ def main():
         return False
 
     while True:
+        if time.time() < _spotify_blocked_until:
+            # Blocked: do not poll, do not claim, do not touch Spotify.
+            time.sleep(60)
+            continue
         try:
             job = poll_pending_jobs()
         except Exception as e:
