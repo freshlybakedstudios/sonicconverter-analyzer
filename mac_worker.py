@@ -26,6 +26,7 @@ import sys
 import time
 
 import numpy as np
+from key_detect import detect_key
 import requests
 import sounddevice as sd
 
@@ -589,14 +590,23 @@ def extract_features_from_audio(audio: np.ndarray, audio_stereo: np.ndarray = No
     chroma_mean = np.mean(chroma, axis=1)
     pitch_classes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     key_idx = int(np.argmax(chroma_mean))
-    features['key'] = pitch_classes[key_idx]
 
     major_profile = np.array([1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1])
     minor_profile = np.array([1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0])
     major_corr = float(np.corrcoef(chroma_mean, np.roll(major_profile, key_idx))[0, 1])
     minor_corr = float(np.corrcoef(chroma_mean, np.roll(minor_profile, key_idx))[0, 1])
-    features['scale'] = 'major' if major_corr > minor_corr else 'minor'
+    # UNCHANGED formula on purpose — key_strength is stored for the whole
+    # 320k universe and has calibrated percentile bounds.
     features['key_strength'] = float(max(major_corr, minor_corr))
+
+    # 2026-09-23 (Damion Yang: B major track reported as F# major) — the tonic
+    # is no longer "the loudest pitch class". See key_detect.py.
+    _k, _s, _conf = detect_key(chroma_mean)
+    features['key'] = _k or pitch_classes[key_idx]
+    features['scale'] = _s or ('major' if major_corr > minor_corr else 'minor')
+    features['key_confidence'] = float(_conf)
+    features['key_argmax'] = pitch_classes[key_idx]
+    features['chroma'] = [round(float(x), 5) for x in chroma_mean]
 
     # --- Spectral ---
     centroids = librosa.feature.spectral_centroid(y=audio, sr=SAMPLE_RATE)[0]

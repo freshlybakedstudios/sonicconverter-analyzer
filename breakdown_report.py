@@ -563,7 +563,9 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
     # ---- page 1: the sound (unchanged) --------------------------------------
     lufs, lufs_est = _num(f.get('lufs_integrated')), _num(f.get('lufs_integrated_est'))
     key = f"{f.get('key') or '?'} {f.get('scale') or ''}".strip()
-    tiles = [(f"{_num(f.get('bpm')) or 0:.0f}", 'BPM', ''), (_esc(key), 'Key', ''),
+    _kc = f.get('key_confidence')
+    _key_sub = 'low confidence' if isinstance(_kc, (int, float)) and _kc < 0.25 else ''
+    tiles = [(f"{_num(f.get('bpm')) or 0:.0f}", 'BPM', ''), (_esc(key), 'Key', _key_sub),
              (f"{lufs:.1f}" if lufs is not None else '—', 'LUFS', f"integrated · est. {lufs_est:.1f} on streaming" if lufs_est is not None else 'integrated'),
              (_energy_label(_num(f.get('energy'))), 'Energy', ''), (_compression_label(_num(f.get('compression_amount'))), 'Compression', ''),
              (_dance_label(_num(f.get('danceability'))), 'Danceability', '')]

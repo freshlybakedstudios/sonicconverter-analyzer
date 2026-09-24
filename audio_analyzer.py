@@ -6,6 +6,7 @@ Ported from GEMS/fixed_gems_pipeline_v2.py - adapted for file upload (no Loopbac
 import math
 
 import numpy as np
+from key_detect import detect_key
 import librosa
 import pyloudnorm as pyln
 from typing import Dict
@@ -727,14 +728,24 @@ def _extract_core(audio: np.ndarray, sr: int, audio_stereo: np.ndarray = None) -
     chroma_mean = np.mean(chroma, axis=1)
     pitch_classes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     key_index = int(np.argmax(chroma_mean))
-    features['key'] = pitch_classes[key_index]
 
     major_profile = np.array([1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1])
     minor_profile = np.array([1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0])
     major_corr = np.corrcoef(chroma_mean, np.roll(major_profile, key_index))[0, 1]
     minor_corr = np.corrcoef(chroma_mean, np.roll(minor_profile, key_index))[0, 1]
-    features['scale'] = 'major' if major_corr > minor_corr else 'minor'
+    # key_strength keeps its ORIGINAL formula on purpose: it is stored for all
+    # 320k universe tracks with calibrated percentile bounds, so changing it
+    # would silently break every comparison drawn against them.
     features['key_strength'] = float(max(major_corr, minor_corr)) if not np.isnan(major_corr) else 0.5
+
+    # 2026-09-23 (Damion Yang: B major track reported as F# major): the tonic
+    # is no longer "the loudest pitch class" — see key_detect.py.
+    _k, _s, _conf = detect_key(chroma_mean)
+    features['key'] = _k or pitch_classes[key_index]
+    features['scale'] = _s or ('major' if major_corr > minor_corr else 'minor')
+    features['key_confidence'] = float(_conf)
+    features['key_argmax'] = pitch_classes[key_index]
+    features['chroma'] = [round(float(x), 5) for x in chroma_mean]
 
     # --- SPECTRAL ---
     centroids = librosa.feature.spectral_centroid(y=audio, sr=sr)[0]

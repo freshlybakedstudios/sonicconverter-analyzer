@@ -1143,7 +1143,12 @@ function renderResults(data) {
   statsGrid.innerHTML = '';
   const stats = [
     { value: (f.bpm || 0).toFixed(0), label: 'BPM' },
-    { value: `${f.key || '?'} ${f.scale || ''}`, label: 'KEY' },
+    // 2026-09-23 (Damion Yang): a key the numbers can't support is now
+    // labelled instead of asserted. A wrong key is instantly falsifiable and
+    // makes a reader doubt every other number on the page.
+    (f.key_confidence != null && f.key_confidence < 0.25)
+      ? { value: `${f.key || '?'} ${f.scale || ''}`, label: 'KEY', subtitle: 'low confidence' }
+      : { value: `${f.key || '?'} ${f.scale || ''}`, label: 'KEY' },
     // Uploads: real measured BS.1770 Integrated (matches Insight/Pro-L).
     // Spotify scans: 3-probe Integrated ESTIMATE from the worker (gated
     // power-mean of the stereo samples, backtested MAE ~0.5 dB). Old jobs
