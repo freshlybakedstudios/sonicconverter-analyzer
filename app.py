@@ -3567,6 +3567,10 @@ async def analyze(
                 'bpm': features.get('bpm', 0),
                 'key': features.get('key', '?'),
                 'scale': features.get('scale', ''),
+                # 2026-09-24: the low-confidence key label is drawn from this.
+                # The response 'features' dict is an allow-list, so it has to be
+                # named here or neither the UI nor the PDF ever sees it.
+                'key_confidence': features.get('key_confidence'),
                 'lufs_integrated': features.get('lufs_integrated', 0),
                 # Whole-track BS.1770 (stereo) — display-only mastering readout;
                 # upload path only, absent on Spotify scans (12s captures).
@@ -6579,6 +6583,7 @@ async def analyze_url(
             'bpm': features.get('bpm', 0),
             'key': features.get('key', '?'),
             'scale': features.get('scale', ''),
+            'key_confidence': features.get('key_confidence'),
             'lufs_integrated': features.get('lufs_integrated', 0),
             # Whole-track Integrated ESTIMATE from the worker's 3 stereo probes
             # (gated power-mean; backtested MAE ~0.5 dB). Absent on old jobs.
