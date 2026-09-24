@@ -1916,7 +1916,7 @@ def _upsert_gems_features(isrc: str, features: dict, genre: str = '',
         'crest_factor', 'compression_amount', 'attack_time',
         'brightness', 'brightness_variance', 'spectral_rolloff',
         'spectral_complexity', 'spectral_flux',
-        'key', 'scale', 'key_strength', 'zcr', 'dissonance',
+        'key', 'scale', 'key_strength', 'key_confidence', 'chroma', 'zcr', 'dissonance',
         'bpm', 'beat_strength', 'onset_rate', 'danceability',
     ]
     for k in audio_keys:
@@ -1989,7 +1989,7 @@ def _lookup_gems_features(isrc: str) -> dict | None:
         'crest_factor', 'compression_amount', 'attack_time',
         'brightness', 'brightness_variance', 'spectral_rolloff',
         'spectral_complexity', 'spectral_flux',
-        'key', 'scale', 'key_strength', 'zcr', 'dissonance',
+        'key', 'scale', 'key_strength', 'key_confidence', 'chroma', 'zcr', 'dissonance',
         'bpm', 'beat_strength', 'onset_rate', 'danceability',
         'emotion_1', 'emotion_1_score', 'emotion_2', 'emotion_2_score',
         'emotion_3', 'emotion_3_score', 'emotion_4', 'emotion_4_score',
