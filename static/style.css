@@ -2388,3 +2388,79 @@ body {
   line-height: 1;
 }
 .share-card-close:hover { color: var(--text); }
+
+/* ---- REVIEW CARD ----------------------------------------------------- */
+/* 2026-09-24. Damion Yang offered this line unprompted after the key bug he
+   caught got fixed ("Here's a line you can quote"). Sits between the hero and
+   the sign-up form because that is where the page asks for the account.
+   No Review structured data on purpose — a first-party review of our own tool
+   is exactly the self-serving markup Google discounts. */
+.review-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 30px 24px;
+  max-width: 640px;
+  margin: 40px auto 0;
+  text-align: left;
+  position: relative;
+}
+.review-card::before {
+  content: '\201C';
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 72px;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.16;
+  pointer-events: none;
+}
+.review-lead {
+  position: relative;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0 0 12px;
+}
+.review-body {
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.65;
+  margin: 0;
+}
+.review-by {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.review-initial {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(216, 225, 102, 0.12);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+.review-name {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+@media (max-width: 600px) {
+  .review-card { padding: 22px 20px 20px; margin-top: 32px; }
+  .review-card::before { font-size: 56px; left: 10px; }
+  .review-lead { font-size: 16px; }
+}
