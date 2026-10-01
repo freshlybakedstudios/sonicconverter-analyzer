@@ -37,6 +37,7 @@ from supabase import create_client
 load_dotenv()
 
 from audio_analyzer import extract_features
+from chartmetric_lookup import _get_spotify_cc_token
 from chartmetric_lookup import (
     lookup_artist_by_spotify,
     get_cm_token,
@@ -6802,9 +6803,44 @@ def _cached_artist_lookup(spotify_url: str) -> dict | None:
         return None
 
 
+@app.get("/api/deal/search")
+async def deal_search(q: str = ""):
+    """Artist search for the rate calculator's first screen (2026-10-01, owner: "a drop down type thing
+    to find them"). Spotify artist search via client credentials; returns up to 6 picks the widget
+    can turn into the artist URL the lookup already understands. Never pushes, never writes."""
+    q = (q or '').strip()
+    if len(q) < 2:
+        return {"results": []}
+    token = _get_spotify_cc_token()
+    if not token:
+        raise HTTPException(503, "search unavailable")
+    try:
+        r = requests.get('https://api.spotify.com/v1/search', params={'q': q, 'type': 'artist', 'limit': 6},
+                         headers={'Authorization': f'Bearer {token}'}, timeout=8)
+        if r.status_code != 200:
+            raise HTTPException(502, f"spotify {r.status_code}")
+        items = (r.json().get('artists') or {}).get('items') or []
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"search failed: {str(e)[:80]}")
+    out = []
+    for a in items:
+        imgs = a.get('images') or []
+        out.append({
+            'id': a.get('id'), 'name': a.get('name'),
+            'url': (a.get('external_urls') or {}).get('spotify') or f"https://open.spotify.com/artist/{a.get('id')}",
+            'followers': (a.get('followers') or {}).get('total', 0),
+            'image': (imgs[-1] if imgs else {}).get('url'),
+            'genres': (a.get('genres') or [])[:3],
+        })
+    return {"results": out}
+
+
 @app.post("/api/deal/lookup")
 async def deal_lookup(
     spotify_url: str = Form(...),
+    source: str = Form(''),
 ):
     """
     Look up an artist by Spotify URL and return metrics, peer comparison,
@@ -7313,11 +7349,13 @@ async def deal_lookup(
         except Exception as e:
             print(f"Deal lookup: event fetch failed: {e}")
 
-    # Send push notification
-    send_pushover_notification(
-        "Deal Calculator Lookup",
-        f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners"
-    )
+    # Send push notification (not for internal callers: the IG sweep uses this endpoint to add
+    # unknown artists to the pipeline, 2026-09-30; those lookups are not visitors)
+    if source != 'ig_sweep':
+        send_pushover_notification(
+            "Deal Calculator Lookup",
+            f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners"
+        )
 
     print(f"[TIMING] through history + events (total): {time.time()-_t0:.1f}s")
 
