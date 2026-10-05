@@ -509,14 +509,22 @@ def _find_loopback_device(retry_coreaudio=True) -> int | None:
     return None
 
 
-_DEVICE_ALERT_AT = 0.0
+_DEVICE_ALERT_STAMP = os.path.expanduser('~/artist-pipeline/logs/.rig-device-missing-alert')
 
 def _alert_device_missing():
-    """One Pushover per 2 h while the Loopback device is gone, with the fix."""
-    global _DEVICE_ALERT_AT
-    if time.time() - _DEVICE_ALERT_AT < 7200:
-        return
-    _DEVICE_ALERT_AT = time.time()
+    """One Pushover per 2 h while the Loopback device is gone, with the fix.
+    File-stamped, not in-memory: the no-device path exits and pm2 relaunches us,
+    so an in-memory stamp would reset on every restart and spam."""
+    try:
+        if time.time() - os.path.getmtime(_DEVICE_ALERT_STAMP) < 7200:
+            return
+    except OSError:
+        pass
+    try:
+        with open(_DEVICE_ALERT_STAMP, 'w') as f:
+            f.write(str(time.time()))
+    except OSError:
+        pass
     _push("Analyzer rig: Loopback device missing",
           "CoreAudio shows no Loopback device, scans will fail. On the Mac run:\n"
           "sudo launchctl kickstart -k system/com.apple.audio.coreaudiod\n"
