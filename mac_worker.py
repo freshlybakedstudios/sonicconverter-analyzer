@@ -502,7 +502,25 @@ def _find_loopback_device(retry_coreaudio=True) -> int | None:
         # the device loss was Loopback's ARK driver wedging after a coreaudiod crash,
         # which only a real coreaudiod restart fixes. So: say so once, loudly, and
         # back off instead of spamming the log every 15 s.
-        print("No Loopback device found. Needs: sudo launchctl kickstart -k system/com.apple.audio.coreaudiod")
+        # Try the real fix ourselves: pm2/coreaudiod_kick.sh runs
+        # `sudo -n killall coreaudiod` (passwordless via /etc/sudoers.d/coreaudiod,
+        # rate-limited to one kick per 10 min) and launchd respawns coreaudiod
+        # with a fresh ARK driver. Then look again once.
+        print("No Loopback device found. Kicking coreaudiod via pm2/coreaudiod_kick.sh")
+        try:
+            rc = subprocess.run([os.path.expanduser('~/artist-pipeline/pm2/coreaudiod_kick.sh'), 'mac_worker'],
+                                capture_output=True, timeout=30).returncode
+        except Exception as e:
+            rc = -1
+            print(f"coreaudiod kick failed to run: {e}")
+        if rc == 0:
+            time.sleep(8)
+            found = _find_loopback_device(retry_coreaudio=False)
+            if found is not None:
+                print("Loopback device is back after the coreaudiod kick")
+                return found
+        elif rc == 3:
+            print("coreaudiod kick refused: no passwordless sudo line (see pm2/coreaudiod_kick.sh header)")
         _alert_device_missing()
         time.sleep(45)
 
@@ -526,8 +544,9 @@ def _alert_device_missing():
     except OSError:
         pass
     _push("Analyzer rig: Loopback device missing",
-          "CoreAudio shows no Loopback device, scans will fail. On the Mac run:\n"
-          "sudo launchctl kickstart -k system/com.apple.audio.coreaudiod\n"
+          "CoreAudio shows no Loopback device, scans will fail. The auto kick "
+          "(pm2/coreaudiod_kick.sh) did not bring it back. On the Mac run:\n"
+          "sudo killall coreaudiod\n"
           "then the worker picks it up on its own.")
 
 
