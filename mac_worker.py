@@ -497,15 +497,30 @@ def _find_loopback_device(retry_coreaudio=True) -> int | None:
             return i
 
     if retry_coreaudio:
-        print("No Loopback device found — restarting coreaudiod...")
-        try:
-            subprocess.run(['sudo', 'killall', 'coreaudiod'], capture_output=True, timeout=10)
-            time.sleep(5)  # coreaudiod takes a few seconds to come back
-            return _find_loopback_device(retry_coreaudio=False)
-        except Exception as e:
-            print(f"coreaudiod restart failed: {e}")
+        # 2026-10-05: `sudo killall coreaudiod` never worked here (no passwordless
+        # sudo; coreaudiod pid was unchanged across 2,211 "restarts" in one day) and
+        # the device loss was Loopback's ARK driver wedging after a coreaudiod crash,
+        # which only a real coreaudiod restart fixes. So: say so once, loudly, and
+        # back off instead of spamming the log every 15 s.
+        print("No Loopback device found. Needs: sudo launchctl kickstart -k system/com.apple.audio.coreaudiod")
+        _alert_device_missing()
+        time.sleep(45)
 
     return None
+
+
+_DEVICE_ALERT_AT = 0.0
+
+def _alert_device_missing():
+    """One Pushover per 2 h while the Loopback device is gone, with the fix."""
+    global _DEVICE_ALERT_AT
+    if time.time() - _DEVICE_ALERT_AT < 7200:
+        return
+    _DEVICE_ALERT_AT = time.time()
+    _push("Analyzer rig: Loopback device missing",
+          "CoreAudio shows no Loopback device, scans will fail. On the Mac run:\n"
+          "sudo launchctl kickstart -k system/com.apple.audio.coreaudiod\n"
+          "then the worker picks it up on its own.")
 
 
 # CoreAudio device handles go stale after long uptimes (PaErrorCode -9986 /
