@@ -571,6 +571,10 @@ async function startAnalyzerUpgrade() {
     const data = await res.json();
     if (res.ok && data.checkout_url) {
       window.location.href = data.checkout_url;
+    } else if (res.status === 409) {
+      // Already paid (the server reconciled with Stripe): never charge twice.
+      alert((data && data.detail) || 'You already have Pro on this account.');
+      window.location.reload();
     } else {
       alert((data && data.detail) || 'Could not start checkout — please try again.');
     }
@@ -588,17 +592,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   // read the saved token directly so the verify can't silently bail.
   const verifyToken = accessToken || localStorage.getItem('sc_token');
   if (!sessionId || !verifyToken) return;
-  try {
-    const res = await fetch(`${API_URL}/api/analyzer/upgrade/status?session_id=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(verifyToken)}`);
-    const data = await res.json();
-    if (res.ok && data.status === 'complete') {
-      if (typeof gtag === 'function') gtag('event', 'purchase', {
-        currency: 'USD', value: 49.00, transaction_id: sessionId,
-        items: [{ item_name: 'Analyzer Pro', price: 49.00, quantity: 1 }],
-      });
-      alert('🔓 Pro unlocked — studio-grade fresh scans and full pitch lists are now enabled. Run your scan again.');
-    }
-  } catch (e) { /* silent — user can re-trigger by rescanning */ }
+  // 2026-10-08: retry the verify (three tries, 2.5 s apart). The server also
+  // hears about the payment from Stripe's webhook and reconciles on login /
+  // /api/me, so a failed return call no longer leaves a paying user on free.
+  let unlocked = false;
+  for (let attempt = 0; attempt < 3 && !unlocked; attempt++) {
+    try {
+      const res = await fetch(`${API_URL}/api/analyzer/upgrade/status?session_id=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(verifyToken)}`);
+      const data = await res.json();
+      if (res.ok && data.status === 'complete') {
+        unlocked = true;
+        if (typeof gtag === 'function') gtag('event', 'purchase', {
+          currency: 'USD', value: 49.00, transaction_id: sessionId,
+          items: [{ item_name: 'Analyzer Pro', price: 49.00, quantity: 1 }],
+        });
+        alert('🔓 Pro unlocked — studio-grade fresh scans and full pitch lists are now enabled. Run your scan again.');
+      } else if (res.ok && data.status === 'open') {
+        break; // not paid yet, nothing to retry
+      }
+    } catch (e) { /* retry */ }
+    if (!unlocked) await new Promise(r => setTimeout(r, 2500));
+  }
   // Clean the URL either way
   params.delete('upgrade_session');
   const qs = params.toString();

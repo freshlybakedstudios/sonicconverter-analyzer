@@ -2626,6 +2626,7 @@ async def login(
 
     token = _create_session(user['id'])
     print(f"Login: {email}")
+    user = _reconcile_analyzer_pro(user)
 
     return {
         "token": token,
@@ -2672,6 +2673,7 @@ async def me(token: str):
         return {"name": user.get('name', ''), "email": user.get('email', ''),
                 "scans_remaining": 999, "pro": True}
 
+    user = _reconcile_analyzer_pro(user)
     return {
         "name": user['name'],
         "email": user['email'],
@@ -7740,6 +7742,102 @@ async def deal_checkout_status(session_id: str):
 ANALYZER_URL = os.getenv('ANALYZER_URL', 'https://analyze.freshlybakedstudios.com')
 
 
+
+# ---------------------------------------------------------------------------
+# Analyzer Pro unlock, three ways in (2026-10-08, after Chris Rozzell paid
+# twice and stayed free, same bug as Charlie Cizek 9/5):
+#   1. the browser's return call (/api/analyzer/upgrade/status, as before)
+#   2. Stripe's checkout.session.completed webhook (/api/stripe/webhook)
+#   3. a lazy reconcile on /api/login, /api/me and before any new checkout:
+#      if the user is not Pro, ask Stripe for paid analyzer_fresh sessions
+#      under their email and flip. The upgrade endpoint refuses to charge a
+#      user who already owns Pro (409), so a second $49 can never happen.
+# ---------------------------------------------------------------------------
+PRO_MAX_SCANS = 25
+
+
+def _unlock_analyzer_pro(user_id: str, source: str, session=None) -> bool:
+    """Flip users.fresh_capture/full_enrichment for a paid user. Idempotent.
+    Returns True when a row changed."""
+    if not supabase or not user_id:
+        return False
+    try:
+        row = supabase.table('users').select('id,email,name,fresh_capture,full_enrichment,max_scans').eq('id', str(user_id)).execute()
+        if not row.data:
+            print(f"Analyzer unlock ({source}): user {user_id} not found")
+            return False
+        user = row.data[0]
+        if user.get('fresh_capture') and user.get('full_enrichment') and int(user.get('max_scans') or 0) >= PRO_MAX_SCANS:
+            return False
+        supabase.table('users').update({
+            'fresh_capture': True,
+            'full_enrichment': True,
+            'max_scans': max(int(user.get('max_scans') or 3), PRO_MAX_SCANS),
+        }).eq('id', str(user_id)).execute()
+        sid = session.get('id') if isinstance(session, dict) else getattr(session, 'id', None)
+        amount = session.get('amount_total') if isinstance(session, dict) else getattr(session, 'amount_total', None)
+        print(f"Analyzer upgrade: user {user_id} unlocked via {source} (session {str(sid)[:14]})")
+        try:
+            send_pushover_notification(
+                "ANALYZER PRO UNLOCK 🔓",
+                f"{user.get('email') or user.get('name') or user_id}\n"
+                f"${(amount or 0) / 100:,.0f} via {source}",
+            )
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print(f"Analyzer unlock ({source}) failed for {user_id}: {e}")
+        return False
+
+
+def _paid_pro_sessions_for(user: dict) -> list:
+    """Paid analyzer_fresh Checkout Sessions that belong to this user."""
+    if not stripe_lib.api_key or not user or not user.get('id'):
+        return []
+    out = []
+    try:
+        email = (user.get('email') or '').strip().lower()
+        kwargs = {'limit': 20}
+        if email:
+            kwargs['customer_details'] = {'email': email}
+        for s in stripe_lib.checkout.Session.list(**kwargs).auto_paging_iter():
+            meta = s.metadata or {}
+            if meta.get('product') != 'analyzer_fresh':
+                continue
+            mine = meta.get('analyzer_user_id') == str(user['id']) or \
+                ((s.customer_details or {}).get('email') or '').lower() == email
+            if mine and s.status == 'complete' and s.payment_status in ('paid', 'no_payment_required'):
+                out.append(s)
+    except Exception as e:
+        print(f"Analyzer reconcile: Stripe lookup failed for {user.get('id')}: {e}")
+    return out
+
+
+_pro_reconcile_checked: dict = {}   # user id -> epoch of the last Stripe check
+
+
+def _reconcile_analyzer_pro(user: dict) -> dict:
+    """If this user paid but is not Pro, flip them now. Returns the fresh row.
+    One Stripe lookup per user per 10 minutes, so free users cost nothing."""
+    try:
+        if not user or not user.get('id') or user.get('fresh_capture'):
+            return user
+        import time as _t
+        last = _pro_reconcile_checked.get(str(user['id']), 0)
+        if _t.time() - last < 600:
+            return user
+        _pro_reconcile_checked[str(user['id'])] = _t.time()
+        paid = _paid_pro_sessions_for(user)
+        if paid and _unlock_analyzer_pro(user['id'], 'reconcile', paid[0]):
+            row = supabase.table('users').select('*').eq('id', user['id']).execute()
+            if row.data:
+                return row.data[0]
+    except Exception as e:
+        print(f"Analyzer reconcile failed: {e}")
+    return user
+
+
 @app.post("/api/analyzer/upgrade")
 async def analyzer_upgrade(token: str = Form(...)):
     """Create a Stripe Checkout Session for the analyzer Pro unlock."""
@@ -7748,12 +7846,17 @@ async def analyzer_upgrade(token: str = Form(...)):
         raise HTTPException(400, "Log in with an account to upgrade")
     if not stripe_lib.api_key:
         raise HTTPException(500, "Payment system not configured")
+    # Never charge a user who already owns Pro (Chris Rozzell paid twice 10/7).
+    lead = _reconcile_analyzer_pro(lead)
+    if lead.get('fresh_capture'):
+        raise HTTPException(409, "You already have Pro on this account. Reload the page and the upload button is live.")
     meta = {'product': 'analyzer_fresh', 'analyzer_user_id': str(lead['id'])}
     try:
         price_id = os.getenv('STRIPE_ANALYZER_PRICE_ID')
         common = dict(
             customer_email=lead.get('email') or None,
             metadata=meta,
+            client_reference_id=str(lead['id']),
             success_url=f"{ANALYZER_URL}/?upgrade_session={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{ANALYZER_URL}/",
         )
@@ -7801,28 +7904,49 @@ async def analyzer_upgrade_status(session_id: str, token: str):
     if meta.get('product') != 'analyzer_fresh' or meta.get('analyzer_user_id') != str(lead.get('id')):
         raise HTTPException(403, "Session does not belong to this account")
     if session.status == 'complete' and session.payment_status in ('paid', 'no_payment_required'):
-        if supabase and not lead.get('fresh_capture'):
-            try:
-                supabase.table('users').update({
-                    'fresh_capture': True,
-                    'full_enrichment': True,
-                    # Paid Pro = 25 scans (owner 2026-08-15; beta free-Pro = 10)
-                    'max_scans': max(int(lead.get('max_scans') or 3), 25),
-                }).eq('id', lead['id']).execute()
-                print(f"Analyzer upgrade: user {lead['id']} unlocked (session {session_id[:12]})")
-                try:
-                    send_pushover_notification(
-                        "ANALYZER PRO UNLOCK 🔓",
-                        f"{lead.get('email') or lead.get('name') or lead['id']}\n"
-                        f"${(session.amount_total or 0) / 100:,.0f}",
-                    )
-                except Exception:
-                    pass
-            except Exception as e:
-                print(f"Analyzer upgrade: flag update failed: {e}")
-                raise HTTPException(500, "Payment received but unlock failed — contact support")
+        if not lead.get('fresh_capture'):
+            if not _unlock_analyzer_pro(lead['id'], 'return', session):
+                # Row unchanged: either already Pro (fine) or the update failed.
+                check = supabase.table('users').select('fresh_capture').eq('id', lead['id']).execute() if supabase else None
+                if not (check and check.data and check.data[0].get('fresh_capture')):
+                    raise HTTPException(500, "Payment received but unlock failed — contact support")
         return {'status': 'complete', 'fresh_capture': True}
     return {'status': session.status or 'open'}
+
+
+
+@app.get("/api/stripe/webhook")
+async def stripe_webhook_health():
+    return {"ok": True, "configured": bool(os.getenv('STRIPE_WEBHOOK_SECRET'))}
+
+
+@app.post("/api/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """Stripe -> us. Flips Analyzer Pro on checkout.session.completed even when
+    the buyer's browser never comes back to the site."""
+    secret = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+    payload = await request.body()
+    sig = request.headers.get('stripe-signature', '')
+    if not secret:
+        print("Stripe webhook: STRIPE_WEBHOOK_SECRET not set, event ignored")
+        raise HTTPException(503, "webhook not configured")
+    try:
+        event = stripe_lib.Webhook.construct_event(payload, sig, secret)
+    except Exception as e:
+        print(f"Stripe webhook: bad signature: {e}")
+        raise HTTPException(400, "bad signature")
+    etype = event.get('type') if isinstance(event, dict) else event.type
+    obj = event['data']['object'] if isinstance(event, dict) else event.data.object
+    if etype in ('checkout.session.completed', 'checkout.session.async_payment_succeeded'):
+        meta = (obj.get('metadata') or {}) if isinstance(obj, dict) else (obj.metadata or {})
+        status = obj.get('payment_status') if isinstance(obj, dict) else obj.payment_status
+        if meta.get('product') == 'analyzer_fresh' and status in ('paid', 'no_payment_required'):
+            uid = meta.get('analyzer_user_id') or (obj.get('client_reference_id') if isinstance(obj, dict) else obj.client_reference_id)
+            changed = _unlock_analyzer_pro(uid, 'webhook', obj)
+            print(f"Stripe webhook: {etype} for user {uid}: {'unlocked' if changed else 'already Pro'}")
+        else:
+            print(f"Stripe webhook: {etype} ignored (product={meta.get('product')}, status={status})")
+    return {"received": True}
 
 
 def _send_contract_email(name: str, email: str, contract_text: str) -> bool:
