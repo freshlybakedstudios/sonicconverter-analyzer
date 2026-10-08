@@ -7349,9 +7349,20 @@ async def deal_lookup(
         except Exception as e:
             print(f"Deal lookup: event fetch failed: {e}")
 
-    # Send push notification (not for internal callers: the IG sweep uses this endpoint to add
-    # unknown artists to the pipeline, 2026-09-30; those lookups are not visitors)
-    if source != 'ig_sweep':
+    # Log every lookup (2026-10-07, owner: IG prospects were turning up in the "Deal Calculator
+    # Lookup" pushes the day after their DM, i.e. they came to check prices; the IG runs and the
+    # daily lead digest read deal_calc_lookups to flag that as a buying signal). Fire-and-forget.
+    try:
+        supabase.table('deal_calc_lookups').insert({
+            'artist_name': artist_data.get('name'), 'spotify_url': spotify_url, 'tier': tier,
+            'listeners': int(listeners or 0), 'source': (source or 'web'),
+        }).execute()
+    except Exception as e:
+        print(f"Deal lookup: log insert failed: {e}")
+
+    # Push for real visitors only. Internal callers (the IG sweep adds unknown artists through this
+    # endpoint, 2026-09-30) pass source=ig_*; those are not visitors and never push.
+    if not (source or '').startswith('ig'):
         send_pushover_notification(
             "Deal Calculator Lookup",
             f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners"
