@@ -6957,16 +6957,34 @@ async def deal_lookup(
     #    canonical features via the same proven path.
     if not features and _artist_cm_id and matcher._gems_list:
         aid = str(_artist_cm_id)
+        # 2026-10-12 fix: GEMS universe entries carry NO artist_id (never did, Aug cache
+        # too); the ISRC -> artist_id link lives in matcher._tracks. Matching on
+        # g['artist_id'] found nothing for every artist, so the calculator never
+        # showed sonic recs on the cache path. Index _tracks once per cache load.
+        _trk = getattr(matcher, '_tracks', None) or {}
+        _idx = getattr(matcher, '_deal_isrcs_by_artist', None)
+        if not _idx or _idx[0] is not _trk:
+            _gem_isrcs = {g['isrc'] for g in matcher._gems_list if g.get('isrc')}
+            _by = {}
+            for _isrc, _t in _trk.items():
+                _a = (_t or {}).get('artist_id')
+                if _a is not None and _isrc in _gem_isrcs:
+                    _by.setdefault(str(_a), []).append(_isrc)
+            _idx = (_trk, _by)
+            matcher._deal_isrcs_by_artist = _idx
         candidates = sorted(
-            [g for g in matcher._gems_list
-             if str(g.get('artist_id', '')) == aid and g.get('isrc')],
-            key=lambda g: g.get('sp_track_popularity') or 0, reverse=True,
+            _idx[1].get(aid, []),
+            key=lambda i: (_trk.get(i) or {}).get('sp_track_popularity') or 0, reverse=True,
         )
-        for g in candidates:
-            features = _lookup_gems_features(g['isrc'])
+        for _isrc in candidates:
+            features = _lookup_gems_features(_isrc)
             if features:
                 print(f"Deal lookup: newest track uncached — using cached track "
-                      f"{g['isrc']} for artist {aid} ({len(candidates)} cached candidates)")
+                      f"{_isrc} for artist {aid} ({len(candidates)} cached candidates)")
+                if not top_track:
+                    _ti = _trk.get(_isrc) or {}
+                    top_track = {'name': _ti.get('top_track') or '', 'isrc': _isrc,
+                                 'spotify_url': _ti.get('spotify_url') or ''}
                 break
 
     # 3) No cached tracks for this artist (truly new/unknown): skip the slow live
