@@ -72,8 +72,8 @@ from track_matcher import (TrackMatcher, _genre_families, umbrella_lane_tag,
 PUSHOVER_USER_KEY = os.getenv('PUSHOVER_USER_KEY', 'usbh1c1xzp7ooasfu8vvwbqmgiiipp')
 PUSHOVER_API_TOKEN = os.getenv('PUSHOVER_API_TOKEN', 'azq6g5x1rfzg9sykm6xscw8ypn4m1y')
 
-def send_pushover_notification(title: str, message: str):
-    """Send a push notification via Pushover."""
+def send_pushover_notification(title: str, message: str, priority: int = 0):
+    """Send a push notification via Pushover. priority -2 = lands in the app silently."""
     try:
         requests.post(
             'https://api.pushover.net/1/messages.json',
@@ -82,6 +82,7 @@ def send_pushover_notification(title: str, message: str):
                 'user': PUSHOVER_USER_KEY,
                 'title': title,
                 'message': message,
+                'priority': str(int(priority)),
             },
             timeout=10,
         )
@@ -7383,9 +7384,12 @@ async def deal_lookup(
     # Push for real visitors only. Internal callers (the IG sweep adds unknown artists through this
     # endpoint, 2026-09-30) pass source=ig_*; those are not visitors and never push.
     if not (source or '').startswith('ig'):
+        # Silent (owner 2026-10-13: "I can't keep on top of it all"): lookups land in the
+        # Pushover app without buzzing; the email step (deal lead) is what buzzes.
         send_pushover_notification(
             "Deal Calculator Lookup",
-            f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners"
+            f"{artist_data.get('name', 'Unknown')} | {tier} | {int(listeners):,} listeners",
+            priority=-2,
         )
 
     print(f"[TIMING] through history + events (total): {time.time()-_t0:.1f}s")
