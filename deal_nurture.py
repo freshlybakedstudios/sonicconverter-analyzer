@@ -813,7 +813,11 @@ def _set_nurture_state(supabase, lead_id, patch: dict):
 # gentle review ask. Local-SEO context: 30 Google reviews vs Donut Shop's 85;
 # AI assistants rarely name businesses under ~150 reviews. Capped per run so a
 # backlog of past clients drips out instead of blasting at once.
-REVIEWASK_DELAY = timedelta(days=30)
+# 2026-10-13: the ask fires at the WIN, not 30 days after a calculator payment
+# (no client has ever paid through the calculator). The owner marks final
+# approval with googleads/mark_delivered.py, which writes a step='delivered'
+# row; the next poll sends the ask. Everyone who delivers gets asked.
+REVIEWASK_DELAY = timedelta(0)
 REVIEWASK_LOOKBACK = timedelta(days=120)   # don't ask ancient clients cold
 REVIEWASK_CAP = 3                          # per run (runs are daily-ish)
 GOOGLE_REVIEW_LINK = "https://g.page/r/CRUxHhMqDkTLEBM/review"  # official GBP review link
@@ -850,14 +854,15 @@ def _build_review_ask(lead: dict):
 
 
 def run_review_asks(supabase, dry_run: bool = None) -> dict:
-    """One-time Google-review ask to paid clients ~30d after payment."""
+    """One-time Google-review ask, sent on the day the owner marks a record
+    delivered (step='delivered' row from googleads/mark_delivered.py)."""
     if dry_run is None:
         dry_run = not NURTURE_ENABLED
     now = _now()
     since = (now - REVIEWASK_LOOKBACK).isoformat()
     rows = (
         supabase.table("deal_leads").select("*")
-        .eq("step", "paid").gte("created_at", since).execute().data or []
+        .eq("step", "delivered").gte("created_at", since).execute().data or []
     )
     sent, targets, seen = 0, [], set()
     for r in sorted(rows, key=lambda x: x.get("created_at") or ""):
@@ -886,6 +891,27 @@ def run_review_asks(supabase, dry_run: bool = None) -> dict:
     return {"dry_run": dry_run, "review_asks": sent, "targets": targets}
 
 
+def lead_odds(row: dict) -> dict:
+    """The lead's odds of moving forward, from the two signals that predict it
+    in our own data (contact leads since 2026-09-07, n=76, 'moved forward' =
+    replied, confirmed a call, or reached the payment screen): sent a track
+    link 48%, ran an artist lookup 40% (any artist, not only their own), either 43%, neither 6%.
+    Modelled on Duolingo's daily churn number (ayoships study, 2026-10-13).
+    Returns {score 0-2, signals [..], strong bool, line str}."""
+    meta = row.get("metadata") or {}
+    signals = []
+    if (meta.get("track_url") or "").strip():
+        signals.append("sent a track")
+    if (row.get("artist_name") or "").strip():
+        signals.append("ran an artist lookup")
+    strong = bool(signals)
+    if strong:
+        line = " + ".join(signals) + " · about 4 in 10 like this move forward"
+    else:
+        line = "no track, no artist lookup · about 1 in 16 move forward"
+    return {"score": len(signals), "signals": signals, "strong": strong, "line": line}
+
+
 def run_nurture(supabase, dry_run: bool = None) -> dict:
     """
     Select leads due for a follow-up and send (or preview) their email.
@@ -910,6 +936,14 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
         r["email"].lower()
         for r in rows
         if r.get("step") in ("checkout_started", "book_reached") and r.get("email")
+    }
+    # 2026-10-13: leads who sent a track or looked up their own artist move
+    # forward at ~43% vs 6% for the rest (lead_odds), so they get the same
+    # one-day second touch as cart abandoners.
+    hot_emails |= {
+        r["email"].lower()
+        for r in rows
+        if r.get("step") == "contact" and r.get("email") and lead_odds(r)["strong"]
     }
     checkout_emails = {
         r["email"].lower()
@@ -1024,12 +1058,13 @@ def _now_et():
         return datetime.now(timezone.utc) - timedelta(hours=4)
 
 
-def run_daily_digest(supabase) -> dict:
+def run_daily_digest(supabase, force: bool = False) -> dict:
     """Email the owner a digest of the last 24h of deal-calc leads, once per
     day after DIGEST_HOUR_ET. Independent of NURTURE_ENABLED — it never
-    contacts a lead. Once-per-day guard = a step='digest_sent' marker row."""
+    contacts a lead. Once-per-day guard = a step='digest_sent' marker row.
+    force=True skips the hour and once-a-day guards (local previews only)."""
     now_et = _now_et()
-    if now_et.hour < DIGEST_HOUR_ET:
+    if now_et.hour < DIGEST_HOUR_ET and not force:
         return {"skipped": "before send hour"}
     today = now_et.strftime("%Y-%m-%d")
 
@@ -1037,7 +1072,7 @@ def run_daily_digest(supabase) -> dict:
         supabase.table("deal_leads").select("id").eq("step", "digest_sent")
         .contains("metadata", {"date": today}).limit(1).execute()
     )
-    if marker.data:
+    if marker.data and not force:
         return {"skipped": "already sent today"}
 
     since = (_now() - timedelta(hours=24)).isoformat()
@@ -1064,6 +1099,14 @@ def run_daily_digest(supabase) -> dict:
     # Drop leads who also paid in the window — they're in the wins section
     paid_emails = {(p.get("email") or "").lower() for p in paid}
     leads = [r for e, r in leads_by_email.items() if e not in paid_emails]
+    # Order (2026-10-13): furthest step first, then the odds score, then the
+    # quote value, so the leads worth his keyboard sit at the top.
+    _step_rank = {"checkout_started": 2, "book_reached": 1, "contact": 0}
+    leads.sort(key=lambda r: (
+        _step_rank.get(r.get("step"), 0),
+        lead_odds(r)["score"],
+        float((r.get("metadata") or {}).get("deal_value") or 0),
+    ), reverse=True)
 
     if not leads and not paid:
         # still stamp the marker so we don't re-query all day
@@ -1091,6 +1134,10 @@ def run_daily_digest(supabase) -> dict:
             price_line = f"{val}{track_str}"
         hot = r.get("step") == "checkout_started"
         reached_pay = r.get("step") == "book_reached"
+        odds = lead_odds(r)
+        odds_html = (f'<span style="color:{"#2a7" if odds["strong"] else "#999"};font-weight:bold">'
+                     f'Odds: {"strong" if odds["strong"] else "low"}</span>'
+                     f' <span style="color:#777;font-size:12px">{odds["line"]}</span>')
         nur = meta.get("nurture") or {}
         touches = ("t1" if nur.get("t1_sent_at") else "") + ("+t2" if nur.get("t2_sent_at") else "")
         # The vision rung: their own words about the record + a track link.
@@ -1147,6 +1194,7 @@ def run_daily_digest(supabase) -> dict:
           {v['service_str'] or 'services unknown'} · {price_line}
           {f' · <b>{funding_tag}</b>' if funding_tag else ''}
           {f' · nurture sent: {touches}' if touches else ' · no nurture sent yet'}<br>
+          <div style="margin:4px 0">{odds_html}</div>
           {f'<div style="margin:8px 0;padding:8px 12px;background:#f6f6f2;border-left:3px solid #B0C936;font-style:italic;color:#333">“{vision}”</div>' if vision else ''}
           {(f'<div style="margin:4px 0"><a href="{track_url}">🎧 their track</a></div>' if track_url.startswith('http') else f'<div style="margin:4px 0">🎧 {track_url} (check the Dropbox file request)</div>') if track_url else ''}
           {action}
@@ -1172,7 +1220,10 @@ def run_daily_digest(supabase) -> dict:
       <h2>Deal-calc leads — last 24h</h2>
       {wins_html}
       <h3>Leads in — last 24h ({len(leads)})</h3>
-      <p style="color:#555;font-size:13px">The robot handles follow-up now (personalized
+      <p style="color:#555;font-size:13px">Sorted by how far they got, then their odds.
+      Odds come from our own leads: people who sent a track or ran an artist lookup
+      move forward about 4 in 10; the rest about 1 in 16. Strong-odds leads get the
+      day-one follow-up. The robot handles follow-up now (personalized
       "actual human" touch at day 1–2). Only WHALE-flagged leads are worth your keyboard —
       and emailing one personally cancels its automated sequence, so pick your lane per lead.</p>
       {leads_html}
