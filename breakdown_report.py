@@ -575,46 +575,27 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
              (_dance_label(_num(f.get('danceability'))), 'Danceability', '')]
     tiles_html = ''.join(f'<div class="tile"><b>{v}</b><span>{lab}</span>{("<small>" + _esc(sub) + "</small>") if sub else ""}</div>' for v, lab, sub in tiles)
     rmap = {r['feature']: r for r in ranges if r.get('feature')}
-    # 2026-10-14: full_target_ranges carries the peer percentiles for EVERY band
-    # (recommendation_ranges only has the bands that got a recommendation), so
-    # the striped zone shows on all seven rows, not just the two that missed.
-    fmap = {r['feature']: r for r in (rj.get('full_target_ranges') or []) if isinstance(r, dict) and r.get('feature')}
-    out_bands, rows = [], ''
+    rows = ''
     for name, key_ in BANDS:
         v = _num(f.get(key_))
         if v is None:
             continue
         w = min(100.0, v / 0.30 * 100)
-        zone_html, cls = '', ''
-        p25 = p75 = 0.0
-        r = rmap.get(key_) or fmap.get(key_)
-        if r and r.get('percentiles'):
-            _, p25, _, p75, _, in_zone = _rec_band(r)
-            if not in_zone:
-                cls = ' out'
-                out_bands.append((name, 'light' if v < p25 else 'heavy'))
-        zl = (p25 / 0.30 * 100) if (r and r.get('percentiles')) else 0
-        zw = max(0.5, (p75 - p25) / 0.30 * 100) if (r and r.get('percentiles')) else 0
+        # Owner 2026-10-14: frequency balance shows the bands and nothing else.
+        # No peer zones, no peer colouring, no peer sentence. The comparison
+        # lives on the production page.
+        cls = ''
         FW = 500.0
         bar_w = max(2.0, min(100, w) / 100 * FW)
         bar_rx = 3 if bar_w >= 10 else 0  # a 0.9% sub bar is a sliver, not a rounded dot
-        zx, zww = zl / 100 * FW, zw / 100 * FW
+        # Owner 2026-10-14: plain bars, no striped peer zones on this chart.
+        # The peer comparison lives in the sentence under it and on page 6.
         tr = (f'<svg width="5.0in" height=".16in" viewBox="0 0 {FW:.0f} 16" xmlns="http://www.w3.org/2000/svg" style="display:block">'
               f'<rect x="0" y="1" width="{FW:.0f}" height="14" rx="3" fill="#2a2925"/>'
-              + (f'<rect x="{zx:.1f}" y="1" width="{zww:.1f}" height="14" fill="#D8E166" fill-opacity="0.16"/>' if zw else '')
-              + f'<rect x="0" y="1" width="{bar_w:.1f}" height="14" rx="{bar_rx}" fill="{"#D8E166" if cls else "#B5C851"}" fill-opacity="0.72"/>'
-              + (f'<g transform="translate(0,1)">{_hatch_lines(zx, zx + zww, 14, "#F2F7B8", 0.75)}</g>'
-                 f'<rect x="{zx:.1f}" y="1.5" width="{zww:.1f}" height="13" fill="none" stroke="#F2F7B8" stroke-opacity="0.9" stroke-width="1"/>' if zw else '')
-              + '</svg>')
+              f'<rect x="0" y="1" width="{bar_w:.1f}" height="14" rx="{bar_rx}" fill="{"#D8E166" if cls else "#B5C851"}"/>'
+              '</svg>')
         rows += f'<div class="row"><div class="lab">{name}</div><div class="track">{tr}</div><div class="val{cls}">{v * 100:.1f}%</div></div>'
-    cohort_n = so.get('cohort_size') or ((rmap.get('mid_ratio') or {}).get('agree') or [0, 0])[1]
-    if out_bands:
-        plural = {'Mid': 'mids are', 'Low-Mid': 'low-mids are', 'Hi-Mid': 'hi-mids are'}
-        parts = [f'the {plural.get(n, n.lower() + " is")} {d}' for n, d in out_bands]
-        band_note = (f'Share of spectral energy per band. Striped zones mark where the {cohort_n} highest-converting peers in this lane sit. '
-                     f'{"One band lands" if len(out_bands) == 1 else str(len(out_bands)) + " bands land"} outside them: {", ".join(parts)}.')
-    else:
-        band_note = f'Share of spectral energy per band. Striped zones mark where the {cohort_n} highest-converting peers in this lane sit. Every band lands inside them.'
+    band_note = 'Share of spectral energy per band.'
     emos = []
     es = f.get('emotion_summary') or {}
     for e, s_ in (es.get('emotions') or [])[:4]:
