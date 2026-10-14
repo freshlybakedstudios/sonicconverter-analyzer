@@ -114,7 +114,9 @@ def _scan_push(prefix: str, job_id: str = None, note: str = '', track: str = Non
             lines.append(f"job {job_id[:8]}")
         if note:
             lines.append(note)
-        send_pushover_notification(prefix, "\n".join(lines))
+        # Deal-calc lead scans (2026-10-13) are routine: land silently.
+        _prio = -2 if str(source or '').startswith('deal_calc') else 0
+        send_pushover_notification(prefix, "\n".join(lines), priority=_prio)
     except Exception as e:
         print(f"scan push failed: {e}")
 
@@ -4007,6 +4009,11 @@ def _send_curator_report_email(job_id: str, curator_count: int):
     except Exception as _pdf_err:
         print(f"Enrichment [{job_id[:8]}]: breakdown PDF skipped ({_pdf_err})")
     track = job.get('track_name') or 'your track'
+    # Deal-calc lead scans (2026-10-13) get their own note: no account, no
+    # My Scans link, the PDF is the whole point.
+    if curator_count <= 0 and (str(job.get('scan_source') or '').startswith('deal_calc')
+                               or str(job.get('token') or '').startswith('dealcalc-')):
+        return _send_deal_calc_read_email(job, attachments)
     curators = job.get('curator_emails') or {}
     if isinstance(curators, str):
         try:
@@ -5877,7 +5884,8 @@ async def analyze_url(
                 print(f"  URL analysis: created pending_features job {job_id[:8]}")
                 _scan_push("🎧 Scan landed (rig capture)", job_id, track=track_name,
                            artist=artist_name, email=lead.get('email'),
-                           source='worker_capture',
+                           source=('deal_calc_capture' if str(token or '').startswith('dealcalc-')
+                                   else 'worker_capture'),
                            note=f"{queue_ahead} ahead in queue" if queue_ahead else '')
             except Exception as e:
                 print(f"  URL analysis: job create failed: {e}")
@@ -6348,18 +6356,24 @@ async def analyze_url(
         for _, _, m, _ in flattery_candidates[:20]:
             flattery_matches.append(m)
 
+    # Distinguish cache-hit link scans from Mac-rig capture scans so the
+    # dashboard source split shows real rig load, not just link volume.
+    # Deal-calc lead scans (2026-10-13, ephemeral 'dealcalc-' tokens) keep
+    # their own source so the read email and the quiet pushes can tell.
+    if str(token or '').startswith('dealcalc-'):
+        _scan_src = 'deal_calc' if features_source == 'universe_cache' else 'deal_calc_capture'
+    else:
+        _scan_src = 'url' if features_source == 'universe_cache' else 'url_capture'
     new_job_id = job_mgr.create_job(token, features, found_matches, job_id=(job_id or queued_job_id), identity={
         'track_name': track_name,
         'artist_name': artist_name,
         'spotify_url': spotify_url,
         'user_email': lead.get('email'),
-        # Distinguish cache-hit link scans from Mac-rig capture scans so the
-        # dashboard source split shows real rig load, not just link volume.
-        'scan_source': 'url' if features_source == 'universe_cache' else 'url_capture',
+        'scan_source': _scan_src,
     })
     if features_source == 'universe_cache':
         _scan_push("🎧 Scan landed (cache hit)", new_job_id, track=track_name,
-                   artist=artist_name, email=lead.get('email'), source='url')
+                   artist=artist_name, email=lead.get('email'), source=_scan_src)
 
     # Build user_profile for "Where You Stand" conversion comparison
     user_profile = None
@@ -7419,7 +7433,212 @@ async def deal_lookup(
         'upcoming_events': upcoming_events,
         'lookup_source': lookup_source,
         'image_url': image_url,
+        # 2026-10-13: the contact step sends this back so the email-step
+        # track read can resolve Where You Stand from the artist cache.
+        'artist_spotify_url': spotify_url,
     }
+
+
+
+# ---------------------------------------------------------------------------
+# Deal Calculator: the email-step reward (2026-10-13)
+# ---------------------------------------------------------------------------
+# When a visitor gives their email on /rates, the calculator queues a free
+# analyzer scan of the artist's top track and mails the breakdown PDF (the
+# same report the analyzer's Download PDF button builds), so the email unlocks
+# something besides the price. Runs the normal URL-scan pipeline under an
+# ephemeral legacy token (no account, no scan cap, no My Scans link); the job
+# is identified by scan_source 'deal_calc' / 'deal_calc_capture' and the token
+# prefix 'dealcalc-'. The lead row carries metadata.scan so the written quote
+# can point at the read. Owner rule: "free" attaches only to the analyzer's
+# notes and the listen, never to the work.
+DEAL_SCAN_DAILY_CAP = int(os.getenv('DEAL_SCAN_DAILY_CAP', '25'))
+
+
+def _deal_lead_scan_stamp(lead_id, email: str, job_id: str, patch: dict):
+    """Merge `patch` into deal_leads.metadata.scan: by row id when known, else
+    the newest contact row for the email whose scan.job_id matches, else the
+    newest contact row. Never raises."""
+    try:
+        row = None
+        if lead_id:
+            r = supabase.table('deal_leads').select('id,metadata') \
+                .eq('id', lead_id).limit(1).execute()
+            row = (r.data or [None])[0]
+        if not row and email:
+            r = supabase.table('deal_leads').select('id,metadata') \
+                .ilike('email', email).eq('step', 'contact') \
+                .order('created_at', desc=True).limit(5).execute()
+            rows = r.data or []
+            row = next((x for x in rows
+                        if ((x.get('metadata') or {}).get('scan') or {}).get('job_id') == job_id),
+                       rows[0] if rows else None)
+        if not row:
+            return None
+        meta = dict(row.get('metadata') or {})
+        scan = dict(meta.get('scan') or {})
+        scan.update(patch)
+        meta['scan'] = scan
+        supabase.table('deal_leads').update({'metadata': meta}).eq('id', row['id']).execute()
+        return row['id']
+    except Exception as e:
+        print(f"Deal scan: lead stamp failed ({e})")
+        return None
+
+
+def _queue_deal_track_scan(email: str, top_track: dict, artist_name=None,
+                           artist_spotify_url=None, lead_id=None):
+    """Thread body: queue and run the analyzer scan for a deal-calc lead's top
+    track. Guards: internal addresses, one job per lead per track per 30 days,
+    a daily cap (the lead endpoint is unauthenticated and a rig capture costs
+    real minutes on the Mac)."""
+    try:
+        from deal_nurture import SUPPRESS_DOMAINS, SUPPRESS_EMAILS
+        em = (email or '').strip().lower()
+        if not em or '@' not in em:
+            return
+        if em in SUPPRESS_EMAILS or em.split('@', 1)[1] in SUPPRESS_DOMAINS:
+            print(f"Deal scan: internal address {em}, skipped")
+            return
+        canon = _normalize_spotify_track_url((top_track or {}).get('spotify_url'))
+        if not canon:
+            print(f"Deal scan: no usable track URL for {em}, skipped")
+            return
+        if not supabase:
+            return
+        from datetime import timezone as _tz, timedelta as _td
+        now_dt = datetime.now(_tz.utc)
+        dup = supabase.table('analysis_jobs').select('id,status') \
+            .ilike('user_email', em).eq('spotify_url', canon) \
+            .gte('created_at', (now_dt - _td(days=30)).isoformat()).limit(1).execute()
+        if dup.data:
+            print(f"Deal scan: {em} already has a job for {canon} "
+                  f"({dup.data[0].get('status')}), skipped")
+            return
+        day = supabase.table('analysis_jobs').select('id', count='exact') \
+            .like('token', 'dealcalc-%') \
+            .gte('created_at', (now_dt - _td(hours=24)).isoformat()).execute()
+        if (day.count or 0) >= DEAL_SCAN_DAILY_CAP:
+            print(f"Deal scan: daily cap {DEAL_SCAN_DAILY_CAP} reached, skipped {em}")
+            send_pushover_notification("Deal calc read: daily scan cap hit",
+                                       f"{em} did not get a track read\n{canon}")
+            return
+        import uuid as _uuid
+        tok = f"dealcalc-{_uuid.uuid4().hex}"
+        # Legacy-token shape: no 'id' (no cap, no decrement); the email is the
+        # job identity; the artist URL lets Where You Stand resolve from cache.
+        access_tokens[tok] = {'email': em, 'spotify_url': (artist_spotify_url or ''),
+                              'deal_calc': True}
+        jid = str(_uuid.uuid4())
+        now = now_dt.isoformat()
+        supabase.table('analysis_jobs').insert({
+            'id': jid, 'token': tok, 'status': 'queued',
+            'spotify_url': canon,
+            'track_name': ((top_track or {}).get('name') or '')[:200] or None,
+            'artist_name': (artist_name or '')[:200] or None,
+            'user_email': em,
+            'scan_source': 'deal_calc_queued',
+            'features': '{}', 'matches': '[]', 'playlists': '{}',
+            'related_artists': '[]', 'credits': '{}', 'curator_emails': '{}',
+            'confidence_map': '{}', 'progress': '{}',
+            'created_at': now, 'updated_at': now,
+        }).execute()
+        job_mgr._mem[jid] = {'id': jid, 'status': 'queued', 'spotify_url': canon, 'token': tok}
+        _deal_lead_scan_stamp(lead_id, em, jid, {
+            'job_id': jid, 'track': (top_track or {}).get('name') or '',
+            'spotify_url': canon, 'status': 'queued', 'requested_at': now,
+        })
+        print(f"Deal scan [{jid[:8]}]: queued {canon} for {em}")
+        try:
+            job_mgr.update_job(jid, status='matching')
+            # Own event loop: the pipeline body is blocking-heavy (same reason
+            # the fire-and-forget queue endpoint runs it on a thread).
+            asyncio.run(analyze_url(spotify_url=canon, token=tok, queued_job_id=jid))
+            print(f"Deal scan [{jid[:8]}]: pipeline finished")
+        except HTTPException as he:
+            print(f"Deal scan [{jid[:8]}]: failed: {he.detail}")
+            job_mgr.update_job(jid, status='error',
+                               progress={'error_message': str(he.detail)[:300]})
+            _deal_lead_scan_stamp(lead_id, em, jid,
+                                  {'status': 'error', 'error': str(he.detail)[:200]})
+        except Exception as e:
+            print(f"Deal scan [{jid[:8]}]: crashed: {e}")
+            job_mgr.update_job(jid, status='error',
+                               progress={'error_message': str(e)[:300]})
+            _deal_lead_scan_stamp(lead_id, em, jid,
+                                  {'status': 'error', 'error': str(e)[:200]})
+        finally:
+            # Enrichment and the read email never touch the session; the
+            # token only had to survive the pipeline call above.
+            access_tokens.pop(tok, None)
+    except Exception as e:
+        print(f"Deal scan: queue failed for {email}: {e}")
+
+
+def _send_deal_calc_read_email(job: dict, attachments: list) -> bool:
+    """The email-step reward itself: the breakdown PDF of the lead's top track,
+    in the owner's plain voice, minutes before the written quote. Stamps the
+    lead's metadata.scan so the quote email can point at it. Returns ok."""
+    job_id = str(job.get('id') or '')
+    to_email = (job.get('user_email') or '').strip()
+    track = job.get('track_name') or 'your track'
+    artist = (job.get('artist_name') or '').strip()
+    if not attachments:
+        print(f"Deal scan [{job_id[:8]}]: no PDF, read email skipped")
+        _deal_lead_scan_stamp(None, to_email, job_id, {'status': 'pdf_failed'})
+        return False
+    lead = None
+    try:
+        r = supabase.table('deal_leads').select('*').ilike('email', to_email) \
+            .eq('step', 'contact').order('created_at', desc=True).limit(5).execute()
+        rows = r.data or []
+        lead = next((x for x in rows
+                     if ((x.get('metadata') or {}).get('scan') or {}).get('job_id') == job_id),
+                    rows[0] if rows else None)
+    except Exception as e:
+        print(f"Deal scan [{job_id[:8]}]: lead lookup failed ({e})")
+    from deal_nurture import (_send_via_gmail, _lead_view, _html_and_plain,
+                              OWNER_SIGNATURE_HTML)
+    greet = _lead_view(lead)['greet'] if lead else 'there'
+    if artist and greet.strip().lower() != artist.lower():
+        opener = (f"You put {artist} into the calculator, so I ran &ldquo;{track}&rdquo; "
+                  f"through the analyzer.")
+    else:
+        opener = (f"I ran &ldquo;{track}&rdquo; through the analyzer after you put it "
+                  f"into the calculator.")
+    body = f"""
+      <p>Hey {greet},</p>
+      <p>{opener} The read is attached as a PDF: how the track sits next to records
+         in its lane, and the production notes I'd start from if it came through here.</p>
+      <p>Your quote comes separately.</p>
+      <p>What are you working on right now?</p>
+      {OWNER_SIGNATURE_HTML}
+    """
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+                max-width:560px;margin:0 auto;color:#111;font-size:15px;line-height:1.5">
+      {body}
+      <p style="color:#999;font-size:11px;margin-top:28px">
+        You got this because you ran the calculator at freshlybakedstudios.com.
+      </p>
+    </div>
+    """
+    html, plain = _html_and_plain(html)
+    import html as _htmlmod
+    plain = _htmlmod.unescape(plain)
+    subject = f'The read on "{track}"'
+    try:
+        ok = _send_via_gmail(to_email, subject, html, plain, attachments=attachments)
+    except Exception as e:
+        print(f"Deal scan [{job_id[:8]}]: gmail rail unavailable ({e})")
+        ok = False
+    print(f"Deal scan [{job_id[:8]}]: read email to {to_email}: {'sent' if ok else 'FAILED'}")
+    from datetime import timezone as _tz
+    patch = {'status': 'complete' if ok else 'email_failed'}
+    if ok:
+        patch['delivered_at'] = datetime.now(_tz.utc).isoformat()
+    _deal_lead_scan_stamp(lead.get('id') if lead else None, to_email, job_id, patch)
+    return ok
 
 
 # ---------------------------------------------------------------------------
@@ -7484,6 +7703,7 @@ async def deal_lead_capture(data: dict):
         ).start()
 
     # Save to Supabase
+    lead_row_id = None
     if supabase:
         try:
             row = {
@@ -7508,9 +7728,27 @@ async def deal_lead_capture(data: dict):
                 },
                 'created_at': datetime.utcnow().isoformat(),
             }
-            supabase.table('deal_leads').insert(row).execute()
+            _ins = supabase.table('deal_leads').insert(row).execute()
+            try:
+                lead_row_id = ((_ins.data or [{}])[0] or {}).get('id')
+            except Exception:
+                lead_row_id = None
         except Exception as e:
             print(f"Deal lead save error: {e}")
+
+    # Email-step reward (2026-10-13, owner: "they really shouldn't get pricing
+    # until I get the email", so the email has to unlock more than the price):
+    # scan the artist's top track and mail the breakdown PDF, minutes before
+    # the written quote. Fire-and-forget, never blocks the lead.
+    if step == 'contact':
+        _tt = data.get('top_track') or {}
+        if isinstance(_tt, dict) and _tt.get('spotify_url'):
+            threading.Thread(
+                target=_queue_deal_track_scan,
+                args=(email, _tt, data.get('artist_name'),
+                      data.get('artist_spotify_url'), lead_row_id),
+                daemon=True,
+            ).start()
 
     # Push notification. 'book_reached' = they pressed Book Now and are looking
     # at the deposit — the warmest moment the funnel has (2026-09-06).

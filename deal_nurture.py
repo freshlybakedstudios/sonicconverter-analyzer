@@ -315,6 +315,15 @@ def build_quote_email(lead: dict, quote: dict, campaign: str = "quote"):
         '<td style="padding:3px 0;color:#555;text-align:right">$250</td></tr>'
     )
 
+    # 2026-10-13: the email-step reward (app.py _queue_deal_track_scan) mails
+    # the breakdown of their top track minutes after the contact step; only
+    # mention it once metadata.scan says it was delivered. Never a promise.
+    scan = (lead.get("metadata") or {}).get("scan") or {}
+    read_line = ""
+    if scan.get("delivered_at") and scan.get("track"):
+        read_line = (f'<p>The read on &ldquo;{scan["track"]}&rdquo; is in your inbox as its own '
+                     f'email, with the production notes attached.</p>')
+
     subject = "Your quote, in writing"
     body = f"""
       <p>Hey {v['greet']},</p>
@@ -327,6 +336,7 @@ def build_quote_email(lead: dict, quote: dict, campaign: str = "quote"):
          back tomorrow or in three months.</p>
       <p>And if the total feels like a lot in one bite, every project here can
          start with a single track. Prove the fit on one song, the rest can follow.</p>
+      {read_line}
       <p>The calculator's here if you want to change the shape of it:
          <a href="{rates}">{FRONTEND_URL}/rates</a><br>
          If you'd rather talk it through first, grab a call:
