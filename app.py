@@ -7486,6 +7486,50 @@ def _deal_lead_scan_stamp(lead_id, email: str, job_id: str, patch: dict):
         return None
 
 
+def _spotify_track_cooldown(track_url: str, max_wait: int = 1200) -> bool:
+    """Both Spotify apps answered 429 during the first live test (2026-10-13),
+    and a scan that loses its Spotify metadata loses name, ISRC and the cache
+    hit, then blind-captures on the rig. Probe the track endpoint and honour
+    Retry-After (up to max_wait seconds) before running the pipeline. True =
+    Spotify answers; False = still rate-limited after the wait."""
+    tid = track_url.rstrip('/').rsplit('/', 1)[-1].split('?')[0]
+    creds = [(os.getenv('SPOTIFY_CLIENT_ID'), os.getenv('SPOTIFY_CLIENT_SECRET')),
+             (os.getenv('SPOTIFY_CLIENT_ID_BACKUP'), os.getenv('SPOTIFY_CLIENT_SECRET_BACKUP'))]
+    waited = 0
+    while True:
+        limited, retry_after = False, 0
+        for cid, sec in creds:
+            if not cid or not sec:
+                continue
+            try:
+                a = requests.post('https://accounts.spotify.com/api/token',
+                                  data={'grant_type': 'client_credentials'},
+                                  auth=(cid, sec), timeout=10)
+                if a.status_code != 200:
+                    continue
+                t = requests.get(f'https://api.spotify.com/v1/tracks/{tid}',
+                                 headers={'Authorization': f"Bearer {a.json()['access_token']}"},
+                                 timeout=10)
+                if t.status_code == 200:
+                    return True
+                if t.status_code == 429:
+                    limited = True
+                    try:
+                        retry_after = max(retry_after, int(t.headers.get('Retry-After') or 60))
+                    except ValueError:
+                        retry_after = max(retry_after, 60)
+            except Exception:
+                continue
+        if not limited:
+            return False  # not a rate limit; let the pipeline report whatever it is
+        if waited >= max_wait:
+            return False
+        nap = min(max(retry_after, 30) + 5, max_wait - waited)
+        print(f"Deal scan: Spotify rate-limited (Retry-After {retry_after}s), waiting {nap}s")
+        time.sleep(nap)
+        waited += nap
+
+
 def _queue_deal_track_scan(email: str, top_track: dict, artist_name=None,
                            artist_spotify_url=None, lead_id=None):
     """Thread body: queue and run the analyzer scan for a deal-calc lead's top
@@ -7550,6 +7594,12 @@ def _queue_deal_track_scan(email: str, top_track: dict, artist_name=None,
         })
         print(f"Deal scan [{jid[:8]}]: queued {canon} for {em}")
         try:
+            if not _spotify_track_cooldown(canon):
+                print(f"Deal scan [{jid[:8]}]: Spotify still rate-limited after the wait, giving up")
+                job_mgr.update_job(jid, status='error',
+                                   progress={'error_message': 'spotify rate-limited'})
+                _deal_lead_scan_stamp(lead_id, em, jid, {'status': 'error', 'error': 'spotify_429'})
+                return
             job_mgr.update_job(jid, status='matching')
             # Own event loop: the pipeline body is blocking-heavy (same reason
             # the fire-and-forget queue endpoint runs it on a thread).
