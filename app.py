@@ -7553,7 +7553,10 @@ def _queue_deal_track_scan(email: str, top_track: dict, artist_name=None,
             job_mgr.update_job(jid, status='matching')
             # Own event loop: the pipeline body is blocking-heavy (same reason
             # the fire-and-forget queue endpoint runs it on a thread).
-            asyncio.run(analyze_url(spotify_url=canon, token=tok, queued_job_id=jid))
+            # genre=None explicitly: the FastAPI Form(None) default is a Form
+            # object when called directly (first live test crashed on .strip()).
+            asyncio.run(analyze_url(spotify_url=canon, token=tok, genre=None,
+                                    queued_job_id=jid))
             print(f"Deal scan [{jid[:8]}]: pipeline finished")
         except HTTPException as he:
             print(f"Deal scan [{jid[:8]}]: failed: {he.detail}")
