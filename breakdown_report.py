@@ -566,11 +566,19 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
     _kc = f.get('key_confidence')
     _key_sub = 'low confidence' if isinstance(_kc, (int, float)) and _kc < 0.25 else ''
     tiles = [(f"{_num(f.get('bpm')) or 0:.0f}", 'BPM', ''), (_esc(key), 'Key', _key_sub),
-             (f"{lufs:.1f}" if lufs is not None else '—', 'LUFS', f"integrated · est. {lufs_est:.1f} on streaming" if lufs_est is not None else 'integrated'),
+             # 2026-10-14 (owner): the number is the streaming estimate (whole-track
+             # projection, see _INT_EST_COEF in app.py); the raw window reads ~3 dB quiet.
+             ((f"{lufs_est:.1f}" if lufs_est is not None else (f"{lufs:.1f}" if lufs is not None else '—')), 'LUFS',
+              (f"streaming estimate · measured {lufs:.1f}" if (lufs_est is not None and lufs is not None)
+               else ('integrated' if lufs is not None else ''))),
              (_energy_label(_num(f.get('energy'))), 'Energy', ''), (_compression_label(_num(f.get('compression_amount'))), 'Compression', ''),
              (_dance_label(_num(f.get('danceability'))), 'Danceability', '')]
     tiles_html = ''.join(f'<div class="tile"><b>{v}</b><span>{lab}</span>{("<small>" + _esc(sub) + "</small>") if sub else ""}</div>' for v, lab, sub in tiles)
     rmap = {r['feature']: r for r in ranges if r.get('feature')}
+    # 2026-10-14: full_target_ranges carries the peer percentiles for EVERY band
+    # (recommendation_ranges only has the bands that got a recommendation), so
+    # the striped zone shows on all seven rows, not just the two that missed.
+    fmap = {r['feature']: r for r in (rj.get('full_target_ranges') or []) if isinstance(r, dict) and r.get('feature')}
     out_bands, rows = [], ''
     for name, key_ in BANDS:
         v = _num(f.get(key_))
@@ -579,7 +587,7 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
         w = min(100.0, v / 0.30 * 100)
         zone_html, cls = '', ''
         p25 = p75 = 0.0
-        r = rmap.get(key_)
+        r = rmap.get(key_) or fmap.get(key_)
         if r and r.get('percentiles'):
             _, p25, _, p75, _, in_zone = _rec_band(r)
             if not in_zone:
@@ -588,11 +596,15 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
         zl = (p25 / 0.30 * 100) if (r and r.get('percentiles')) else 0
         zw = max(0.5, (p75 - p25) / 0.30 * 100) if (r and r.get('percentiles')) else 0
         FW = 500.0
+        bar_w = max(2.0, min(100, w) / 100 * FW)
+        bar_rx = 3 if bar_w >= 10 else 0  # a 0.9% sub bar is a sliver, not a rounded dot
+        zx, zww = zl / 100 * FW, zw / 100 * FW
         tr = (f'<svg width="5.0in" height=".16in" viewBox="0 0 {FW:.0f} 16" xmlns="http://www.w3.org/2000/svg" style="display:block">'
               f'<rect x="0" y="1" width="{FW:.0f}" height="14" rx="3" fill="#2a2925"/>'
-              f'<rect x="0" y="1" width="{min(100, w) / 100 * FW:.1f}" height="14" rx="3" fill="{"#D8E166" if cls else "#B5C851"}"/>'
-              + (f'<rect x="{zl / 100 * FW:.1f}" y="1" width="{zw / 100 * FW:.1f}" height="14" fill="#D8E166" fill-opacity="0.18"/>'
-                 f'<g transform="translate(0,1)">{_hatch_lines(zl / 100 * FW, (zl + zw) / 100 * FW, 14, "#D8E166", 0.7)}</g>' if zw else '')
+              + (f'<rect x="{zx:.1f}" y="1" width="{zww:.1f}" height="14" fill="#D8E166" fill-opacity="0.16"/>' if zw else '')
+              + f'<rect x="0" y="1" width="{bar_w:.1f}" height="14" rx="{bar_rx}" fill="{"#D8E166" if cls else "#B5C851"}" fill-opacity="0.72"/>'
+              + (f'<g transform="translate(0,1)">{_hatch_lines(zx, zx + zww, 14, "#F2F7B8", 0.75)}</g>'
+                 f'<rect x="{zx:.1f}" y="1.5" width="{zww:.1f}" height="13" fill="none" stroke="#F2F7B8" stroke-opacity="0.9" stroke-width="1"/>' if zw else '')
               + '</svg>')
         rows += f'<div class="row"><div class="lab">{name}</div><div class="track">{tr}</div><div class="val{cls}">{v * 100:.1f}%</div></div>'
     cohort_n = so.get('cohort_size') or ((rmap.get('mid_ratio') or {}).get('agree') or [0, 0])[1]
