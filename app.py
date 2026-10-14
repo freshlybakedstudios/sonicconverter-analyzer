@@ -7704,8 +7704,14 @@ def _send_deal_calc_read_email(job: dict, attachments: list) -> bool:
 META_PIXEL_ID = '1328298298518253'
 
 
-def _send_meta_capi_lead(email: str):
+def _send_meta_capi_lead(email: str, value=None, signals=()):
     """Server-side Meta Lead via the Conversions API.
+
+    2026-10-13 (ayoships playbook, owner's yes): the Lead carries the lead's
+    real quote value, and the two signals that predict a deal in our own data
+    go out as custom events (TrackSent, ArtistLookup) with the same value, so
+    Meta can see which clicks produce buyer-like leads. Each event is sent
+    once; nothing is multiplied.
 
     The browser pixel's Lead event dies to ad blockers and iOS privacy;
     this fires from the backend at the exact lead-capture moment, so Meta
@@ -7721,16 +7727,36 @@ def _send_meta_capi_lead(email: str):
         return
     try:
         norm = email.strip().lower()
-        payload = {
-            'data': [{
-                'event_name': 'Lead',
-                'event_time': int(time.time()),
+        user_data = {'em': [hashlib.sha256(norm.encode()).hexdigest()]}
+        now_ts = int(time.time())
+        custom = {}
+        try:
+            if value is not None and float(value) > 0:
+                custom = {'value': round(float(value), 2), 'currency': 'USD'}
+        except (TypeError, ValueError):
+            custom = {}
+        events = [{
+            'event_name': 'Lead',
+            'event_time': now_ts,
+            'action_source': 'website',
+            'event_source_url': 'https://freshlybakedstudios.com/rates',
+            'event_id': f'lead-{norm}',
+            'user_data': user_data,
+            **({'custom_data': custom} if custom else {}),
+        }]
+        for sig in signals:
+            if sig not in ('TrackSent', 'ArtistLookup'):
+                continue
+            events.append({
+                'event_name': sig,
+                'event_time': now_ts,
                 'action_source': 'website',
                 'event_source_url': 'https://freshlybakedstudios.com/rates',
-                'event_id': f'lead-{norm}',
-                'user_data': {'em': [hashlib.sha256(norm.encode()).hexdigest()]},
-            }],
-        }
+                'event_id': f'{sig.lower()}-{norm}',
+                'user_data': user_data,
+                **({'custom_data': custom} if custom else {}),
+            })
+        payload = {'data': events}
         resp = requests.post(
             f'https://graph.facebook.com/v21.0/{META_PIXEL_ID}/events',
             params={'access_token': token}, json=payload, timeout=10)
@@ -7789,10 +7815,17 @@ async def deal_lead_capture(data: dict):
     if not email:
         raise HTTPException(400, "Email required")
 
-    # Server-side Meta Lead (Conversions API) at the true lead moment.
+    # Server-side Meta Lead (Conversions API) at the true lead moment, with
+    # the quote value and the buyer-like signals (2026-10-13).
     if step == 'contact':
+        _sigs = []
+        if (data.get('track_url') or '').strip():
+            _sigs.append('TrackSent')
+        if (data.get('artist_name') or '').strip():
+            _sigs.append('ArtistLookup')
         threading.Thread(
-            target=_send_meta_capi_lead, args=(email,), daemon=True,
+            target=_send_meta_capi_lead, args=(email, data.get('deal_value'), tuple(_sigs)),
+            daemon=True,
         ).start()
 
     # Save to Supabase
