@@ -321,7 +321,7 @@ def build_quote_email(lead: dict, quote: dict, campaign: str = "quote"):
     scan = (lead.get("metadata") or {}).get("scan") or {}
     read_line = ""
     if scan.get("delivered_at") and scan.get("track"):
-        read_line = (f'<p>The read on &ldquo;{scan["track"]}&rdquo; is in your inbox as its own '
+        read_line = (f'<p>The read on “{scan["track"]}” is in your inbox as its own '
                      f'email, with the production notes attached.</p>')
 
     subject = "Your quote, in writing"
