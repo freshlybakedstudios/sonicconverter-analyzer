@@ -2606,6 +2606,53 @@ async def signup(
     }
 
 
+@app.post("/api/guest-scan")
+async def guest_scan(
+    email: str = Form(...),
+    spotify_url: str = Form(...),
+    nda_agreed: str = Form("false"),
+):
+    """Try it before signing up (2026-10-14, ayoships playbook build 8): one
+    free link scan with an email and the Terms/NDA tick, no password, no name.
+    Creates a real account (passwordless, 1 scan) so the scan is never
+    anonymous (2026-08-07 rule) and the whole page works as for any user.
+    Setting a password later (Forgot password flow) lifts the cap to the
+    normal 3 free scans."""
+    em = (email or '').strip().lower()
+    if not em or '@' not in em or '.' not in em.split('@')[-1]:
+        raise HTTPException(400, "Please enter a real email address.")
+    if nda_agreed.lower() != 'true':
+        raise HTTPException(400, "Please agree to the Terms of Use & Non-Disclosure Agreement first.")
+    if not _normalize_spotify_track_url(spotify_url):
+        raise HTTPException(400, "Please paste a Spotify track link (Share → Copy link on the song).")
+    existing = supabase.table('users').select('id').eq('email', em).execute()
+    if existing.data:
+        raise HTTPException(409, "This email already has an account. Log in below, or use Forgot password to set one.")
+    from datetime import timezone
+    now = datetime.now(timezone.utc).isoformat()
+    local = em.split('@')[0]
+    name = ' '.join(w.capitalize() for w in re.split(r'[._\-+]+', local) if w)[:60] or 'Artist'
+    password_hash = bcrypt.hashpw(secrets.token_urlsafe(24).encode(), bcrypt.gensalt()).decode()
+    try:
+        resp = supabase.table('users').insert({
+            'name': name, 'email': em, 'password_hash': password_hash,
+            'nda_agreed_at': now, 'nda_version': f"{NDA_VERSION}/guest",
+            'max_scans': 1, 'scans_used': 0,
+        }).execute()
+        user = resp.data[0]
+    except Exception as e:
+        print(f"Guest user creation failed: {e}")
+        raise HTTPException(500, "Could not start your scan. Please try again.")
+    token = _create_session(user['id'])
+    try:
+        supabase.table('analyzer_leads').insert({'name': name, 'email': em, 'created_at': now, 'analysis_count': 0}).execute()
+    except Exception:
+        pass
+    send_pushover_notification("New Sonic Analyzer Signup", f"{name}\n{em}\n1 free scan, no password (guest path)")
+    print(f"Guest scan signup: {em}")
+    return {"token": token, "name": name, "scans_remaining": 1, "guest": True}
+
+
 @app.post("/api/login")
 async def login(
     email: str = Form(...),
@@ -2746,10 +2793,20 @@ async def reset_password(
 
     # Update password
     password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-    supabase.table('users').update({
+    patch = {
         'password_hash': password_hash,
         'updated_at': datetime.now(timezone.utc).isoformat(),
-    }).eq('id', reset['user_id']).execute()
+    }
+    # A guest account (try-it-first path, 2026-10-14) setting its first
+    # password becomes a normal account: the usual 3 free scans.
+    try:
+        u = supabase.table('users').select('nda_version,max_scans').eq('id', reset['user_id']).limit(1).execute().data
+        if u and str(u[0].get('nda_version') or '').endswith('/guest'):
+            patch['nda_version'] = NDA_VERSION
+            patch['max_scans'] = max(int(u[0].get('max_scans') or 1), 3)
+    except Exception:
+        pass
+    supabase.table('users').update(patch).eq('id', reset['user_id']).execute()
 
     # Mark token as used
     supabase.table('password_reset_tokens').update({'used': True}).eq('token', token).execute()

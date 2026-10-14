@@ -157,6 +157,30 @@
 
     <!-- AUTH -->
     <section class="section section-centered" id="auth-section">
+      <!-- TRY IT FIRST (2026-10-14): one free link scan, email + terms, no password -->
+      <div id="guest-view">
+        <h2>Try it first</h2>
+        <p class="section-sub">One free scan of any Spotify track. Your email, no password.</p>
+        <form id="guest-form" class="form-card">
+          <div class="form-group">
+            <label for="guest-url">Spotify track link</label>
+            <input type="url" id="guest-url" placeholder="https://open.spotify.com/track/..." required>
+          </div>
+          <div class="form-group">
+            <label for="guest-email">Email</label>
+            <input type="email" id="guest-email" placeholder="you@example.com" required>
+          </div>
+          <div class="form-group">
+            <label style="display:flex;gap:10px;align-items:flex-start;font-weight:normal;cursor:pointer">
+              <input type="checkbox" id="guest-nda" required style="margin-top:4px">
+              <span>I agree to the <a href="#" id="guest-show-terms">Terms of Use &amp; Non-Disclosure Agreement</a>.</span>
+            </label>
+          </div>
+          <button type="submit" class="btn-primary" id="guest-btn">Scan my track</button>
+          <p class="section-sub" style="margin-top:12px">The read lands on this page and in your inbox. Set a password afterwards to keep it and get three more scans.</p>
+        </form>
+      </div>
+
       <!-- LOGIN FORM -->
       <div id="login-view">
         <h2>Log In</h2>
@@ -787,6 +811,6 @@
 
   <script src="/static/vendor/jspdf.umd.min.js"></script>
   <script src="/static/vendor/html2canvas.min.js"></script>
-  <script src="/static/app.js?v=20261014-1"></script>
+  <script src="/static/app.js?v=20261014-2"></script>
 </body>
 </html>

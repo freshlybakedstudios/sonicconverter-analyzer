@@ -176,6 +176,27 @@ async function viewQueuedScan(jobId) {
 function _updateScans(remaining, info) {
   const myScans = $('#my-scans-btn');
   if (myScans && accessToken) myScans.href = `${API_URL}/scans?token=${accessToken}`;
+  // Guest path (2026-10-14): once the free scan is used, offer the password
+  // that keeps the account and lifts the cap to the normal three scans.
+  try {
+    const gEmail = localStorage.getItem('sc_guest_email');
+    if (gEmail && remaining === 0 && !document.getElementById('guest-keep')) {
+      const up = $('#upload-section');
+      if (up) {
+        const box = document.createElement('div');
+        box.id = 'guest-keep';
+        box.style.cssText = 'margin:0 auto 14px;max-width:640px;text-align:center;background:rgba(216,225,102,0.08);border:1px solid rgba(216,225,102,0.35);border-radius:10px;padding:10px 14px;font-size:14px;';
+        box.innerHTML = 'That was your free scan. <a href="#" id="guest-keep-link" style="color:#D8E166;font-weight:600">Set a password</a> to keep it and get three more.';
+        up.insertBefore(box, up.firstChild);
+        document.getElementById('guest-keep-link').addEventListener('click', async (e) => {
+          e.preventDefault();
+          const f = new FormData(); f.append('email', gEmail);
+          await fetch(`${API_URL}/api/forgot-password`, { method: 'POST', body: f }).catch(() => {});
+          box.textContent = `Check ${gEmail} for a link to set your password.`;
+        });
+      }
+    }
+  } catch (_) {}
   const badge = $('#scans-badge');
   if (!badge) return;
   // Signed-in identity strip: "Name · PRO · N scans remaining"
@@ -321,6 +342,44 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   }
 });
+
+// Try it first (2026-10-14): email + terms + link, no password. The server
+// creates a passwordless account with one scan; then the normal link-scan
+// flow runs, so the page behaves exactly as for any signed-in user.
+const _guestForm = $('#guest-form');
+if (_guestForm) {
+  const _terms = $('#guest-show-terms');
+  if (_terms) _terms.addEventListener('click', (e) => {
+    e.preventDefault();
+    const ss = $('#show-signup'); if (ss) ss.click();
+    const nda = $('#nda-text'); if (nda) nda.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  _guestForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('#guest-btn');
+    const url = $('#guest-url').value.trim();
+    const email = $('#guest-email').value.trim();
+    if (!$('#guest-nda').checked) { alert('Please agree to the Terms of Use & NDA first.'); return; }
+    btn.disabled = true; btn.textContent = 'Setting up your scan...';
+    try {
+      const form = new FormData();
+      form.append('email', email); form.append('spotify_url', url); form.append('nda_agreed', 'true');
+      const res = await fetch(`${API_URL}/api/guest-scan`, { method: 'POST', body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((typeof data.detail === 'string' && data.detail) || 'Could not start the scan.');
+      if (typeof gtag === 'function') gtag('event', 'generate_lead', { currency: 'USD', value: 1.00 });
+      if (typeof fbq === 'function') fbq('track', 'Lead');
+      try { localStorage.setItem('sc_guest_email', email); } catch (_) {}
+      _authSuccess(data);
+      const urlInput = $('#spotify-track-url'); if (urlInput) urlInput.value = url;
+      await analyzeTrack();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Scan my track';
+    }
+  });
+}
 
 // Login form
 $('#login-form').addEventListener('submit', async (e) => {

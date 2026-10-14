@@ -49,8 +49,8 @@ TOUCH1_DELAY = timedelta(minutes=30)
 # DAY after the quote, for everyone — whales included, fully automatic.
 # Artists in motion decide fast (Oxford Drive locked another studio before
 # noon); one day is still enough distance from the 30-min receipt.
-TOUCH2_DELAY = timedelta(days=1)
-TOUCH2_DELAY_HOT = timedelta(days=1)
+TOUCH2_DELAY = timedelta(days=2)      # 2026-10-14: back to the 8/3 design so the hot lane means something
+TOUCH2_DELAY_HOT = timedelta(days=1)  # cart abandoners, strong-odds leads, returners
 # Touch 3 = long-tail re-engage: 8 days after touch 2 ≈ day 12 of the sequence.
 TOUCH3_DELAY = timedelta(days=8)
 # Deposit-flinch touch (owner-approved copy 2026-09-06): pressed Book Now,
@@ -60,6 +60,13 @@ TOUCH3_DELAY = timedelta(days=8)
 FLINCH_DELAY = timedelta(hours=3)
 FLINCH_T2_DELAY = timedelta(days=2)
 LOOKBACK = timedelta(days=30)  # don't chase leads older than this
+# 2026-10-14 (ayoships playbook, the honest version of Duolingo's timing):
+# day-later touches go out in the lead's own clock hour, the time of day
+# they were on the calculator. The poll runs every 10 minutes, so a 70-minute
+# window catches one poll; a touch is never held past a day beyond due.
+HOUR_WINDOW = timedelta(minutes=70)
+HOUR_LEAD = timedelta(minutes=45)
+HOUR_FALLBACK = timedelta(hours=26)
 
 SERVICE_LABELS = {
     "fullProduction": "Full Production",
@@ -912,6 +919,22 @@ def lead_odds(row: dict) -> dict:
     return {"score": len(signals), "signals": signals, "strong": strong, "line": line}
 
 
+def _due_at_leads_hour(created, due, now) -> bool:
+    """A day-later touch is due when `now` is past `due` (minus a small lead so
+    the lead's own hour counts) AND inside the lead's clock-hour window, or
+    when it has waited more than a day past due (fallback, never hold)."""
+    if not due:
+        return False
+    if now >= due + HOUR_FALLBACK:
+        return True
+    if now < due - HOUR_LEAD:
+        return False
+    if not created:
+        return now >= due
+    since = (now - created) % timedelta(days=1)
+    return since <= HOUR_WINDOW
+
+
 def run_nurture(supabase, dry_run: bool = None) -> dict:
     """
     Select leads due for a follow-up and send (or preview) their email.
@@ -1006,11 +1029,11 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
                 delay2 = FLINCH_T2_DELAY  # the flinch took the fast slot
             else:
                 delay2 = TOUCH2_DELAY_HOT if email in hot_emails else TOUCH2_DELAY
-            if t1_at and now - t1_at >= delay2:
+            if t1_at and _due_at_leads_hour(created, t1_at + delay2, now):
                 t2.append(r)
         elif not nur.get("t3_sent_at"):
             t2_at = _parse(nur.get("t2_sent_at"))
-            if t2_at and now - t2_at >= TOUCH3_DELAY:
+            if t2_at and _due_at_leads_hour(created, t2_at + TOUCH3_DELAY, now):
                 t3.append(r)
 
     summary = {
