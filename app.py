@@ -8218,8 +8218,9 @@ def _record_analyzer_purchase(user: dict, session, source: str):
     currency = (str(_session_field(session, 'currency') or 'usd')).upper()
     meta = _session_field(session, 'metadata') or {}
     if not isinstance(meta, dict):
+        # Stripe SDK objects are not mappings; to_dict() is the documented way.
         try:
-            meta = dict(meta)
+            meta = meta.to_dict() if hasattr(meta, 'to_dict') else dict(meta)
         except Exception:
             meta = {}
     click = {k: meta.get(k) for k in ('gclid', 'gbraid', 'wbraid') if meta.get(k)}
