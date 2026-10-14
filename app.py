@@ -7739,6 +7739,43 @@ def _send_meta_capi_lead(email: str):
         print(f"Meta CAPI Lead failed: {e}")
 
 
+def _push_return_visit(email: str):
+    """Comeback push (ayoships playbook build 4, 2026-10-13): a lead who gave
+    an email before is back on the calculator on a later day. Before this the
+    funnel forgot everyone after 30 minutes, so only 3 cross-day returns were
+    ever visible (2 moved forward). Push only for emails with a contact row,
+    never internal addresses, once per email per day."""
+    try:
+        from deal_nurture import _is_suppressed_email, lead_odds, _lead_view
+        em = (email or '').strip().lower()
+        if not em or '@' not in em or _is_suppressed_email(em) or not supabase:
+            return
+        rows = supabase.table('deal_leads').select('*').ilike('email', em) \
+            .eq('step', 'contact').order('created_at', desc=True).limit(1).execute().data or []
+        if not rows:
+            print(f"Return visit: {em} has no contact row, no push")
+            return
+        today = datetime.utcnow().date().isoformat()
+        prior = supabase.table('deal_leads').select('id').ilike('email', em) \
+            .eq('step', 'return_visit').gte('created_at', today).execute().data or []
+        if len(prior) > 1:  # this request's own row is already in; a second today stays quiet
+            return
+        lead = rows[0]
+        v = _lead_view(lead)
+        odds = lead_odds(lead)
+        meta = lead.get('metadata') or {}
+        first = (lead.get('created_at') or '')[:10]
+        val = meta.get('deal_value')
+        val_s = f"${int(val):,}" if isinstance(val, (int, float)) and val else "no quote"
+        send_pushover_notification(
+            "↩️ Back on the calculator",
+            f"{v['artist'] or v['greet']}\n{em}\nfirst came {first} · {v['service_str'] or 'services unknown'} · {val_s}\n"
+            f"odds {'strong' if odds['strong'] else 'low'}: {odds['line']}",
+        )
+    except Exception as e:
+        print(f"Return visit push failed: {e}")
+
+
 @app.post("/api/deal/lead")
 async def deal_lead_capture(data: dict):
     """
@@ -7805,6 +7842,13 @@ async def deal_lead_capture(data: dict):
                       data.get('artist_spotify_url'), lead_row_id),
                 daemon=True,
             ).start()
+
+    # Comeback (2026-10-13): a known email opened the calculator again on a
+    # later day. The push is decided in the thread (known lead only, never
+    # internal addresses, once per email per day). No generic push.
+    if step == 'return_visit':
+        threading.Thread(target=_push_return_visit, args=(email,), daemon=True).start()
+        return {"ok": True}
 
     # Push notification. 'book_reached' = they pressed Book Now and are looking
     # at the deposit — the warmest moment the funnel has (2026-09-06).

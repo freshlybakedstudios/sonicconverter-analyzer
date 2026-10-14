@@ -945,6 +945,11 @@ def run_nurture(supabase, dry_run: bool = None) -> dict:
         for r in rows
         if r.get("step") == "contact" and r.get("email") and lead_odds(r)["strong"]
     }
+    # 2026-10-13: a lead who came back on a later day (step='return_visit',
+    # reported by the site) is the warmest calc-only signal we have.
+    hot_emails |= {
+        r["email"].lower() for r in rows if r.get("step") == "return_visit" and r.get("email")
+    }
     checkout_emails = {
         r["email"].lower()
         for r in rows
@@ -1096,14 +1101,30 @@ def run_daily_digest(supabase, force: bool = False) -> dict:
             if not prev or rank[r.get("step")] > rank.get(prev.get("step"), 0):
                 leads_by_email[email] = r
 
+    # Comebacks (2026-10-13): return_visit rows in the window. A returner whose
+    # contact row is older than the window still belongs in today's digest.
+    returned = {}
+    for r in rows:
+        if r.get("step") == "return_visit" and r.get("email"):
+            e = r["email"].lower()
+            if not _is_suppressed_email(e):
+                returned[e] = (r.get("created_at") or "")[:10]
+    for e in returned:
+        if e not in leads_by_email:
+            prev = (
+                supabase.table("deal_leads").select("*").ilike("email", e).eq("step", "contact")
+                .order("created_at", desc=True).limit(1).execute().data or []
+            )
+            if prev:
+                leads_by_email[e] = prev[0]
     # Drop leads who also paid in the window — they're in the wins section
     paid_emails = {(p.get("email") or "").lower() for p in paid}
     leads = [r for e, r in leads_by_email.items() if e not in paid_emails]
     # Order (2026-10-13): furthest step first, then the odds score, then the
     # quote value, so the leads worth his keyboard sit at the top.
-    _step_rank = {"checkout_started": 2, "book_reached": 1, "contact": 0}
+    _step_rank = {"checkout_started": 3, "book_reached": 2, "contact": 0}
     leads.sort(key=lambda r: (
-        _step_rank.get(r.get("step"), 0),
+        max(_step_rank.get(r.get("step"), 0), 1 if (r.get("email") or "").lower() in returned else 0),
         lead_odds(r)["score"],
         float((r.get("metadata") or {}).get("deal_value") or 0),
     ), reverse=True)
@@ -1138,6 +1159,10 @@ def run_daily_digest(supabase, force: bool = False) -> dict:
         odds_html = (f'<span style="color:{"#2a7" if odds["strong"] else "#999"};font-weight:bold">'
                      f'Odds: {"strong" if odds["strong"] else "low"}</span>'
                      f' <span style="color:#777;font-size:12px">{odds["line"]}</span>')
+        came_back = returned.get((r.get("email") or "").lower())
+        if came_back:
+            odds_html = (f'<span style="color:#c60;font-weight:bold">↩️ CAME BACK on the calculator {came_back}</span> · '
+                         + odds_html)
         nur = meta.get("nurture") or {}
         touches = ("t1" if nur.get("t1_sent_at") else "") + ("+t2" if nur.get("t2_sent_at") else "")
         # The vision rung: their own words about the record + a track link.
