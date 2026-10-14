@@ -7629,6 +7629,7 @@ def _queue_deal_track_scan(email: str, top_track: dict, artist_name=None,
         now_dt = datetime.now(_tz.utc)
         dup = supabase.table('analysis_jobs').select('id,status') \
             .ilike('user_email', em).eq('spotify_url', canon) \
+            .neq('status', 'error_rerun') \
             .gte('created_at', (now_dt - _td(days=30)).isoformat()).limit(1).execute()
         if dup.data:
             print(f"Deal scan: {em} already has a job for {canon} "
@@ -7872,6 +7873,37 @@ def _push_return_visit(email: str):
         )
     except Exception as e:
         print(f"Return visit push failed: {e}")
+
+
+@app.post("/api/deal/read/rerun")
+async def deal_read_rerun(email: str = Form(...), token: str = Form('')):
+    """Re-run the email-step track read for a lead whose scan failed (rig
+    offline, Spotify block). Guarded by NURTURE_CRON_TOKEN. Uses the lead's
+    newest contact row: its metadata.scan.spotify_url (or the artist lookup)
+    and skips the 30-day dedup by retiring the failed job rows first."""
+    expected = os.getenv('NURTURE_CRON_TOKEN', '')
+    if not expected or token != expected:
+        raise HTTPException(403, "forbidden")
+    em = (email or '').strip().lower()
+    rows = supabase.table('deal_leads').select('*').ilike('email', em) \
+        .eq('step', 'contact').order('created_at', desc=True).limit(1).execute().data or []
+    if not rows:
+        raise HTTPException(404, "no contact row for that email")
+    lead = rows[0]
+    scan = (lead.get('metadata') or {}).get('scan') or {}
+    url = scan.get('spotify_url')
+    if not url:
+        raise HTTPException(400, "that lead has no track to read")
+    # retire the failed attempts so the dedup lets a fresh one through
+    supabase.table('analysis_jobs').update({'status': 'error_rerun'}) \
+        .ilike('user_email', em).eq('spotify_url', url).in_('status', ['error', 'capture_failed', 'extraction_failed']).execute()
+    threading.Thread(
+        target=_queue_deal_track_scan,
+        args=(em, {'name': scan.get('track') or '', 'spotify_url': url},
+              lead.get('artist_name'), None, lead.get('id')),
+        daemon=True,
+    ).start()
+    return {"ok": True, "email": em, "track": scan.get('track'), "spotify_url": url}
 
 
 @app.post("/api/deal/lead")
