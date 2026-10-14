@@ -4009,10 +4009,11 @@ def _send_curator_report_email(job_id: str, curator_count: int):
     except Exception as _pdf_err:
         print(f"Enrichment [{job_id[:8]}]: breakdown PDF skipped ({_pdf_err})")
     track = job.get('track_name') or 'your track'
-    # Deal-calc lead scans (2026-10-13) get their own note: no account, no
-    # My Scans link, the PDF is the whole point.
-    if curator_count <= 0 and (str(job.get('scan_source') or '').startswith('deal_calc')
-                               or str(job.get('token') or '').startswith('dealcalc-')):
+    # Deal-calc lead scans (2026-10-13) get their own note whatever the run
+    # did: no account, no My Scans link, never the curator report. The PDF is
+    # the whole point.
+    if (str(job.get('scan_source') or '').startswith('deal_calc')
+            or str(job.get('token') or '').startswith('dealcalc-')):
         return _send_deal_calc_read_email(job, attachments)
     curators = job.get('curator_emails') or {}
     if isinstance(curators, str):
@@ -6704,7 +6705,9 @@ async def analyze_url(
     # pass with curator contacts + credits + forecast; free a 25-match slice
     # (related artists → audience match, capped playlists) with curators
     # counted-but-locked as the upsell. Free cost ≈ 25 matches × ~2 CM calls.
-    _full = bool(lead.get('full_enrichment')) or not lead.get('id')
+    # Deal-calc lead scans (2026-10-13) ride an ephemeral legacy token: no
+    # account id, but they get the LIGHT pass, never the Pro curator sweep.
+    _full = bool(lead.get('full_enrichment')) or (not lead.get('id') and not lead.get('deal_calc'))
     _deep_capped = False
     if _full and not _deep_scan_available(lead):
         _full = False
