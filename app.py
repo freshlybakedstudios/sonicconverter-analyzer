@@ -4954,6 +4954,21 @@ async def analyze_url_queue(
     report page, and the completion email."""
     lead = _validate_session(token)
     _check_scan_cap(lead)
+    # 2026-10-14: the cap is decremented when a scan FINISHES, so a burst of
+    # queued scans could outrun it (seen on the guest path: 1-scan account,
+    # two queued in two seconds). Count in-flight scans against the cap too.
+    if lead.get('id') and supabase:
+        try:
+            _inflight = supabase.table('analysis_jobs').select('id', count='exact') \
+                .eq('token', token) \
+                .in_('status', ['queued', 'matching', 'pending_features', 'capturing', 'features_ready', 'enriching']) \
+                .execute().count or 0
+            if int(lead.get('scans_used') or 0) + _inflight >= int(lead.get('max_scans') or 3):
+                raise HTTPException(403, "That scan is still running. Wait for it to finish, or set a password for more scans.")
+        except HTTPException:
+            raise
+        except Exception as _e:
+            print(f"queue scan: in-flight count failed ({_e})")
     _canon = _normalize_spotify_track_url(spotify_url)
     if not _canon:
         raise HTTPException(400, "Please provide a valid Spotify track URL")
