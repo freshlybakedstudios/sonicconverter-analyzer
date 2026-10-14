@@ -8526,6 +8526,17 @@ async def _nurture_loop():
                 if res and res.get('sent'):
                     print(f"[nurture] auto-sent {res['sent']} "
                           f"(t1={res['touch1_due']} t2={res['touch2_due']})", flush=True)
+                # Google review asks (2026-10-13): fire the day the owner marks
+                # a record delivered (googleads/mark_delivered.py). Until now
+                # this only ran from the cron endpoint, which nothing calls.
+                try:
+                    rres = await loop.run_in_executor(
+                        None, deal_nurture.run_review_asks, supabase, False
+                    )
+                    if rres and rres.get('review_asks'):
+                        print(f"[review-ask] sent {rres['review_asks']}: {rres.get('targets')}", flush=True)
+                except Exception as _re:
+                    print(f"[review-ask] failed: {_re}", flush=True)
             # Owner-facing daily lead digest — independent of NURTURE_ENABLED
             # (never emails a lead); its own once-per-day guard is inside.
             if supabase:
