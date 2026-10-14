@@ -1494,7 +1494,8 @@ def build_precall_email(b):
     body = f"""
       <p style="color:#ccc">Hey {greet},</p>
       <p style="color:#ccc">Quick heads-up: our call is coming up at <strong>{when}</strong>.
-         One favor — tap this so I know you're locked in:</p>
+         Tap this to confirm. I only sit down for confirmed calls, so if I don't
+         see your click, I won't be on the line:</p>
       <p style="text-align:center;margin:28px 0 10px">
         <a href="{confirm_url}" style="background:#D8E166;color:#222020;text-decoration:none;
            font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
@@ -1507,13 +1508,11 @@ def build_precall_email(b):
       <p style="color:#ccc">If you've got 19 minutes before we talk, this walkthrough shows the
          whole system we'll be using on your record:
          <a href="https://www.youtube.com/watch?v=HOkvWpZX6JQ" style="color:#D8E166">watch it here</a>.</p>
-      <p style="color:#ccc">To get the most out of it, have handy:</p>
-      <ul style="color:#ccc">
-        <li>The track(s) you're working on — rough mixes, demos, or stems all work</li>
-        <li>1–2 reference tracks (records whose sound you're chasing)</li>
-        <li>A sense of where you want this record to land</li>
-      </ul>
-      <p style="color:#ccc">If the time stopped working, no stress — reply here or grab a
+      <p style="color:#ccc">Anything you want me to hear, drop it here before we talk:
+         <a href="{DROPBOX_REQUEST_URL}" style="color:#D8E166">upload to my client folder</a>.
+         Rough mixes, demos, stems, a reference track you love, whatever you have.
+         That way the call starts on your music, not on logistics.</p>
+      <p style="color:#ccc">If the time stopped working, no stress. Reply here or grab a
          new slot and we'll make it happen.</p>
       <p style="color:#ccc">— Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
       <p style="color:#555;font-size:11px;text-align:center;margin-top:28px;border-top:1px solid #2a2626;padding-top:16px">
