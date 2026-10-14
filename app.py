@@ -8178,10 +8178,80 @@ def _unlock_analyzer_pro(user_id: str, source: str, session=None) -> bool:
             )
         except Exception:
             pass
+        # 2026-10-13 (owner: "kick back the ads data for people that paid"):
+        # the paid unlock is the analyzer's real conversion. Record it so the
+        # nightly Google upload can send it with the click id, and tell Meta
+        # now. Neither can block the unlock.
+        try:
+            _record_analyzer_purchase(user, session, source)
+        except Exception as _e:
+            print(f"Analyzer purchase record failed: {_e}")
         return True
     except Exception as e:
         print(f"Analyzer unlock ({source}) failed for {user_id}: {e}")
         return False
+
+
+def _session_field(session, key, default=None):
+    """Read a field off a Stripe session whether it came as a dict or object."""
+    if session is None:
+        return default
+    if isinstance(session, dict):
+        return session.get(key, default)
+    try:
+        v = getattr(session, key)
+        return v if v is not None else default
+    except Exception:
+        return default
+
+
+def _record_analyzer_purchase(user: dict, session, source: str):
+    """Write the analyzer Pro purchase where the ad loops can read it, and
+    send Meta a Purchase with the real amount (2026-10-13).
+    deal_leads step='analyzer_paid': email, amount, currency, session id, the
+    Google click id from the session metadata. googleads/
+    upload_analyzer_purchases.py sends these to Google Ads nightly."""
+    import hashlib
+    email = (user.get('email') or '').strip().lower()
+    sid = str(_session_field(session, 'id') or '')
+    amount = _session_field(session, 'amount_total') or 0
+    currency = (str(_session_field(session, 'currency') or 'usd')).upper()
+    meta = _session_field(session, 'metadata') or {}
+    if not isinstance(meta, dict):
+        try:
+            meta = dict(meta)
+        except Exception:
+            meta = {}
+    click = {k: meta.get(k) for k in ('gclid', 'gbraid', 'wbraid') if meta.get(k)}
+    if supabase and email:
+        existing = supabase.table('deal_leads').select('id').eq('step', 'analyzer_paid') \
+            .contains('metadata', {'session_id': sid}).limit(1).execute().data if sid else []
+        if not existing:
+            supabase.table('deal_leads').insert({
+                'name': user.get('name') or '',
+                'email': email,
+                'step': 'analyzer_paid',
+                'metadata': {'amount_total': int(amount or 0), 'currency': currency,
+                             'session_id': sid, 'source': source, **click,
+                             'date': datetime.utcnow().date().isoformat()},
+                'created_at': datetime.utcnow().isoformat(),
+            }).execute()
+            print(f"Analyzer purchase recorded: {email} ${int(amount or 0)/100:,.0f} click={'yes' if click else 'no'}")
+    token = os.getenv('META_CAPI_TOKEN')
+    if token and email:
+        payload = {'data': [{
+            'event_name': 'Purchase',
+            'event_time': int(time.time()),
+            'action_source': 'website',
+            'event_source_url': f'{ANALYZER_URL}/',
+            'event_id': f'analyzer-purchase-{sid or email}',
+            'user_data': {'em': [hashlib.sha256(email.encode()).hexdigest()]},
+            'custom_data': {'value': round(int(amount or 0) / 100, 2), 'currency': currency,
+                            'content_name': 'Analyzer Pro'},
+        }]}
+        resp = requests.post(f'https://graph.facebook.com/v21.0/{META_PIXEL_ID}/events',
+                             params={'access_token': token}, json=payload, timeout=10)
+        print(f"Meta CAPI Purchase (analyzer): {resp.status_code} {resp.text[:120]}")
 
 
 def _paid_pro_sessions_for(user: dict) -> list:
@@ -8232,8 +8302,12 @@ def _reconcile_analyzer_pro(user: dict) -> dict:
 
 
 @app.post("/api/analyzer/upgrade")
-async def analyzer_upgrade(token: str = Form(...)):
-    """Create a Stripe Checkout Session for the analyzer Pro unlock."""
+async def analyzer_upgrade(token: str = Form(...), gclid: str = Form(''),
+                           gbraid: str = Form(''), wbraid: str = Form('')):
+    """Create a Stripe Checkout Session for the analyzer Pro unlock.
+    gclid/gbraid/wbraid (2026-10-13): the Google click id the analyzer page
+    saved on landing, carried in the session metadata so the paid unlock can
+    be attributed to the ad click (email matching alone barely matches)."""
     lead = _validate_session(token)
     if not lead.get('id'):
         raise HTTPException(400, "Log in with an account to upgrade")
@@ -8244,6 +8318,10 @@ async def analyzer_upgrade(token: str = Form(...)):
     if lead.get('fresh_capture'):
         raise HTTPException(409, "You already have Pro on this account. Reload the page and the upload button is live.")
     meta = {'product': 'analyzer_fresh', 'analyzer_user_id': str(lead['id'])}
+    for _k, _v in (('gclid', gclid), ('gbraid', gbraid), ('wbraid', wbraid)):
+        _v = (_v or '').strip()[:200]
+        if _v:
+            meta[_k] = _v
     try:
         price_id = os.getenv('STRIPE_ANALYZER_PRICE_ID')
         common = dict(

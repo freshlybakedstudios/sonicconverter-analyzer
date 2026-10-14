@@ -562,10 +562,37 @@ function showProGate(message) {
   overlay.style.display = 'flex';
 }
 
+// Google click ids (2026-10-13): keep gclid/gbraid/wbraid from the landing
+// URL for 90 days so a Pro purchase can be attributed to the ad click.
+const CLICK_IDS_KEY = 'sc_click_ids';
+function saveClickIdsFromUrl() {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    const ids = {};
+    ['gclid', 'gbraid', 'wbraid'].forEach(k => { const v = p.get(k); if (v) ids[k] = v.slice(0, 200); });
+    if (Object.keys(ids).length) {
+      ids.ts = Date.now();
+      localStorage.setItem(CLICK_IDS_KEY, JSON.stringify(ids));
+    }
+  } catch (e) { /* storage unavailable */ }
+}
+function savedClickIds() {
+  try {
+    const raw = localStorage.getItem(CLICK_IDS_KEY);
+    if (!raw) return {};
+    const ids = JSON.parse(raw);
+    if (!ids.ts || Date.now() - ids.ts > 90 * 24 * 3600 * 1000) return {};
+    return ids;
+  } catch (e) { return {}; }
+}
+saveClickIdsFromUrl();
+
 async function startAnalyzerUpgrade() {
   try {
     const form = new FormData();
     form.append('token', accessToken);
+    const ids = savedClickIds();
+    ['gclid', 'gbraid', 'wbraid'].forEach(k => { if (ids[k]) form.append(k, ids[k]); });
     if (typeof gtag === 'function') gtag('event', 'begin_checkout', { currency: 'USD', value: 49.00 });
     const res = await fetch(`${API_URL}/api/analyzer/upgrade`, { method: 'POST', body: form });
     const data = await res.json();
