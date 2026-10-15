@@ -51,7 +51,7 @@
   <title>Sonic Analyzer | Freshly Baked Studios</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-  <link rel="stylesheet" href="/static/style.css?v=20260924-2">
+  <link rel="stylesheet" href="/static/style.css?v=20261015-1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -170,19 +170,21 @@
             <label for="guest-email">Email</label>
             <input type="email" id="guest-email" placeholder="you@example.com" required>
           </div>
-          <div class="form-group">
-            <label style="display:flex;gap:10px;align-items:flex-start;font-weight:normal;cursor:pointer">
-              <input type="checkbox" id="guest-nda" required style="margin-top:4px">
-              <span>I agree to the <a href="#" id="guest-show-terms">Terms of Use &amp; Non-Disclosure Agreement</a>.</span>
-            </label>
+          <div class="nda-checkbox-row guest-terms-row">
+            <input type="checkbox" id="guest-nda" required>
+            <label for="guest-nda">I agree to the <a href="#" id="guest-show-terms">Terms of Use &amp; Non-Disclosure Agreement</a>.</label>
           </div>
+          <div class="nda-scroll-box hidden" id="guest-nda-text"></div>
           <button type="submit" class="btn-primary" id="guest-btn">Scan my track</button>
-          <p class="section-sub" style="margin-top:12px">The read lands on this page and in your inbox. Set a password afterwards to keep it and get three more scans.</p>
+          <p class="form-note">The read lands here and in your inbox. Set a password afterwards for three more scans.</p>
+          <div class="auth-links">
+            <a href="#" id="show-login-from-guest">Already have an account? <strong>Log in</strong></a>
+          </div>
         </form>
       </div>
 
       <!-- LOGIN FORM -->
-      <div id="login-view">
+      <div id="login-view" class="hidden">
         <h2>Log In</h2>
         <p class="section-sub">Welcome back. Log in to analyze your tracks.</p>
         <form id="login-form" class="form-card">
@@ -198,6 +200,7 @@
           <div class="auth-links">
             <a href="#" id="show-forgot">Forgot password?</a>
             <a href="#" id="show-signup">Don't have an account? <strong>Sign up</strong></a>
+            <a href="#" id="show-guest">New here? <strong>Try one free scan</strong></a>
           </div>
         </form>
       </div>
@@ -811,6 +814,6 @@
 
   <script src="/static/vendor/jspdf.umd.min.js"></script>
   <script src="/static/vendor/html2canvas.min.js"></script>
-  <script src="/static/app.js?v=20261014-2"></script>
+  <script src="/static/app.js?v=20261015-1"></script>
 </body>
 </html>

@@ -2475,3 +2475,9 @@ body {
   .review-card::before { font-size: 54px; left: 10px; }
   .review-lead { font-size: 16px; }
 }
+
+/* Try it first (2026-10-15): terms row and its inline terms box */
+.guest-terms-row { margin: 4px 0 16px; }
+.nda-checkbox-row label a { color: #4ecdc4; text-decoration: none; }
+.nda-checkbox-row label a:hover { text-decoration: underline; }
+#guest-nda-text { max-height: 220px; margin: 0 0 16px; }

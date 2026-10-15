@@ -221,7 +221,7 @@ function _updateScans(remaining, info) {
 }
 
 function _showView(viewId) {
-  ['login-view', 'signup-view', 'forgot-view', 'reset-view'].forEach(id => {
+  ['guest-view', 'login-view', 'signup-view', 'forgot-view', 'reset-view'].forEach(id => {
     const el = $('#' + id);
     if (el) el.classList.toggle('hidden', id !== viewId);
   });
@@ -237,6 +237,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (showLogin) showLogin.addEventListener('click', (e) => { e.preventDefault(); _showView('login-view'); });
   if (showForgot) showForgot.addEventListener('click', (e) => { e.preventDefault(); _showView('forgot-view'); });
   if (backToLogin) backToLogin.addEventListener('click', (e) => { e.preventDefault(); _showView('login-view'); });
+  const loginFromGuest = $('#show-login-from-guest');
+  const showGuest = $('#show-guest');
+  if (loginFromGuest) loginFromGuest.addEventListener('click', (e) => { e.preventDefault(); _showView('login-view'); });
+  if (showGuest) showGuest.addEventListener('click', (e) => { e.preventDefault(); _showView('guest-view'); });
 
   // NDA checkbox enables signup button
   const ndaBox = $('#nda-agreed');
@@ -351,8 +355,12 @@ if (_guestForm) {
   const _terms = $('#guest-show-terms');
   if (_terms) _terms.addEventListener('click', (e) => {
     e.preventDefault();
-    const ss = $('#show-signup'); if (ss) ss.click();
-    const nda = $('#nda-text'); if (nda) nda.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // 2026-10-15: show the terms inside the guest card instead of jumping to the sign-up form
+    const box = $('#guest-nda-text'), src = $('#nda-text');
+    if (box && src) {
+      if (!box.innerHTML) box.innerHTML = src.innerHTML;
+      box.classList.toggle('hidden');
+    }
   });
   _guestForm.addEventListener('submit', async (e) => {
     e.preventDefault();
