@@ -260,7 +260,15 @@ def _lead_view(lead: dict) -> dict:
     val = meta.get("deal_value")
     # Greeting: use a name if we have a distinct one, else a confident
     # email-derived first name (2026-07-20), else something warm.
-    greet = name if name else (artist or _name_from_email(lead.get("email", "")) or "there")
+    # 2026-10-15: the calculator's name box often holds the band name ("Hey The
+    # Emberlands"). A group name is never a greeting; a stage name still is
+    # ("Hey Screetus"), as before.
+    import re as _re
+    cand = name or artist
+    if cand and _re.search(r"^the\s|\s&\s|\s(and|band|trio|quartet|orchestra|collective|ensemble)\b|\b(brothers|sisters)$",
+                           cand.lower()):
+        cand = ""
+    greet = cand or _name_from_email(lead.get("email", "")) or "there"
     return {
         "email": lead.get("email", ""),
         "greet": greet,

@@ -7729,12 +7729,18 @@ def _send_deal_calc_read_email(job: dict, attachments: list) -> bool:
     from deal_nurture import (_send_via_gmail, _lead_view, _html_and_plain,
                               OWNER_SIGNATURE_HTML)
     greet = _lead_view(lead)['greet'] if lead else 'there'
-    if artist and greet.strip().lower() != artist.lower():
-        opener = (f"You put {artist} into the calculator, so I ran &ldquo;{track}&rdquo; "
-                  f"through the analyzer.")
+    # Say what actually happened (2026-10-15): the track they sent, or the top
+    # track of the artist they looked up. Never "after you put it in".
+    _own = (((lead or {}).get('metadata') or {}).get('track_url') or '').strip()
+    _own_c = _normalize_spotify_track_url(_own) if _own else None
+    _job_c = _normalize_spotify_track_url(job.get('spotify_url') or '') if job.get('spotify_url') else None
+    if _own_c and _job_c and _own_c == _job_c:
+        opener = f"I ran &ldquo;{track}&rdquo;, the track you sent, through the analyzer."
+    elif artist:
+        opener = (f"You looked up {artist} in the calculator, so I ran your top track, "
+                  f"&ldquo;{track}&rdquo;, through the analyzer.")
     else:
-        opener = (f"I ran &ldquo;{track}&rdquo; through the analyzer after you put it "
-                  f"into the calculator.")
+        opener = f"I ran &ldquo;{track}&rdquo; through the analyzer."
     body = f"""
       <p>Hey {greet},</p>
       <p>{opener} The read is attached as a PDF: how the track sits next to records
@@ -7972,7 +7978,22 @@ async def deal_lead_capture(data: dict):
     # the written quote. Fire-and-forget, never blocks the lead.
     if step == 'contact':
         _tt = data.get('top_track') or {}
-        if isinstance(_tt, dict) and _tt.get('spotify_url'):
+        # 2026-10-15 (John O'Sullivan): when they paste their OWN song link, never
+        # scan a different song. A Spotify track link is scanned as sent; any other
+        # link (SoundCloud, Drive, Dropbox...) is unreleased material that the owner
+        # listens to first, so it goes to the listen desk and no read is sent.
+        _own = (data.get('track_url') or '').strip()
+        _own_sp = _normalize_spotify_track_url(_own) if _own else None
+        if _own and not _own_sp:
+            print(f"Deal scan: {email} sent their own link, no top-track read (listen desk)")
+        elif _own_sp:
+            threading.Thread(
+                target=_queue_deal_track_scan,
+                args=(email, {'spotify_url': _own_sp, 'name': None}, data.get('artist_name'),
+                      data.get('artist_spotify_url'), lead_row_id),
+                daemon=True,
+            ).start()
+        elif isinstance(_tt, dict) and _tt.get('spotify_url'):
             threading.Thread(
                 target=_queue_deal_track_scan,
                 args=(email, _tt, data.get('artist_name'),
