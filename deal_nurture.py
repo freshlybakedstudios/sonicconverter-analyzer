@@ -177,6 +177,18 @@ def confirm_token(email: str, uid: str) -> str:
     return unsub_token(f"{email}|{uid}")
 
 
+def resume_token(lead_id: str) -> str:
+    """Signs a deal_leads id for the quote email's deposit button (2026-10-16)."""
+    return hmac.new(_UNSUB_SECRET.encode(), f"resume:{lead_id}".encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def resume_url(lead: dict) -> str:
+    lid = str((lead or {}).get("id") or "")
+    if not lid:
+        return f"{FRONTEND_URL}/rates"
+    return f"{FRONTEND_URL}/rates?resume={lid}&t={resume_token(lid)}&step=book"
+
+
 def verify_confirm(email: str, uid: str, token: str) -> bool:
     return verify_unsub(f"{email}|{uid}", token)
 
@@ -351,6 +363,10 @@ def build_quote_email(lead: dict, quote: dict, campaign: str = "quote"):
          back tomorrow or in three months.</p>
       <p>And if the total feels like a lot in one bite, every project here can
          start with a single track. Prove the fit on one song, the rest can follow.</p>
+      <p style="margin:22px 0 6px">If you're ready, the deposit holds your slot. One page, the agreement
+         is on it, and the balance isn't due until the record is done.</p>
+      <p style="margin:0 0 18px"><a href="{resume_url(lead)}" style="display:inline-block;background:#D8E166;color:#222020;
+         text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">Hold my slot{' · ' + _amt(quote.get("deposit")) + ' deposit' if quote.get("deposit") else ''}</a></p>
       {read_line}
       <p>The calculator's here if you want to change the shape of it:
          <a href="{rates}">{FRONTEND_URL}/rates</a><br>

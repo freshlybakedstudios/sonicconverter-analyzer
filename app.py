@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 import bcrypt
+import hmac
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -8795,6 +8796,30 @@ async def desk_deposit_link(token: str = Form(...), email: str = Form(...), name
         print(f"desk deposit link failed for {em}: {e}")
         raise HTTPException(500, "stripe")
     return {"url": session.url, "session_id": session.id}
+
+
+@app.get("/api/deal/resume")
+async def deal_resume(lead: str, t: str):
+    """The quote email's deposit button lands here (2026-10-16): returns what the calculator needs to put
+    the lead straight on its booking step (services, songs, funding, add-ons, name, email), so the deposit
+    and the Music Production Agreement happen inside the normal flow. Signed link, read only."""
+    from deal_nurture import resume_token
+    lid = (lead or "").strip()
+    if not lid or not t or not hmac.compare_digest(resume_token(lid), t.strip()):
+        raise HTTPException(403, "link expired")
+    if not supabase:
+        raise HTTPException(503, "unavailable")
+    r = supabase.table("deal_leads").select("id,email,name,artist_name,metadata").eq("id", lid).limit(1).execute()
+    if not r.data:
+        raise HTTPException(404, "no such quote")
+    row = r.data[0]; meta = row.get("metadata") or {}
+    return {
+        "email": row.get("email"), "name": row.get("name") or "", "artist_name": row.get("artist_name"),
+        "services": meta.get("services") or [], "track_count": int(meta.get("track_count") or 1),
+        "funding": meta.get("funding") or None, "addons": meta.get("addons") or [],
+        "vision": meta.get("vision") or "", "track_url": meta.get("track_url") or "",
+        "quote": meta.get("quote") or None,
+    }
 
 
 @app.get("/api/booking/confirm")
