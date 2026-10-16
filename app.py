@@ -8710,6 +8710,60 @@ async def deal_nurture_bookings(token: str = "", dry: int = 0):
     return deal_nurture.run_booking_nurture(supabase, dry_run=dry_run)
 
 
+@app.post("/api/analyzer/want-work")
+async def analyzer_want_work(token: str = Form(...), service: str = Form('mixing'), tracks: int = Form(1),
+                             link: str = Form(''), note: str = Form(''), track: str = Form(''), artist: str = Form(''),
+                             spotify_url: str = Form('')):
+    """The ask at the peak moment (2026-10-15, after the Block Blast study: the offer lands right
+    after the read, and it is the real product, not a consultation). A signed-in analyzer user who
+    just saw their results says what they want done; it becomes a listen-desk card for the owner
+    (he listens, taps yes, the number goes out by email). Never a price here."""
+    user = _validate_session(token)
+    email = (user.get('email') or '').strip().lower()
+    if not email or not supabase:
+        raise HTTPException(400, "Log in first")
+    svc = (service or 'mixing').strip()
+    keys = {'mixing': ['mixing'], 'mastering': ['mastering'], 'mix_master': ['mixing', 'mastering'], 'production': ['fullProduction']}.get(svc, ['mixing'])
+    rates = {'mixing': 800, 'mastering': 250, 'fullProduction': 3500}
+    labels = {'mixing': 'Mixing', 'mastering': 'Mastering', 'fullProduction': 'Full Production'}
+    n = max(1, min(20, int(tracks or 1)))
+    disc = 0.2 if n >= 7 else 0.15 if n >= 4 else 0.1 if n >= 2 else 0.0
+    lines, total = [], 0
+    for k in keys:
+        per = rates[k]
+        d = 0.0 if (k == 'mastering' and n < 5) else disc
+        per_d = round(per * (1 - d)); amt = per_d * n
+        lines.append({'service': k, 'label': labels[k] + (f' ({n} x ${per_d})' if n > 1 else ''), 'amount': amt, 'per_track': per_d, 'full_per_track': per, 'tracks': n})
+        total += amt
+    link = (link or '').strip()[:500]
+    links = [u for u in [link, (spotify_url or '').strip()[:300]] if u.startswith('http')]
+    song = (track or '').strip()[:120] or (link.rstrip('/').split('/')[-1][:80] if link else 'their song')
+    note = re.sub(r'\s+', ' ', (note or '')).strip()[:600]
+    ctx = (f"asked from the analyzer results for \"{track}\"" + (f" by {artist}" if artist else '')
+           + (f". unreleased version: {link}" if link else ". no unreleased link given, the scanned track is the one")
+           + (f". their note: {note}" if note else ''))
+    import uuid as _uuid
+    row = {'source': 'analyzer', 'gmail_message_id': f"analyzer-{_uuid.uuid4().hex[:12]}", 'gmail_thread_id': None,
+           'from_email': email, 'from_name': (user.get('name') or '').strip() or email.split('@')[0], 'handle': None,
+           'song': song, 'subject': f'{song}', 'links': links, 'audio_path': None, 'context': ctx[:900],
+           'asked': ', '.join(labels[k] for k in keys) + ' (asked on the analyzer)', 'tracks': n, 'tier': 'standard',
+           'quote_amount': total, 'quote_breakdown': {'total': total, 'deposit': round(total / 2), 'lines': lines, 'tier': 'standard', 'tracks': n, 'services': keys, 'addons': []},
+           'status': 'new', 'paid_total': 0,
+           'history': f"analyzer account since {str(user.get('created_at') or '')[:10]}: {int(user.get('scans_used') or 0)} of {int(user.get('max_scans') or 0)} scans used"
+                      + (", Pro" if user.get('full_enrichment') else '')}
+    try:
+        supabase.table('deal_desk').insert(row).execute()
+    except Exception as e:
+        print(f"want-work: desk insert failed for {email}: {e}")
+        raise HTTPException(500, "Could not save that, email almgren@freshlybakedstudios.com instead")
+    try:
+        send_pushover_notification(f"listen: {row['from_name']}, {song} (analyzer)",
+                                   f"{row['asked']} x{n} -> ${total:,} proposed. {ctx[:180]}")
+    except Exception as e:
+        print(f"want-work: push failed: {e}")
+    return {"ok": True}
+
+
 @app.get("/api/booking/confirm")
 async def booking_confirm(uid: str, e: str, t: str):
     """One-tap attendee confirmation from the pre-call email (2026-08-24,

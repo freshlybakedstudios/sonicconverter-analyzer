@@ -779,11 +779,32 @@
         </div>
       </div>
 
-      <!-- CTA -->
-      <div class="cta-card">
-        <h3>Need help with the adjustment?</h3>
-        <p>Our engineers can help. Book a free consultation.</p>
-        <a href="https://cal.freshlybakedstudios.com/freshlybakedstudios/30min" class="btn-primary">Book Consultation</a>
+      <!-- The ask, at the moment they have just read what separates them (2026-10-15) -->
+      <div class="cta-card" id="want-work-card">
+        <h3>Want it fixed, not just measured?</h3>
+        <p>Send the track to the studio. I listen on the rig and come back with what I'd do and a number. No form, no call.</p>
+        <form id="want-work-form" style="text-align:left;margin-top:14px">
+          <div class="form-group">
+            <label>What do you want done</label>
+            <select id="ww-service" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:12px 14px;border-radius:8px;font-size:15px">
+              <option value="mixing">Mixing</option>
+              <option value="mix_master">Mixing and mastering</option>
+              <option value="mastering">Mastering only</option>
+              <option value="production">Full production</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="ww-link">Unreleased version? Paste a private link (Drive, Dropbox, SoundCloud). Leave empty and I use the track above.</label>
+            <input type="url" id="ww-link" placeholder="https://">
+          </div>
+          <div class="form-group">
+            <label for="ww-note">One line, optional: how many songs, what's bugging you about it</label>
+            <input type="text" id="ww-note" maxlength="300" placeholder="3 songs, the vocal never sits right">
+          </div>
+          <button type="submit" class="btn-primary" id="ww-btn">Send it to the studio</button>
+          <p class="form-note" id="ww-msg">You'll hear back at the email on your account.</p>
+        </form>
+        <p style="margin-top:14px"><a href="https://cal.freshlybakedstudios.com/freshlybakedstudios/30min" style="color:#4ecdc4">Rather talk first? Book a call</a></p>
       </div>
 
       <button class="btn-secondary" onclick="resetAll()" style="margin-top:24px">Analyze Another Track</button>

@@ -347,6 +347,39 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// The ask at the peak moment (2026-10-15): a signed-in user who just read their results says what
+// they want done; it lands on the owner's listen desk. Nothing here shows a price.
+const _ww = $('#want-work-form');
+if (_ww) {
+  _ww.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('#ww-btn'), msg = $('#ww-msg');
+    const token = localStorage.getItem('sc_token');
+    if (!token) { msg.textContent = 'Log in first, then send it.'; return; }
+    const ctx = window._pitchCtx || {};
+    const note = ($('#ww-note').value || '').trim();
+    const m = note.match(/\b(\d{1,2})\s*(songs?|tracks?)\b/i);
+    const fd = new FormData();
+    fd.append('token', token);
+    fd.append('service', $('#ww-service').value);
+    fd.append('tracks', m ? m[1] : '1');
+    fd.append('link', ($('#ww-link').value || '').trim());
+    fd.append('note', note);
+    fd.append('track', ctx.track || '');
+    fd.append('artist', ctx.artist || '');
+    fd.append('spotify_url', ctx.url || '');
+    btn.disabled = true; msg.textContent = 'Sending…';
+    try {
+      const r = await fetch(`${API_URL}/api/analyzer/want-work`, { method: 'POST', body: fd });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || 'Could not send');
+      _ww.innerHTML = '<p style="font-size:16px">Got it. It\'s on my desk. You\'ll hear back by email with what I\'d do and the number.</p>';
+    } catch (err) {
+      msg.textContent = err.message; btn.disabled = false;
+    }
+  });
+}
+
 // Try it first (2026-10-14): email + terms + link, no password. The server
 // creates a passwordless account with one scan; then the normal link-scan
 // flow runs, so the page behaves exactly as for any signed-in user.
