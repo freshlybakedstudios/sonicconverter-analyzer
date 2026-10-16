@@ -8764,6 +8764,39 @@ async def analyzer_want_work(token: str = Form(...), service: str = Form('mixing
     return {"ok": True}
 
 
+@app.post("/api/desk/deposit-link")
+async def desk_deposit_link(token: str = Form(...), email: str = Form(...), name: str = Form(''), song: str = Form(''),
+                            service: str = Form(''), total: int = Form(...), deposit: int = Form(...), desk_id: int = Form(0)):
+    """A one-tap deposit link for a listen-desk yes (2026-10-15: the offer lands in the same email as the
+    number). Same Stripe checkout and the same paid marker as the rates calculator; called by the Mac
+    sender with the cron token. Never shown before the owner has listened and said yes."""
+    if token != os.getenv('NURTURE_CRON_TOKEN', '') or not token:
+        raise HTTPException(403, "no")
+    if not stripe_lib.api_key:
+        raise HTTPException(500, "Payment system not configured")
+    if deposit <= 0 or total <= 0 or deposit > total:
+        raise HTTPException(400, "amounts")
+    em = email.strip().lower()
+    try:
+        session = stripe_lib.checkout.Session.create(
+            mode='payment',
+            customer_email=em,
+            line_items=[{'price_data': {'currency': 'usd',
+                                        'product_data': {'name': "50% Deposit — Freshly Baked Studios",
+                                                         'description': (f"{service} — {song}" if song else service)[:200]},
+                                        'unit_amount': int(deposit) * 100},
+                         'quantity': 1}],
+            metadata={'artist_name': (name or '')[:100], 'customer_name': (name or '')[:100], 'total': str(int(total)),
+                      'payment_kind': 'deposit', 'source': 'listen_desk', 'desk_id': str(desk_id or 0), 'song': (song or '')[:120]},
+            success_url=f"{FRONTEND_URL}/rates?step=confirmed&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{FRONTEND_URL}/rates",
+        )
+    except Exception as e:
+        print(f"desk deposit link failed for {em}: {e}")
+        raise HTTPException(500, "stripe")
+    return {"url": session.url, "session_id": session.id}
+
+
 @app.get("/api/booking/confirm")
 async def booking_confirm(uid: str, e: str, t: str):
     """One-tap attendee confirmation from the pre-call email (2026-08-24,
