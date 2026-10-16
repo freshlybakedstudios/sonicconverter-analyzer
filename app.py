@@ -8722,8 +8722,11 @@ async def booking_confirm(uid: str, e: str, t: str):
         return HTMLResponse("<h3 style='font-family:sans-serif'>Link expired — just reply to the email instead.</h3>", status_code=400)
     already = False
     try:
+        # per BOOKING, not per email (2026-10-15): a repeat client's tap on a later
+        # booking used to be swallowed as "already confirmed", so no row and no push
         existing = supabase.table("deal_leads").select("id") \
-            .eq("step", "booking_confirmed").eq("email", email).execute().data or []
+            .eq("step", "booking_confirmed").eq("email", email) \
+            .eq("metadata->>booking_uid", uid).execute().data or []
         for _r in existing:
             already = True
         if not already:
