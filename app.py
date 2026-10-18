@@ -7913,6 +7913,20 @@ async def deal_read_rerun(email: str = Form(...), token: str = Form('')):
     return {"ok": True, "email": em, "track": scan.get('track'), "spotify_url": url}
 
 
+
+def _fix_email_typos(email: str) -> str:
+    """Only the typos with one obvious meaning. Never guesses at unknown domains."""
+    e = (email or '').strip().lower()
+    if '@' not in e:
+        return email
+    local, dom = e.rsplit('@', 1)
+    dom = re.sub(r'\.(con|cmo|comm|vom|xom|ocm)$', '.com', dom)
+    fixes = {'gmal.com': 'gmail.com', 'gmial.com': 'gmail.com', 'gamil.com': 'gmail.com', 'gnail.com': 'gmail.com', 'gmail.co': 'gmail.com',
+             'yaho.com': 'yahoo.com', 'yahooo.com': 'yahoo.com', 'hotmal.com': 'hotmail.com', 'hotmai.com': 'hotmail.com', 'outlok.com': 'outlook.com', 'iclod.com': 'icloud.com'}
+    dom = fixes.get(dom, dom)
+    return f"{local}@{dom}"
+
+
 @app.post("/api/deal/lead")
 async def deal_lead_capture(data: dict):
     """
@@ -7921,6 +7935,8 @@ async def deal_lead_capture(data: dict):
     """
     name = data.get('name', '').strip()
     email = data.get('email', '').strip()
+    # 2026-10-18 (Brennen typed yahoo.con): fix the unambiguous typos so the quote email can land
+    email = _fix_email_typos(email)
     step = data.get('step', 'unknown')
 
     if not email:

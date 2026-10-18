@@ -584,15 +584,15 @@ def build_touch(lead: dict, touch: int):
                 f"<p>Before writing this I pulled up "
                 f"{obs_track if obs_track else 'your music'}. "
                 f"{obs}{refs_line}</p>"
-                f"<p>That's the kind of thing I'd dig into properly on a free pass at "
-                f"your track. What I'd do with it, what's holding it back, whether it "
-                f"even needs what you priced out.</p>"
+                f"<p>That's the kind of thing I'd dig into properly with your track in front of me. "
+                f"What I'd do with it, what's holding it back, whether it even needs what you priced out. "
+                f"The listen costs nothing; the work is the paid part.</p>"
             )
         else:
             listened = (
-                "<p>So here's a no strings offer while you decide. I'll take a real pass "
-                "at your track. What I'd do with it, what's holding it back, whether it "
-                "even needs what you priced out. Free.</p>"
+                "<p>So here's where I'd start while you decide. Send me the track and I'll "
+                "tell you what I'd do with it, what's holding it back, whether it even needs "
+                "what you priced out. The listen costs nothing; the work is the paid part.</p>"
             )
         # No <strong>/bold anywhere in the human-typed touches (owner 2026-08-15)
         plain_project = f"a {svc} project" if svc else "a project"
@@ -602,8 +602,7 @@ def build_touch(lead: dict, touch: int):
         vr = (pers.get("vision_reflection") or "").strip()
         mirror = f"<p>You wrote “{vq}.” {vr}</p>" if vq and vr else ""
         body = f"""
-          <p>Hey {v['greet']}, Alexander here. The actual human this time, not the
-             quote machine.</p>
+          <p>Hey {v['greet']}, Alexander here.</p>
           <p>I saw you priced out {plain_project}{for_artist} but didn't end up booking.
              I get it. The song's probably still moving, or the timing isn't there yet.
              For what it's worth, running the numbers before you commit is the right
@@ -611,7 +610,7 @@ def build_touch(lead: dict, touch: int):
           {mirror}
           {listened}
           <p>Two steps if you want it:</p>
-          <p>1. Drop your track here: <a href="{DROPBOX_REQUEST_URL}">{DROPBOX_REQUEST_URL}</a><br>
+          <p>1. {("Your track: I have the link you sent. If there's a newer version, drop it here: " if ((lead.get("metadata") or {}).get("track_url") or "").strip() else "Drop your track here: ")}<a href="{DROPBOX_REQUEST_URL}">{DROPBOX_REQUEST_URL}</a><br>
              2. Grab a slot on my calendar: <a href="{CAL_BOOKING_URL}">{CAL_BOOKING_URL}</a></p>
           <p>I do the listen and walk you through it live on the call. It also means I
              can quote you properly. The calculator gets close, but the real number
