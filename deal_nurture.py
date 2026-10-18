@@ -565,7 +565,7 @@ def build_touch(lead: dict, touch: int):
         if obs and obs_track and v["greet"] != "there":
             subject = f"{v['greet']}, I listened to {obs_track}. It's Alexander, the human this time"
         else:
-            subject = "the actual human this time"
+            subject = "one more thing about your record"   # 2026-10-18, owner: no human claim (was "the actual human this time")
         # Sonic reference artists (2026-08-15): stamped by nurture_personalize
         # via the analyzer's hardened matcher (lane + clash vetoes). Exactly 2
         # names or nothing — never rendered unless both survived the gates.
