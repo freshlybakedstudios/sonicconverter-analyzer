@@ -239,6 +239,13 @@ _spotify_block_pushed = 0.0
 
 
 def _get_spotify_token(force_backup=False):
+    """None on the app route (no Web API calls at all); the real refresh when WORKER_SPOTIFY_API=1."""
+    if not _API_MODE:
+        return None
+    return _get_spotify_token_real(force_backup=force_backup)
+
+
+def _get_spotify_token_real(force_backup=False):
     """Get Spotify Web API bearer token. Falls back to backup credentials on 429."""
     global _spotify_bearer, _spotify_bearer_ts, _using_backup
     if _spotify_bearer and (time.time() - _spotify_bearer_ts) < 3500 and not force_backup:
@@ -296,8 +303,76 @@ def _extract_track_id(url: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# ZERO-API route (2026-10-25, owner: "do it... seems like it's getting stupid"). Spotify blocks the whole developer
+# account for 5-8 h most days (Retry-After to ~01:10 UTC) and every blocked afternoon a real lead's scan died on
+# this worker's /v1/tracks lookup ("rig didn't respond"). GEMS has run with zero Web API calls since 10/21 by
+# driving the desktop app; the worker now does the same: load the track with `play track`, read
+# name/artist/album/duration/popularity from the app, seek and pause through the app. WORKER_SPOTIFY_API=1 restores
+# the old Web API route. The Railway side gets the names through the analysis_jobs row (track_name/artist_name).
+# ---------------------------------------------------------------------------
+_API_MODE = os.getenv('WORKER_SPOTIFY_API', '0') == '1'
+_APP_HIDE = 'tell application "System Events" to set visible of process "Spotify" to false'
+
+
+def _osa(*lines, timeout=15):
+    cmd = ['osascript']
+    for ln in lines:
+        cmd += ['-e', ln]
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+def _app_current_track() -> str:
+    try:
+        return _osa('tell application "Spotify" to get id of current track', timeout=10).stdout.strip()
+    except Exception:
+        return ''
+
+
+def _app_state() -> str:
+    try:
+        return _osa('tell application "Spotify" to get player state', timeout=10).stdout.strip()
+    except Exception:
+        return ''
+
+
+def _app_track_info(track_id: str, attempts: int = 2) -> dict | None:
+    """Load the track in the desktop app and read its metadata there. None = the app cannot load it (unplayable)."""
+    want = f'spotify:track:{track_id}'
+    q = ('tell application "Spotify" to (id of current track) & "|~|" & (name of current track) & "|~|" & '
+         '(artist of current track) & "|~|" & (album of current track) & "|~|" & '
+         '(duration of current track as text) & "|~|" & (popularity of current track as text)')
+    for i in range(attempts):
+        try:
+            _osa(f'tell application "Spotify" to play track "{want}"', _APP_HIDE)
+            time.sleep(1.2 + i)
+            r = _osa(q, timeout=10)
+            parts = r.stdout.strip().split('|~|')
+            if r.returncode == 0 and len(parts) == 6 and parts[0] == want:
+                return {'id': track_id, 'name': parts[1], 'artists': [{'name': parts[2]}],
+                        'album': {'name': parts[3]}, 'duration_ms': int(float(parts[4])),
+                        'popularity': int(float(parts[5] or 0)), 'is_playable': True, '_from_app': True}
+            print(f"App did not load {want} (got '{parts[0] if parts and parts[0] else 'nothing'}', try {i + 1}/{attempts})")
+        except Exception as e:
+            print(f"App track info failed (try {i + 1}/{attempts}): {e}")
+    return None
+
+
+def _patch_job_names(job_id: str, info: dict):
+    """Give the Railway side the names the app knows, so a report never says '? — ?' when the Web API is blocked."""
+    try:
+        requests.patch(f"{SUPABASE_URL}/rest/v1/analysis_jobs?id=eq.{job_id}",
+                       json={'track_name': (info.get('name') or '')[:200],
+                             'artist_name': ', '.join(a['name'] for a in info.get('artists', []))[:200]},
+                       headers=_supabase_headers(), timeout=10)
+    except Exception as e:
+        print(f"Job name patch failed (non-fatal): {e}")
+
+
 def _get_track_info(track_id: str) -> dict | None:
-    """Get track metadata (duration, playability). Retries on 429."""
+    """Get track metadata (duration, playability). App route by default; Web API (retries on 429) when WORKER_SPOTIFY_API=1."""
+    if not _API_MODE:
+        return _app_track_info(track_id)
     global _spotify_blocked_until, _spotify_block_pushed
     token = _get_spotify_token()
     if not token:
@@ -395,7 +470,26 @@ def _ensure_device_active() -> str | None:
 
 
 def _play_track(track_id: str, device_id: str = None) -> bool:
-    """Play a track via Spotify Web API, targeting specific device."""
+    """Play a track. App route by default (2026-10-25); Web API targeting a device when WORKER_SPOTIFY_API=1."""
+    if not _API_MODE:
+        want = f'spotify:track:{track_id}'
+        for i in range(3):
+            try:
+                if _app_current_track() != want or i:
+                    _osa(f'tell application "Spotify" to play track "{want}"', _APP_HIDE)
+                else:
+                    _osa('tell application "Spotify" to play', _APP_HIDE)
+                time.sleep(1.0)
+                if _app_state() == 'playing' and _app_current_track() == want:
+                    return True
+                _osa('tell application "Spotify" to pause', 'delay 0.3', 'tell application "Spotify" to play', _APP_HIDE)
+                time.sleep(1.5)
+                if _app_state() == 'playing' and _app_current_track() == want:
+                    return True
+            except Exception as e:
+                print(f"App play failed (try {i + 1}/3): {e}")
+        print(f"App never reported '{want}' playing")
+        return False
     token = _get_spotify_token()
     if not token:
         return False
@@ -437,14 +531,26 @@ def _play_track(track_id: str, device_id: str = None) -> bool:
         # while the desktop app stays paused after a device transfer — so
         # Loopback records silence and the capture fails intermittently.
         # Force the local Spotify app to actually start rendering audio via
-        # AppleScript. The Web API has already loaded the correct track URI on
-        # this device; this just guarantees real playback. Best-effort: never
-        # let a scripting hiccup break the worker.
+        # AppleScript. Best-effort: never let a scripting hiccup break the worker.
+        # 2026-10-20: the Web API now answers 204 and loads NOTHING into the desktop
+        # app (GEMS deaf all day). If the app does not hold the wanted track after
+        # the API play, load it through the app itself and send the window back
+        # to the background in the same script (the owner does not want it popping up).
+        want = f'spotify:track:{track_id}'
         try:
-            subprocess.run(
-                ['osascript', '-e', 'tell application "Spotify" to play'],
-                capture_output=True, timeout=10,
-            )
+            def app_track():
+                return subprocess.run(['osascript', '-e', 'tell application "Spotify" to get id of current track'],
+                                      capture_output=True, text=True, timeout=10).stdout.strip()
+            subprocess.run(['osascript', '-e', 'tell application "Spotify" to play'], capture_output=True, timeout=10)
+            time.sleep(1)
+            if app_track() != want:
+                print(f"Web API play left '{app_track() or 'nothing'}' in the app; loading {want} through the app")
+                subprocess.run(['osascript', '-e', f'tell application "Spotify" to play track "{want}"',
+                                '-e', 'tell application "System Events" to set visible of process "Spotify" to false'],
+                               capture_output=True, timeout=15)
+                time.sleep(1.5)
+                if app_track() != want:
+                    print(f"App still does not hold {want}; capture will likely be silent")
         except Exception as e:
             print(f"AppleScript play nudge failed (continuing): {e}")
         return True
@@ -453,7 +559,13 @@ def _play_track(track_id: str, device_id: str = None) -> bool:
 
 
 def _seek_to(position_ms: int):
-    """Seek playback to position."""
+    """Seek playback to position (app route by default)."""
+    if not _API_MODE:
+        try:
+            _osa(f'tell application "Spotify" to set player position to {position_ms / 1000:.1f}', _APP_HIDE, timeout=10)
+        except Exception as e:
+            print(f"App seek failed (continuing): {e}")
+        return
     token = _get_spotify_token()
     if not token:
         return
@@ -466,6 +578,12 @@ def _seek_to(position_ms: int):
 
 def _pause_playback():
     """Pause Spotify."""
+    if not _API_MODE:
+        try:
+            _osa('tell application "Spotify" to pause', timeout=10)
+        except Exception:
+            pass
+        return
     token = _get_spotify_token()
     if token:
         requests.put(
@@ -809,6 +927,8 @@ def process_job(job: dict, loopback_device: int):
     track_name = info.get('name', '')
     artist_names = ', '.join(a['name'] for a in info.get('artists', []))
     print(f"[{job_id[:8]}] {track_name} — {artist_names} ({duration_ms / 1000:.0f}s)")
+    if info.get('_from_app'):
+        _patch_job_names(job_id, info)
 
     if duration_ms < 30000:
         print(f"[{job_id[:8]}] Track too short ({duration_ms / 1000:.1f}s)")
@@ -831,9 +951,9 @@ def process_job(job: dict, loopback_device: int):
         print(f"[{job_id[:8]}] Warning: could not pause scripts: {e}")
     _freeze_rogue_gems()
 
-    # Ensure Spotify is active
-    device_id = _ensure_device_active()
-    if not device_id:
+    # Ensure Spotify is active (Web API route only; the app route needs no device)
+    device_id = None if not _API_MODE else _ensure_device_active()
+    if _API_MODE and not device_id:
         print(f"[{job_id[:8]}] No Spotify device available")
         update_job(job_id, 'error')
         return

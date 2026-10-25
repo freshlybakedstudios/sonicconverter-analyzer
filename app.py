@@ -6013,6 +6013,18 @@ async def analyze_url(
             if result:
                 features = result
                 print(f"  URL analysis: features received from Mac worker")
+                # 2026-10-25: the rig reads name/artist from the Spotify desktop app (zero Web API) and writes
+                # them to the row; when our own /v1/tracks lookup was rate-limited, take them from there so the
+                # report and the emails never say "? — ?" and the artist lookups below still have a name.
+                if not track_name or not artist_name:
+                    try:
+                        _rn = job_mgr._supabase.table('analysis_jobs').select('track_name,artist_name').eq('id', job_id).execute()
+                        if _rn.data:
+                            track_name = track_name or (_rn.data[0].get('track_name') or '')
+                            artist_name = artist_name or (_rn.data[0].get('artist_name') or '')
+                            print(f"  URL analysis: names from the rig: {artist_name} — {track_name}")
+                    except Exception as _e:
+                        print(f"  URL analysis: rig names read failed (non-fatal): {_e}")
                 break
             await asyncio.sleep(3)
 
