@@ -1478,13 +1478,20 @@ def _human_contact_since(email, start_dt):
         tok = _gmail_access_token()
         if not tok:
             return True
-        q = f"(from:{email} OR to:{email}) after:{int(start_dt.timestamp())}"
-        r = _rq.get(
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-            headers={"Authorization": f"Bearer {tok}"},
-            params={"q": q, "maxResults": 1}, timeout=15)
-        r.raise_for_status()
-        return bool(r.json().get("messages"))
+        # 2026-10-30 (Jesus Contreras no-show): an outbound the owner sent DURING the slot
+        # ("are you joining me?", 8 min after the start) is a no-show nudge, not proof the
+        # call happened, yet it suppressed the rebook email. Inbound from them counts from
+        # the start; outbound from the owner only counts once the slot is over (45 min).
+        hdr = {"Authorization": f"Bearer {tok}"}
+        url = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
+        q_in = f"from:{email} after:{int(start_dt.timestamp())}"
+        q_out = f"to:{email} after:{int((start_dt + timedelta(minutes=45)).timestamp())}"
+        for q in (q_in, q_out):
+            r = _rq.get(url, headers=hdr, params={"q": q, "maxResults": 1}, timeout=15)
+            r.raise_for_status()
+            if r.json().get("messages"):
+                return True
+        return False
     except Exception:
         return True
 
