@@ -130,13 +130,46 @@ SUPPRESS_EMAILS = {OWNER_EMAIL.strip().lower(), "freshlybakedstudios@gmail.com",
                    "pennsylvania_6_5000@hotmail.com"}
 
 
+# 2026-10-30 (owner, after 70631@thedps.org and ariar8079@ksvirtual.org): school-district and
+# virtual-school addresses are students clicking around, often minors. Never nurture them.
+SCHOOL_DOMAIN_MARKERS = ("k12", "schools", "school", "isd.", "dps.org", "ksvirtual", "virtual.org", "sd.org")
+
+
+def _services_list(v):
+    """2026-10-30: the checkout step stores services as plain text ("Full Production") or as a
+    repr string ("['fullProduction']"), and the digest then iterated the string character by
+    character ("F, u, l, l..."). Always return a list of service keys."""
+    if not v:
+        return []
+    if isinstance(v, (list, tuple)):
+        return [str(x) for x in v if x]
+    if isinstance(v, str):
+        t = v.strip()
+        if t.startswith("[") and t.endswith("]"):
+            try:
+                import ast
+                parsed = ast.literal_eval(t)
+                if isinstance(parsed, (list, tuple)):
+                    return [str(x) for x in parsed if x]
+            except Exception:
+                pass
+        return [t]
+    return [str(v)]
+
+
+def _is_school_domain(domain: str) -> bool:
+    d = (domain or "").lower()
+    return any(m in d for m in SCHOOL_DOMAIN_MARKERS)
+
+
 def _is_suppressed_email(email: str) -> bool:
     e = (email or "").strip().lower()
     if "@" not in e:
         return True
     if e in SUPPRESS_EMAILS:
         return True
-    return e.split("@")[-1] in SUPPRESS_DOMAINS
+    domain = e.split("@")[-1]
+    return domain in SUPPRESS_DOMAINS or _is_school_domain(domain)
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +296,7 @@ def _lead_view(lead: dict) -> dict:
     name = (lead.get("name") or "").strip()
     artist = (lead.get("artist_name") or "").strip()
     meta = lead.get("metadata") or {}
-    keys = meta.get("services") or []
+    keys = _services_list(meta.get("services"))
     labels = [SERVICE_LABELS.get(k, k) for k in keys]
     if labels:
         svc = labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " + " + labels[-1]
@@ -402,7 +435,7 @@ def build_flinch_email(lead: dict, br: dict):
     email = v["email"]
     unsub = f"{PUBLIC_API_BASE}/api/deal/nurture/unsubscribe?e={email}&t={unsub_token(email)}"
     meta = br.get("metadata") or {}
-    services = meta.get("services") or (lead.get("metadata") or {}).get("services") or []
+    services = _services_list(meta.get("services") or (lead.get("metadata") or {}).get("services"))
     tracks = meta.get("track_count") or (lead.get("metadata") or {}).get("track_count") or 1
     funded = (meta.get("funding") or "") in ("label", "manager")
     svc = v["service_str"]
@@ -932,7 +965,8 @@ def lead_odds(row: dict) -> dict:
     signals = []
     if (meta.get("track_url") or "").strip():
         signals.append("sent a track")
-    if (row.get("artist_name") or "").strip():
+    _an = (row.get("artist_name") or "").strip()
+    if _an and _an.lower() not in ("unknown artist", "unknown", "n/a", "-"):   # 2026-10-30: checkout placeholder is not a lookup
         signals.append("ran an artist lookup")
     strong = bool(signals)
     if strong:
@@ -1192,7 +1226,7 @@ def run_daily_digest(supabase, force: bool = False) -> dict:
         # Show the full price math so the total explains itself
         # ("2 tracks × $945/track (Mixing $720 + Mastering $225, 10% bulk
         # discount) = $1,890" instead of a bare $1,890).
-        calc_total, breakdown = price_breakdown(meta.get("services"), tracks)
+        calc_total, breakdown = price_breakdown(_services_list(meta.get("services")), tracks)
         if breakdown and calc_total == v["value"]:
             price_line = breakdown
         else:
