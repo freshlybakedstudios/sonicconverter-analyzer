@@ -6107,6 +6107,7 @@ async def analyze_url(
     # {pop}; the top 20 went from a genre grab-bag (dnb, hip-hop, blues) to
     # art pop / indie pop neighbours. Nothing dominant -> stays laneless.
     _inferred_lane = set()
+    _lane_confirmed = False
     if _thin_identity and all_found:
         _k = min(500, len(all_found))
         _fam_counts = {}
@@ -6119,6 +6120,22 @@ async def analyze_url(
                      for f, c in sorted(_fam_counts.items(), key=lambda x: -x[1])[:6]}
         print(f"  Thin-identity lane from sound: top {_k} neighbours -> {_top_fams} "
               f"=> lane {sorted(_inferred_lane) or '(none, sonic rank only)'}")
+        # 2026-11-02 (Baby Bat, "fairy-trap, rage-pop"): the ignored Chartmetric
+        # tags were hers and right (hip-hop/rap, pop, rock), the sound vote
+        # landed in hip-hop too, and without pop in the lane the neighbours
+        # came out drill and gangsta rap. When the sound-chosen lane OVERLAPS
+        # the tags' families the tags are corroborated, not a namesake guess:
+        # let them widen the lane, but only with families the sound also
+        # supports (>= 5% of the neighbours). No overlap (Martin Brown: sound
+        # pop, tags dance) keeps the sound alone, exactly as before.
+        _tag_fams = user_lane_families(artist_genre or '') if artist_genre else set()
+        if _inferred_lane and _tag_fams and (_inferred_lane & _tag_fams):
+            _supported = {f for f in _tag_fams if _fam_counts.get(f, 0) >= 0.05 * _k}
+            if _supported - _inferred_lane:
+                print(f"  Thin-identity lane confirmed by the artist's own tags {sorted(_tag_fams)}: "
+                      f"widened {sorted(_inferred_lane)} -> {sorted(_inferred_lane | _supported)}")
+            _inferred_lane = _inferred_lane | _supported
+            _lane_confirmed = True
 
     # Track-to-track genre family filter. The user side is the TRACK's OWN genre
     # (the tightening) — never the artist's back-catalog union, which is what used
@@ -6746,9 +6763,13 @@ async def analyze_url(
             # thin-identity scan it is the lane the SOUND pointed at, or nothing.
             'match_genre': (', '.join(sorted(_inferred_lane)) if _thin_identity else (genre or '')),
             # 2026-09-19: 'sonic_only' = thin-identity scan, tag-derived lane skipped
-            'lane_mode': 'sonic_only' if _thin_identity else 'genre_lane',
+            'lane_mode': ('sonic_confirmed' if _lane_confirmed else 'sonic_only') if _thin_identity else 'genre_lane',
             'inferred_lane': ', '.join(sorted(_inferred_lane)) if _thin_identity else '',
             'lane_note': (
+                ('Spotify lists no genre for this artist yet, so matches were ranked on measured sound; '
+                 'the sound sits closest to ' + ', '.join(sorted(_inferred_lane)) + ', and the artist\'s own '
+                 'genre tags agree, so they set the lane together.')
+                if (_inferred_lane and _lane_confirmed) else
                 ('Spotify lists no genre for this artist yet, so the genre labels were ignored: '
                  'matches were ranked on measured sound, and the sound sits closest to '
                  + ', '.join(sorted(_inferred_lane)) + ', which set the lane.')
