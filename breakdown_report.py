@@ -565,7 +565,7 @@ def build_breakdown_html(job: dict, prepared_for: str | None = None) -> str:
     key = f"{f.get('key') or '?'} {f.get('scale') or ''}".strip()
     _kc = f.get('key_confidence')
     _key_sub = 'low confidence' if isinstance(_kc, (int, float)) and _kc < 0.25 else ''
-    tiles = [(f"{_num(f.get('bpm')) or 0:.0f}", 'BPM', ''), (_esc(key), 'Key', _key_sub),
+    tiles = [((f"{_num(f.get('bpm')):.0f}" if _num(f.get('bpm')) else '\u2014'), 'BPM', ''), (_esc(key), 'Key', _key_sub),
              # 2026-10-14 (owner): the number is the streaming estimate (whole-track
              # projection, see _INT_EST_COEF in app.py); the raw window reads ~3 dB quiet.
              ((f"{lufs_est:.1f}" if lufs_est is not None else (f"{lufs:.1f}" if lufs is not None else '—')), 'LUFS',

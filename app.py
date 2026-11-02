@@ -960,6 +960,20 @@ TIER_RANGES = {
 }
 
 
+# 2026-11-02 (Baby Bat: "the BPM said 100 but the song is 80 or 160"; our read was 106). The beat tracker is only
+# trustworthy in four-on-the-floor lanes (memory 10/18: tech house, afro house, house, melodic techno, amapiano,
+# psytrance, brazilian dance, bass house, tropical house agree with themselves; hip-hop, metal, jazz, country and
+# the rest return the detector's own histogram). Outside those lanes the page shows a dash instead of a wrong number.
+_KICK_LANE_TOKENS = ('house', 'techno', 'amapiano', 'psytrance', 'trance', 'brazilian dance', 'edm')
+
+
+def _bpm_for_display(features, *lane_texts):
+    blob = ' '.join(str(t or '') for t in lane_texts).lower()
+    if any(tok in blob for tok in _KICK_LANE_TOKENS):
+        return features.get('bpm', 0)
+    return None
+
+
 def _thin_identity_scan(dropdown_genre, user_tier: str, sp_artist_genres) -> bool:
     """Should this scan skip the genre lane and rank on measured sound alone?
 
@@ -3628,7 +3642,7 @@ async def analyze(
             'job_id': job_id,
             'total_match_count': total_match_count,
             'features': {
-                'bpm': features.get('bpm', 0),
+                'bpm': _bpm_for_display(features, genre, artist_genre),   # 2026-11-02: kick lanes only
                 'key': features.get('key', '?'),
                 'scale': features.get('scale', ''),
                 # 2026-09-24: the low-confidence key label is drawn from this.
@@ -6701,7 +6715,7 @@ async def analyze_url(
         'job_id': new_job_id,
         'total_match_count': total_match_count,
         'features': {
-            'bpm': features.get('bpm', 0),
+            'bpm': _bpm_for_display(features, genre, artist_genre, track_genre, ', '.join(sorted(_inferred_lane))),   # 2026-11-02: kick lanes only
             'key': features.get('key', '?'),
             'scale': features.get('scale', ''),
             'key_confidence': features.get('key_confidence'),

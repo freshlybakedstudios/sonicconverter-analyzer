@@ -1283,7 +1283,8 @@ function renderResults(data) {
   const statsGrid = $('#stats-grid');
   statsGrid.innerHTML = '';
   const stats = [
-    { value: (f.bpm || 0).toFixed(0), label: 'BPM' },
+    // 2026-11-02: the beat tracker is only trusted in kick lanes; the server sends bpm null elsewhere (Baby Bat: 'the BPM said 100 but the song is 80 or 160')
+    { value: (f.bpm ? Number(f.bpm).toFixed(0) : '\u2014'), label: 'BPM' },
     // 2026-09-23 (Damion Yang): a key the numbers can't support is now
     // labelled instead of asserted. A wrong key is instantly falsifiable and
     // makes a reader doubt every other number on the page.
