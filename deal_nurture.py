@@ -193,14 +193,18 @@ def _parse(ts):
         return None
 
 
-def _pushover(title, message):
+def _pushover(title, message, url=None, url_title=None):
     try:
         import urllib.request, urllib.parse
-        data = urllib.parse.urlencode({
+        payload = {
             'token': os.getenv('PUSHOVER_API_TOKEN', 'azq6g5x1rfzg9sykm6xscw8ypn4m1y'),
             'user': os.getenv('PUSHOVER_USER_KEY', 'usbh1c1xzp7ooasfu8vvwbqmgiiipp'),
             'title': title, 'message': message,
-        }).encode()
+        }
+        if url:
+            payload['url'] = url
+            payload['url_title'] = url_title or 'Open'
+        data = urllib.parse.urlencode(payload).encode()
         urllib.request.urlopen('https://api.pushover.net/1/messages.json', data=data, timeout=10)
     except Exception as e:
         print(f"pushover failed: {e}")
@@ -1393,6 +1397,16 @@ BOOKING_NURTURE_ENABLED = os.getenv("BOOKING_NURTURE_ENABLED", "false").lower() 
 CAL_BOOKING_LINK = "https://cal.freshlybakedstudios.com/freshlybakedstudios/30min"
 
 PRECALL_WINDOW = timedelta(hours=3)   # remind once the call is <= 3h out
+# Day-before reminder (2026-11-07): a third of booked calls were no-showing with
+# only the 3h nudge. Fires once when the call is 3h..24h out, skipped when the
+# slot was booked less than ~26h ahead (Cal's own confirmation is still fresh).
+PRECALL24_WINDOW = timedelta(hours=24)
+PRECALL24_MIN_NOTICE = timedelta(hours=26)
+# Attendance ask (2026-11-07): 45 min after every call Alexander gets one push
+# with two buttons, showed / no-show. The rebook email now fires ONLY after his
+# "no-show" tap. Unanswered = nothing sends. A wrong "we missed each other" to
+# someone who sat on the call has happened twice; silence is the cheaper error.
+ATTEND_ASK_AFTER = timedelta(minutes=45)
 # Skip the reminder when the slot was booked last-minute — Cal's own
 # confirmation email is minutes old and a second email looks robotic.
 PRECALL_MIN_NOTICE = timedelta(hours=3, minutes=30)
@@ -1448,6 +1462,22 @@ def _confirmed_uids(supabase):
         return {(r.get("metadata") or {}).get("booking_uid") for r in rows}
     except Exception:
         return set()
+
+
+def _owner_marked_uids(supabase, step):
+    """Booking uids the owner tapped on the attendance page (last 14d)."""
+    since = (_now() - timedelta(days=14)).isoformat()
+    try:
+        rows = supabase.table("deal_leads").select("metadata") \
+            .eq("step", step).gte("created_at", since).execute().data or []
+        return {(r.get("metadata") or {}).get("booking_uid") for r in rows}
+    except Exception:
+        return set()
+
+
+def attend_url(b):
+    return (f"{PUBLIC_API_BASE}/api/booking/attended?uid={b['uid']}"
+            f"&e={b['email']}&t={confirm_token(b['email'], b['uid'])}")
 
 
 def _lead_engaged(supabase, email):
@@ -1610,6 +1640,42 @@ def build_precall_email(b):
     return subject, _booking_shell(body)
 
 
+def build_precall24_email(b):
+    """Day-before reminder: the time, one tap to confirm, where to drop a track.
+    Shorter than the 3h one on purpose; that one carries the walkthrough video."""
+    when = _fmt_local(b["start"], b["tz"])
+    link = b["video_url"] or f"https://cal.freshlybakedstudios.com/booking/{b['uid']}"
+    greet = b["name"].split()[0] if b["name"] else "there"
+    subject = f"Tomorrow: our call at {when}"
+    confirm_url = (f"{PUBLIC_API_BASE}/api/booking/confirm?uid={b['uid']}"
+                   f"&e={b['email']}&t={confirm_token(b['email'], b['uid'])}")
+    body = f"""
+      <p style="color:#ccc">Hey {greet},</p>
+      <p style="color:#ccc">We're on tomorrow at <strong>{when}</strong>. One tap so I know
+         you're coming:</p>
+      <p style="text-align:center;margin:28px 0 10px">
+        <a href="{confirm_url}" style="background:#D8E166;color:#222020;text-decoration:none;
+           font-weight:bold;padding:14px 28px;border-radius:8px;display:inline-block">
+           &#9989; I'll be there</a>
+      </p>
+      <p style="text-align:center;margin:0 0 24px">
+        <a href="{link}" style="color:#D8E166;text-decoration:underline;font-size:14px">
+           Join link for when it's time</a>
+      </p>
+      <p style="color:#ccc">The best calls start on the music. If you've got a rough mix, a demo,
+         or a reference you love, drop it here before we talk:
+         <a href="{DROPBOX_REQUEST_URL}" style="color:#D8E166">upload to my client folder</a>.</p>
+      <p style="color:#ccc">Time stopped working? Reply here or
+         <a href="{CAL_BOOKING_LINK}" style="color:#D8E166">grab a new slot</a>. No stress either way.</p>
+      <p style="color:#ccc">Alexander<br><span style="color:#888">Freshly Baked Studios · Brooklyn, NY</span></p>
+      <p style="color:#555;font-size:11px;text-align:center;margin-top:28px;border-top:1px solid #2a2626;padding-top:16px">
+        Freshly Baked Studios · Brooklyn, NY<br>
+        You're getting this because you booked a call with us.
+      </p>
+    """
+    return subject, _booking_shell(body)
+
+
 def build_noshow_email(b):
     """Next-day friendly rebook after a missed call."""
     email = b["email"]
@@ -1664,7 +1730,9 @@ def run_booking_nurture(supabase, dry_run: bool = None) -> dict:
     for b in bookings:
         starts_by_email.setdefault(b["email"], []).append(b["start"])
 
-    precall, noshow = [], []
+    precall, precall24, noshow = [], [], []
+    owner_noshow = _owner_marked_uids(supabase, "booking_noshow_owner")
+    owner_attended = _owner_marked_uids(supabase, "booking_attended")
     for b in bookings:
         if _is_suppressed_email(b["email"]):
             continue
@@ -1685,14 +1753,35 @@ def run_booking_nurture(supabase, dry_run: bool = None) -> dict:
                       f"{b['name'] or b['email']} at {when_local} never tapped "
                       f"'I'll be there'. Your call whether to sit down for it.")
             _stamp_booking(supabase, b, "unconf_alert", "live")
+        # Attendance ask: one push per call, 45 min after it started, with the
+        # two-button page. Live mode only. Skipped if he already answered.
+        if (not dry_run and ATTEND_ASK_AFTER <= -delta <= NOSHOW_WINDOW
+                and not b["rescheduled"]
+                and (b["uid"], "attend_ask", "live") not in markers
+                and b["uid"] not in owner_noshow and b["uid"] not in owner_attended):
+            when_local = _fmt_local(b["start"], b["tz"])
+            _pushover("Call done: did they show?",
+                      f"{b['name'] or b['email']} at {when_local}. Tap to answer. "
+                      "No-show = the rebook email goes out tomorrow. Showed = nothing sends.",
+                      url=attend_url(b), url_title="Showed / No-show")
+            _stamp_booking(supabase, b, "attend_ask", "live")
         if timedelta(0) < delta <= PRECALL_WINDOW:
             if _handled("precall"):
                 continue
             if b["created"] and (b["start"] - b["created"]) < PRECALL_MIN_NOTICE:
                 continue
             precall.append(b)
+        elif PRECALL_WINDOW < delta <= PRECALL24_WINDOW:
+            if _handled("precall24"):
+                continue
+            if b["created"] and (b["start"] - b["created"]) < PRECALL24_MIN_NOTICE:
+                continue
+            precall24.append(b)
         elif NOSHOW_AFTER <= -delta <= NOSHOW_WINDOW:
             if _handled("noshow") or b["rescheduled"]:
+                continue
+            # 2026-11-07: the rebook fires only after the owner's "no-show" tap.
+            if b["uid"] not in owner_noshow:
                 continue
             # A later accepted booking by the same email = they rebooked already.
             if any(s > b["start"] for s in starts_by_email.get(b["email"], [])):
@@ -1717,24 +1806,26 @@ def run_booking_nurture(supabase, dry_run: bool = None) -> dict:
         "dry_run": dry_run,
         "enabled": BOOKING_NURTURE_ENABLED,
         "precall_due": len(precall),
+        "precall24_due": len(precall24),
         "noshow_due": len(noshow),
         "sent": 0,
         "targets": [
             {"email": b["email"], "kind": k, "booking": b["uid"]}
-            for k, group in (("precall", precall), ("noshow", noshow))
+            for k, group in (("precall", precall), ("precall24", precall24), ("noshow", noshow))
             for b in group
         ],
     }
 
     if dry_run:
-        if precall or noshow:
-            _send_booking_preview(precall, noshow)
-            for kind, group in (("precall", precall), ("noshow", noshow)):
+        if precall or precall24 or noshow:
+            _send_booking_preview(precall, noshow, precall24)
+            for kind, group in (("precall", precall), ("precall24", precall24), ("noshow", noshow)):
                 for b in group:
                     _stamp_booking(supabase, b, kind, "preview")
         return summary
 
     for kind, build, group in (
+        ("precall24", build_precall24_email, precall24),
         ("precall", build_precall_email, precall),
         ("noshow", build_noshow_email, noshow),
     ):
@@ -1746,12 +1837,17 @@ def run_booking_nurture(supabase, dry_run: bool = None) -> dict:
     return summary
 
 
-def _send_booking_preview(precall, noshow):
+def _send_booking_preview(precall, noshow, precall24=()):
     def line(b, kind):
         when = b["start"].strftime("%a %b %d %H:%M UTC")
         return f"  • {kind}: {b['name'] or '?'} &lt;{b['email']}&gt; — call {when}"
-    lines = [line(b, "pre-call reminder") for b in precall] + [line(b, "no-show rebook") for b in noshow]
+    lines = ([line(b, "day-before reminder") for b in precall24]
+             + [line(b, "pre-call reminder") for b in precall]
+             + [line(b, "no-show rebook") for b in noshow])
     samples = ""
+    if precall24:
+        s, h = build_precall24_email(precall24[0])
+        samples += f"<h3>Sample day-before ({s}):</h3>{h}"
     if precall:
         s, h = build_precall_email(precall[0])
         samples += f"<h3>Sample pre-call ({s}):</h3>{h}"

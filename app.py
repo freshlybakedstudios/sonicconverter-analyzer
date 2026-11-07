@@ -8924,6 +8924,46 @@ async def booking_confirm(uid: str, e: str, t: str):
     </body></html>""")
 
 
+@app.get("/api/booking/attended")
+async def booking_attended(uid: str, e: str, t: str, a: str = ""):
+    """Owner's two-button attendance page, linked from the post-call Pushover
+    (2026-11-07). Same HMAC as the attendee confirm link. a=yes stamps
+    booking_attended (nothing sends); a=no stamps booking_noshow_owner, which is
+    the only thing that lets the rebook email go out. Idempotent."""
+    from deal_nurture import verify_confirm
+    from fastapi.responses import HTMLResponse
+    email = (e or "").strip().lower()
+    if not verify_confirm(email, uid, t):
+        return HTMLResponse("<h3 style='font-family:sans-serif'>Link expired.</h3>", status_code=400)
+    shell = ("<html><body style='background:#141213;color:#eee;font-family:-apple-system,sans-serif;"
+             "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
+             "<div style='text-align:center;max-width:420px;padding:24px'>{inner}</div></body></html>")
+    btn = ("style='display:inline-block;margin:10px;padding:16px 26px;border-radius:10px;font-weight:bold;"
+           "text-decoration:none;font-size:18px;{c}'")
+    if a not in ("yes", "no"):
+        base = f"/api/booking/attended?uid={uid}&e={email}&t={t}"
+        return HTMLResponse(shell.format(inner=(
+            f"<p style='color:#aaa;margin:0 0 6px'>{email}</p><h2 style='margin:0 0 20px'>Did they show?</h2>"
+            f"<a href='{base}&a=yes' {btn.format(c='background:#D8E166;color:#222020')}>Showed</a>"
+            f"<a href='{base}&a=no' {btn.format(c='background:#3a3436;color:#eee')}>No-show</a>"
+            "<p style='color:#777;font-size:13px;margin-top:22px'>No-show sends the rebook email tomorrow. "
+            "Showed sends nothing.</p>")))
+    step = "booking_attended" if a == "yes" else "booking_noshow_owner"
+    try:
+        existing = supabase.table("deal_leads").select("id").eq("step", step) \
+            .eq("metadata->>booking_uid", uid).execute().data or []
+        if not existing:
+            supabase.table("deal_leads").insert({
+                "email": email, "name": "", "step": step,
+                "metadata": {"booking_uid": uid, "by": "owner"},
+            }).execute()
+    except Exception as _e:
+        print(f"attended store failed: {_e}")
+    msg = ("Marked as showed. Nothing will be sent." if a == "yes"
+           else "Marked as no-show. The rebook email goes out on the next tick after 20 hours past the slot.")
+    return HTMLResponse(shell.format(inner=f"<div style='font-size:44px;margin-bottom:12px'>{'✅' if a=='yes' else '📭'}</div><h2 style='margin:0 0 8px'>Got it.</h2><p style='color:#aaa'>{msg}</p>"))
+
+
 @app.get("/api/deal/nurture/unsubscribe")
 async def deal_nurture_unsub(e: str = "", t: str = ""):
     """One-click unsubscribe from the email footer link."""
