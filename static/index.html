@@ -780,10 +780,11 @@
       </div>
 
       <!-- The ask, at the moment they have just read what separates them (2026-10-15) -->
-      <div class="cta-card" id="want-work-card">
-        <h3>Want it fixed, not just measured?</h3>
-        <p>Send the track to the studio. I listen on the rig and come back with what I'd do and a number. No form, no call.</p>
-        <form id="want-work-form" style="text-align:left;margin-top:14px">
+      <div class="cta-quiet" id="want-work-card">
+        <details>
+          <summary>Want it fixed, not just measured? <span class="cta-quiet-link">Send it to the studio</span></summary>
+          <p class="cta-quiet-p">I listen on the rig and come back with what I'd do and a number. No form, no call.</p>
+          <form id="want-work-form" style="text-align:left;margin-top:14px">
           <div class="form-group">
             <label>What do you want done</label>
             <select id="ww-service" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:12px 14px;border-radius:8px;font-size:15px">
@@ -804,7 +805,8 @@
           <button type="submit" class="btn-primary" id="ww-btn">Send it to the studio</button>
           <p class="form-note" id="ww-msg">You'll hear back at the email on your account.</p>
         </form>
-        <p style="margin-top:14px"><a href="https://cal.freshlybakedstudios.com/freshlybakedstudios/30min" style="color:#4ecdc4">Rather talk first? Book a call</a></p>
+          <p class="cta-quiet-cal"><a href="https://cal.freshlybakedstudios.com/freshlybakedstudios/30min">Rather talk first? Book a call</a></p>
+        </details>
       </div>
 
       <button class="btn-secondary" onclick="resetAll()" style="margin-top:24px">Analyze Another Track</button>

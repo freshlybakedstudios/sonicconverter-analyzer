@@ -914,6 +914,24 @@ body {
   margin-bottom: 20px;
 }
 
+/* ---- THE QUIET ASK (2026-11-10, owner: "smaller... more subtle") ---- */
+.cta-quiet {
+  margin: 28px 0 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--text-dim);
+  text-align: left;
+}
+.cta-quiet summary { cursor: pointer; list-style: none; }
+.cta-quiet summary::-webkit-details-marker { display: none; }
+.cta-quiet-link { color: #4ecdc4; text-decoration: underline; text-underline-offset: 3px; }
+.cta-quiet-p { margin: 10px 0 0; font-size: 13px; }
+.cta-quiet .form-group label { font-size: 12px; }
+.cta-quiet .btn-primary { font-size: 14px; padding: 10px 16px; }
+.cta-quiet-cal { margin-top: 12px; font-size: 13px; }
+.cta-quiet-cal a { color: #4ecdc4; }
+
 /* ---- OPTIONAL LABEL ---- */
 .optional-label {
   font-size: 11px;
