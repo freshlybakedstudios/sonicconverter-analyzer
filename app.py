@@ -968,10 +968,15 @@ _KICK_LANE_TOKENS = ('house', 'techno', 'amapiano', 'psytrance', 'trance', 'braz
 
 
 def _bpm_for_display(features, *lane_texts):
+    """2026-11-10 (owner: "BPM not working on the analyzer"): the dash hid the number everywhere but the kick lanes
+    and read as broken. The number shows in every lane again; _bpm_trusted() says whether the lane is one the
+    tracker agrees with itself in, and the page marks the others as approximate (a tilde) instead of hiding them."""
+    return features.get('bpm', 0)
+
+
+def _bpm_trusted(*lane_texts):
     blob = ' '.join(str(t or '') for t in lane_texts).lower()
-    if any(tok in blob for tok in _KICK_LANE_TOKENS):
-        return features.get('bpm', 0)
-    return None
+    return any(tok in blob for tok in _KICK_LANE_TOKENS)
 
 
 def _thin_identity_scan(dropdown_genre, user_tier: str, sp_artist_genres) -> bool:
@@ -3642,7 +3647,8 @@ async def analyze(
             'job_id': job_id,
             'total_match_count': total_match_count,
             'features': {
-                'bpm': _bpm_for_display(features, genre, artist_genre),   # 2026-11-02: kick lanes only
+                'bpm': _bpm_for_display(features, genre, artist_genre),
+                'bpm_trusted': _bpm_trusted(genre, artist_genre),   # 2026-11-10: shown everywhere, approximate outside kick lanes
                 'key': features.get('key', '?'),
                 'scale': features.get('scale', ''),
                 # 2026-09-24: the low-confidence key label is drawn from this.
@@ -6715,7 +6721,8 @@ async def analyze_url(
         'job_id': new_job_id,
         'total_match_count': total_match_count,
         'features': {
-            'bpm': _bpm_for_display(features, genre, artist_genre, track_genre, ', '.join(sorted(_inferred_lane))),   # 2026-11-02: kick lanes only
+            'bpm': _bpm_for_display(features, genre, artist_genre, track_genre, ', '.join(sorted(_inferred_lane))),
+            'bpm_trusted': _bpm_trusted(genre, artist_genre, track_genre, ', '.join(sorted(_inferred_lane))),   # 2026-11-10: shown everywhere, approximate outside kick lanes
             'key': features.get('key', '?'),
             'scale': features.get('scale', ''),
             'key_confidence': features.get('key_confidence'),
