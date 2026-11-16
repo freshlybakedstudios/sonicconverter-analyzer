@@ -34,8 +34,17 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 API = "https://analyze.freshlybakedstudios.com/api/analyze-url"
-FAILED_JOBS = ["0465d9ec", "3cfbd8e1", "3e6e5f70", "864ebbb6"]
-FAILED_SINCE = "2026-09-24T18:00:00"          # UTC
+# 2026-11-13: the outage list and window come from the command line now (--jobs a1b2c3d4,... --since ISO-UTC),
+# so this script is never run against a month-old list by accident (it nearly emailed stale results on 11/?).
+def _arg(name, default):
+    for a in sys.argv:
+        if a.startswith(f"--{name}="):
+            return a.split("=", 1)[1]
+    return default
+FAILED_JOBS = [j.strip()[:8] for j in _arg("jobs", "").split(",") if j.strip()]
+FAILED_SINCE = _arg("since", "")          # UTC ISO, e.g. 2026-11-13T03:00:00
+if not FAILED_JOBS or not FAILED_SINCE:
+    sys.exit("usage: rerun_blocked_scans.py --jobs=<8-char ids, comma separated> --since=<UTC ISO> [--dry]")
 MAX_WAIT_H = 4
 DRY = "--dry" in sys.argv
 
@@ -117,7 +126,7 @@ def already_done(scan):
     track = scan["spotify_url"].split("?")[0].split("/")[-1]
     rows = supa("analysis_jobs?select=id,status,spotify_url"
                 f"&user_email=eq.{urllib.parse.quote(scan['user_email'])}"
-                f"&created_at=gt.{scan['created_at']}&status=eq.complete")
+                f"&created_at=gt.{urllib.parse.quote(scan['created_at'], safe='')}&status=eq.complete")
     return any(track in (r.get("spotify_url") or "") for r in rows)
 
 

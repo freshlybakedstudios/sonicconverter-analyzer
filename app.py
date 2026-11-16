@@ -2430,6 +2430,15 @@ def _generate_full_target_ranges(features: dict, high_converter_gems: list) -> l
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
+# 2026-11-16 (owner: "block this guy from using the analyser"): closed accounts, by user id. One gate for every
+# token endpoint (_validate_session) plus the login door. Add ids here or in ANALYZER_BLOCKED_USER_IDS on Railway
+# (comma-separated). A closed account keeps its row, so the same email cannot sign up again either.
+BLOCKED_USER_IDS = {s.strip() for s in (os.environ.get('ANALYZER_BLOCKED_USER_IDS') or '').split(',') if s.strip()} | {
+    '41bec135-9777-47a2-9967-c9e85a5c9962',   # closed 2026-11-16
+}
+BLOCKED_MSG = "This account has been closed."
+
+
 def _validate_session(token: str) -> dict:
     """Validate session token from Supabase. Returns user dict or raises 401.
 
@@ -2467,6 +2476,13 @@ def _validate_session(token: str) -> dict:
     user_resp = supabase.table('users').select('*').eq('id', session['user_id']).execute()
     if not user_resp.data:
         raise HTTPException(401, "User not found.")
+
+    if user_resp.data[0].get('id') in BLOCKED_USER_IDS:
+        try:
+            supabase.table('sessions').delete().eq('token', token).execute()
+        except Exception:
+            pass
+        raise HTTPException(403, BLOCKED_MSG)
 
     return user_resp.data[0]
 
@@ -2687,6 +2703,9 @@ async def login(
         raise HTTPException(401, "Invalid email or password.")
 
     user = resp.data[0]
+
+    if user.get('id') in BLOCKED_USER_IDS:
+        raise HTTPException(403, BLOCKED_MSG)
 
     if not bcrypt.checkpw(password.encode(), user['password_hash'].encode()):
         raise HTTPException(401, "Invalid email or password.")

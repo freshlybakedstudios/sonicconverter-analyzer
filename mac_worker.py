@@ -339,19 +339,32 @@ def _app_state() -> str:
 def _app_track_info(track_id: str, attempts: int = 2) -> dict | None:
     """Load the track in the desktop app and read its metadata there. None = the app cannot load it (unplayable)."""
     want = f'spotify:track:{track_id}'
+    # 2026-11-13: Spotify 1.3.9 dropped `popularity` from its AppleScript dictionary ("Can't make popularity of
+    # current track into type specifier", -1700). It sat inside this one combined query, so every read failed,
+    # every track looked unplayable, and the worker restarted the same song every 18 s all morning. Popularity
+    # is read on its own now and defaults to 0 when the app refuses it.
     q = ('tell application "Spotify" to (id of current track) & "|~|" & (name of current track) & "|~|" & '
          '(artist of current track) & "|~|" & (album of current track) & "|~|" & '
-         '(duration of current track as text) & "|~|" & (popularity of current track as text)')
+         '(duration of current track as text)')
     for i in range(attempts):
         try:
             _osa(f'tell application "Spotify" to play track "{want}"', _APP_HIDE)
             time.sleep(1.2 + i)
             r = _osa(q, timeout=10)
             parts = r.stdout.strip().split('|~|')
-            if r.returncode == 0 and len(parts) == 6 and parts[0] == want:
+            if r.returncode == 0 and len(parts) == 5 and parts[0] == want:
+                pop = 0
+                try:
+                    pr = _osa('tell application "Spotify" to (popularity of current track as text)', timeout=5)
+                    if pr.returncode == 0 and pr.stdout.strip():
+                        pop = int(float(pr.stdout.strip()))
+                except Exception:
+                    pass
                 return {'id': track_id, 'name': parts[1], 'artists': [{'name': parts[2]}],
                         'album': {'name': parts[3]}, 'duration_ms': int(float(parts[4])),
-                        'popularity': int(float(parts[5] or 0)), 'is_playable': True, '_from_app': True}
+                        'popularity': pop, 'is_playable': True, '_from_app': True}
+            if r.returncode != 0 and r.stderr.strip():
+                print(f"App read-back error: {r.stderr.strip()[:160]}")
             print(f"App did not load {want} (got '{parts[0] if parts and parts[0] else 'nothing'}', try {i + 1}/{attempts})")
         except Exception as e:
             print(f"App track info failed (try {i + 1}/{attempts}): {e}")
