@@ -9196,6 +9196,146 @@ def _telegram_api(method: str, payload: dict):
         return None
 
 
+# ---------------------------------------------------------------------------
+# Chat widget AI (owner, 2026-11-17/18: "an ai replying to people ... if i dont say anything ... or unavailable";
+# he tested it from the website messenger, so the reply lives HERE, not in the Telegram business bot). After a
+# visitor message, CHAT_AI_GRACE_S seconds pass; if the owner has not answered in that thread, Claude writes the
+# reply as him (the same rules the Instagram runs and the Telegram desk follow), it is stored as an owner message
+# so the widget shows it, and a copy goes to his Telegram (reply-to it to take the thread over). Needs
+# ANTHROPIC_API_KEY on Railway; without it this stays quiet and the laptop job googleads/chat_desk_bot.py answers
+# through /api/chat/owner-reply instead (it waits 25 s, so whichever side is up answers once).
+# ---------------------------------------------------------------------------
+CHAT_AI_GRACE_S = int(os.getenv('CHAT_AI_GRACE_S', '15'))
+CHAT_AI_ENABLED = os.getenv('CHAT_AI_REPLIES', '1') == '1'
+CHAT_AI_MODEL = os.getenv('CHAT_AI_MODEL', 'claude-sonnet-5-5')
+CHAT_AI_CAP_PER_CONV = 8
+CHAT_DESK_SECRET = os.getenv('CHAT_DESK_SECRET') or os.getenv('NURTURE_CRON_TOKEN', '')
+CHAT_AI_RULES = """You write replies in the live chat on freshlybakedstudios.com AS Alexander Almgren (Freshly Baked Studios,
+Brooklyn producer and mixer), to a visitor he has not answered yet. You are him; never say you are an assistant, a bot
+or an AI, never say he is busy or that this is automated. Plain, warm, short. Lowercase like a text. No em dashes. No
+exclamation marks. No hyperbole. One idea, at most one question, under 45 words. Song, album and EP titles in double
+quotes. Never the bare word "mix" (say "mix the song", "mixing"). Never the word "analyzer" unless they mention it.
+Never a rate, a discount, a deposit figure or a delivery date, except exactly this when they ask the price of mixing:
+"mixing starts at 500 a song and goes up with the track count. how many tracks are in yours?" If they answer with a
+track count, do NOT invent a number: say "got it, the real number comes after i've listened. drop the session in here
+when you're ready: https://www.dropbox.com/request/C4h4VR18b7rqZEY9cS9C" and nothing more about money. The rates
+page (/rates) gives them a written quote by email once they put their name in; if they ask where the number is, say
+that. If they sent a song or a link, or ask him to listen: "send it to almgren@freshlybakedstudios.com and i'll give it
+a proper listen on the big speakers and write you what i'd do with it." No listen promise with a time on it. If they
+ask for a call: "sure. grab a time here: https://cal.freshlybakedstudios.com/freshlybakedstudios/30min". Production:
+"yes, most of what i do is people's own songs, producing and mixing new material. what are you working on now?"
+Beats: "i don't send beats around. i make custom records per artist, from the song you've got." Small talk, thanks, a
+question about a reel or a mixing idea: answer it in two or three plain sentences, then at most one question, ideally
+"what are you working on now?". If their message is unclear, ask one short question. A bare "hi" gets "hey. what are
+you working on?". Output only the message text."""
+
+
+def _chat_thread(conv: str):
+    try:
+        res = (supabase.table('chat_messages').select('id,sender,text,created_at,visitor_contact,by_ai')
+               .eq('conversation_id', conv).order('id').limit(80).execute())
+        return res.data or []
+    except Exception as e:
+        print(f"chat thread read error: {e}")
+        return []
+
+
+def _chat_mirror_to_owner(conv: str, text: str, contact):
+    """His Telegram gets a copy of what went out as him; a reply-to on it routes back to this visitor."""
+    if not (TELEGRAM_BOT_TOKEN and TELEGRAM_OWNER_CHAT_ID):
+        return None
+    header = f"🤖 [#{conv[:8]}]" + (f"  ·  {contact}" if contact else '') + "  i answered:"
+    sent = _telegram_api('sendMessage', {'chat_id': TELEGRAM_OWNER_CHAT_ID,
+                                         'text': f"{header}\n{text}\n\n↩️ Reply to this message to take over."})
+    try:
+        return sent['result']['message_id'] if sent and sent.get('ok') else None
+    except Exception:
+        return None
+
+
+def _chat_store_owner_reply(conv: str, text: str, by_ai: bool, tg_msg_id=None):
+    try:
+        row = {'conversation_id': conv, 'sender': 'owner', 'text': text, 'by_ai': by_ai,
+               'created_at': datetime.utcnow().isoformat()}
+        if tg_msg_id:
+            row['telegram_message_id'] = tg_msg_id
+        res = supabase.table('chat_messages').insert(row).execute()
+        return res.data[0].get('id') if res.data else None
+    except Exception as e:
+        print(f"chat owner-reply insert error: {e}")
+        return None
+
+
+def _chat_ai_compose(rows, api_key: str):
+    import anthropic
+    history = '\n'.join(f"{'Visitor' if r['sender'] == 'visitor' else 'Alexander'}: {r['text']}" for r in rows[-20:])
+    contact = next((r.get('visitor_contact') for r in reversed(rows) if r.get('visitor_contact')), None)
+    prompt = (f"{CHAT_AI_RULES}\n\n=== THE CHAT (newest last; the last line is what needs an answer) ===\n"
+              f"Visitor contact given: {contact or 'none'}\n{history}\n\nWrite the reply now.")
+    client = anthropic.Anthropic(api_key=api_key)
+    r = client.messages.create(model=CHAT_AI_MODEL, max_tokens=1200, messages=[{'role': 'user', 'content': prompt}])
+    text = ''.join(getattr(b, 'text', '') for b in r.content).strip().strip('"')
+    if not text or '—' in text or len(text.split()) > 60 or text.count('?') > 1:
+        print(f"chat ai: draft held ({r.stop_reason}): {text[:120]!r}")
+        return None
+    return text
+
+
+def _chat_ai_reply(conv: str, visitor_id: int):
+    """Runs CHAT_AI_GRACE_S after a visitor message. Silent if he answered, if a newer visitor message exists
+    (that one has its own timer), if the cap is hit, or if Railway has no key."""
+    if not (CHAT_AI_ENABLED and supabase):
+        return
+    try:
+        rows = _chat_thread(conv)
+        if not rows:
+            return
+        last_visitor = max((r['id'] for r in rows if r['sender'] == 'visitor'), default=None)
+        if last_visitor != visitor_id:
+            return
+        if any(r['sender'] == 'owner' and r['id'] > visitor_id for r in rows):
+            return
+        today = datetime.utcnow().date().isoformat()
+        if sum(1 for r in rows if r.get('by_ai') and str(r.get('created_at', ''))[:10] == today) >= CHAT_AI_CAP_PER_CONV:
+            print(f"chat ai: cap reached for {conv[:8]}")
+            return
+        key = os.getenv('ANTHROPIC_API_KEY')
+        if not key:
+            print("chat ai: no ANTHROPIC_API_KEY on this host; the laptop desk answers instead")
+            return
+        text = _chat_ai_compose(rows, key)
+        if not text:
+            return
+        if any(r['sender'] == 'owner' and r['id'] > visitor_id for r in _chat_thread(conv)):
+            return                                           # he (or the laptop) got there while we wrote
+        contact = next((r.get('visitor_contact') for r in reversed(rows) if r.get('visitor_contact')), None)
+        tg_id = _chat_mirror_to_owner(conv, text, contact)
+        _chat_store_owner_reply(conv, text, True, tg_id)
+        print(f"chat ai: answered {conv[:8]}: {text[:80]!r}")
+    except Exception as e:
+        print(f"chat ai error: {e}")
+
+
+@app.post("/api/chat/owner-reply")
+async def chat_owner_reply(data: dict, secret: str = ''):
+    """The laptop desk (googleads/chat_desk_bot.py) answers a visitor as him: store it so the widget shows it, mirror
+    it to his Telegram. Skips if he already answered after the visitor message it is answering."""
+    if not CHAT_DESK_SECRET or secret != CHAT_DESK_SECRET:
+        raise HTTPException(403, "forbidden")
+    conv = (data.get('conversation_id') or '').strip()
+    text = (data.get('text') or '').strip()
+    visitor_id = int(data.get('visitor_id') or 0)
+    if not conv or not text or not supabase:
+        raise HTTPException(400, "conversation_id and text required")
+    rows = _chat_thread(conv)
+    if any(r['sender'] == 'owner' and r['id'] > visitor_id for r in rows):
+        return {"ok": True, "skipped": "already answered"}
+    contact = next((r.get('visitor_contact') for r in reversed(rows) if r.get('visitor_contact')), None)
+    tg_id = _chat_mirror_to_owner(conv, text, contact)
+    rid = _chat_store_owner_reply(conv, text, True, tg_id)
+    return {"ok": True, "id": rid}
+
+
 @app.post("/api/chat/send")
 async def chat_send(data: dict):
     """Visitor sends a message: store it and forward to the owner's Telegram."""
@@ -9244,6 +9384,10 @@ async def chat_send(data: dict):
                 }).eq('id', row_id).execute()
             except Exception as e:
                 print(f"chat_send tg-map error: {e}")
+
+    # the AI answers as him after the grace period unless he has written in the thread by then (2026-11-18)
+    if row_id is not None:
+        threading.Timer(CHAT_AI_GRACE_S, _chat_ai_reply, args=(conv, row_id)).start()
 
     return {"ok": True}
 
