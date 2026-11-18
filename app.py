@@ -9232,7 +9232,12 @@ message is only a nudge (hi, hello, hey, yo, you there, a lone question mark) an
 unanswered for more than an hour, open with one short line owning the gap in his words ("hey. sorry, just seeing
 this." or "hey. missed this yesterday."), then answer that earlier question. Never answer a question that is hours or
 days old as if it arrived a moment ago. Several nudges get owned once, never apologise twice. A nudge with nothing
-older left open is just a hello. Output only the message text."""
+older left open is just a hello. ASK ONCE: if a question of his is already sitting unanswered in the thread, never
+ask it again, rephrase it, or coach them on how to answer it. Answer only what they just said, in one short line.
+"are you there", "yo" or "hello" after he already answered gets "yep, here." or "here. what's up?" and nothing more,
+no re-pitch, no second ask. If they have nudged twice since his last real answer and said nothing new, reply with
+nothing: output exactly NO_REPLY. Chasing reads as a bot; a person answers once and waits. Output only the message
+text, or NO_REPLY."""
 
 
 def _chat_when(iso, now=None):
@@ -9305,7 +9310,7 @@ def _chat_ai_compose(rows, api_key: str):
     client = anthropic.Anthropic(api_key=api_key)
     r = client.messages.create(model=CHAT_AI_MODEL, max_tokens=1200, messages=[{'role': 'user', 'content': prompt}])
     text = ''.join(getattr(b, 'text', '') for b in r.content).strip().strip('"')
-    if not text or '—' in text or len(text.split()) > 60 or text.count('?') > 1:
+    if not text or text.upper().startswith('NO_REPLY') or '—' in text or len(text.split()) > 60 or text.count('?') > 1:
         print(f"chat ai: draft held ({r.stop_reason}): {text[:120]!r}")
         return None
     return text
