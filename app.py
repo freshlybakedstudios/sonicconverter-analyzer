@@ -9227,7 +9227,37 @@ ask for a call: "sure. grab a time here: https://cal.freshlybakedstudios.com/fre
 Beats: "i don't send beats around. i make custom records per artist, from the song you've got." Small talk, thanks, a
 question about a reel or a mixing idea: answer it in two or three plain sentences, then at most one question, ideally
 "what are you working on now?". If their message is unclear, ask one short question. A bare "hi" gets "hey. what are
-you working on?". Output only the message text."""
+you working on?". TIME MATTERS: every chat line is stamped with when it was sent and "Now" is given. If their newest
+message is only a nudge (hi, hello, hey, yo, you there, a lone question mark) and an earlier question of theirs sat
+unanswered for more than an hour, open with one short line owning the gap in his words ("hey. sorry, just seeing
+this." or "hey. missed this yesterday."), then answer that earlier question. Never answer a question that is hours or
+days old as if it arrived a moment ago. Several nudges get owned once, never apologise twice. A nudge with nothing
+older left open is just a hello. Output only the message text."""
+
+
+def _chat_when(iso, now=None):
+    """'yesterday 10:05am' in New York time. Owner 2026-11-18: without this the model answered a day-old price question
+    cold, after four unanswered hellos, with no 'sorry, just seeing this'."""
+    import datetime as _dt
+    try:
+        from zoneinfo import ZoneInfo
+        ny = ZoneInfo('America/New_York')
+    except Exception:
+        ny = _dt.timezone(_dt.timedelta(hours=-5))
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    if iso is None:
+        t = now
+    else:
+        try:
+            t = _dt.datetime.fromisoformat(str(iso).replace('Z', '+00:00'))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=_dt.timezone.utc)
+        except Exception:
+            return ''
+    t = t.astimezone(ny); n = now.astimezone(ny)
+    days = (n.date() - t.date()).days
+    day = 'today' if days == 0 else 'yesterday' if days == 1 else (f'{days} days ago' if days < 7 else t.strftime('%b %-d'))
+    return f"{day} {t.strftime('%-I:%M%p').lower()}"
 
 
 def _chat_thread(conv: str):
@@ -9268,10 +9298,10 @@ def _chat_store_owner_reply(conv: str, text: str, by_ai: bool, tg_msg_id=None):
 
 def _chat_ai_compose(rows, api_key: str):
     import anthropic
-    history = '\n'.join(f"{'Visitor' if r['sender'] == 'visitor' else 'Alexander'}: {r['text']}" for r in rows[-20:])
+    history = '\n'.join(f"[{_chat_when(r.get('created_at'))}] {'Visitor' if r['sender'] == 'visitor' else 'Alexander'}: {r['text']}" for r in rows[-20:])
     contact = next((r.get('visitor_contact') for r in reversed(rows) if r.get('visitor_contact')), None)
-    prompt = (f"{CHAT_AI_RULES}\n\n=== THE CHAT (newest last; the last line is what needs an answer) ===\n"
-              f"Visitor contact given: {contact or 'none'}\n{history}\n\nWrite the reply now.")
+    prompt = (f"{CHAT_AI_RULES}\n\n=== THE CHAT (newest last, each line stamped with when it was sent; the last line is what needs an answer) ===\n"
+              f"Now: {_chat_when(None)}\nVisitor contact given: {contact or 'none'}\n{history}\n\nWrite the reply now.")
     client = anthropic.Anthropic(api_key=api_key)
     r = client.messages.create(model=CHAT_AI_MODEL, max_tokens=1200, messages=[{'role': 'user', 'content': prompt}])
     text = ''.join(getattr(b, 'text', '') for b in r.content).strip().strip('"')
