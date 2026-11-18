@@ -9352,7 +9352,9 @@ def _chat_ai_reply(conv: str, visitor_id: int):
 
 
 @app.post("/api/chat/owner-reply")
-async def chat_owner_reply(data: dict, secret: str = ''):
+def chat_owner_reply(data: dict, secret: str = ''):
+    # plain def on purpose: these chat handlers make blocking Supabase and Telegram calls, and as async defs they
+    # froze the event loop, so the widget's queued polls all returned the same new row (2026-11-18, one reply x10)
     """The laptop desk (googleads/chat_desk_bot.py) answers a visitor as him: store it so the widget shows it, mirror
     it to his Telegram. Skips if he already answered after the visitor message it is answering."""
     if not CHAT_DESK_SECRET or secret != CHAT_DESK_SECRET:
@@ -9372,7 +9374,7 @@ async def chat_owner_reply(data: dict, secret: str = ''):
 
 
 @app.post("/api/chat/send")
-async def chat_send(data: dict):
+def chat_send(data: dict):
     """Visitor sends a message: store it and forward to the owner's Telegram."""
     conv = (data.get('conversation_id') or '').strip()
     text = (data.get('text') or '').strip()
@@ -9428,7 +9430,7 @@ async def chat_send(data: dict):
 
 
 @app.get("/api/chat/poll")
-async def chat_poll(conversation_id: str, after_id: int = 0):
+def chat_poll(conversation_id: str, after_id: int = 0):
     """Widget polls for new owner replies in this conversation."""
     if not supabase:
         return {"messages": []}
