@@ -8,6 +8,9 @@ healthcheckPath = "/health"
 # boot, making every deploy a coin flip against the 5-min window — all three
 # of today's deployments died at healthcheck while the old version silently
 # kept serving. 15 min = 3x headroom.
+# 2026-11-18: start.py now prefers gems_universe_slim.json (same data minus the
+# unread tier history / brand_affinity sections, ~2.7 GB less RAM). The 900 s
+# window stays: the full file is still the fallback when the slim object is missing.
 healthcheckTimeout = 900
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3

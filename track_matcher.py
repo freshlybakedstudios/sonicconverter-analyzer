@@ -4,6 +4,7 @@ Adapted from final_sonic_matcher.py - runs entirely from the pre-built cache.
 """
 
 import json
+import os
 import math
 import re
 import time
@@ -943,7 +944,11 @@ class TrackMatcher:
 
     def __init__(self, cache_path: Optional[str] = None):
         if cache_path is None:
-            cache_path = str(Path(__file__).resolve().parent / 'cache' / 'universe' / 'gems_universe.json')
+            # start.py (Railway) exports GEMS_CACHE_PATH pointing at whichever
+            # object it downloaded: gems_universe_slim.json when GCS has it,
+            # else the full file. Local runs without the var keep the full file.
+            cache_path = os.getenv('GEMS_CACHE_PATH') or str(
+                Path(__file__).resolve().parent / 'cache' / 'universe' / 'gems_universe.json')
         self.cache_path = cache_path
         self.cache = None
         self._gems_list = []
@@ -956,7 +961,7 @@ class TrackMatcher:
         self._n_artist_records = 1
 
     def load_cache(self):
-        """Load the 1.2 GB universe cache into memory."""
+        """Load the universe cache (full, or the slim copy start.py picked) into memory."""
         print(f"Loading universe cache from {self.cache_path}...")
         start = time.time()
         with open(self.cache_path, 'r', encoding='utf-8') as f:
@@ -1034,7 +1039,8 @@ class TrackMatcher:
         self._n_artist_records = max(1, len(self._artists))
 
         stats = self.cache.get('stats', {})
-        print(f"  Loaded in {elapsed:.1f}s — {stats.get('total_gems', 0):,} GEMS records, {enriched:,} enriched with conversion_rate, {len(self._cand_cache):,} candidate profiles precomputed, {len(self._tag_df):,} affinity tags counted")
+        print(f"  Loaded in {elapsed:.1f}s — {stats.get('total_gems', 0):,} GEMS records, {enriched:,} enriched with conversion_rate, {len(self._cand_cache):,} candidate profiles precomputed, {len(self._tag_df):,} affinity tags counted"
+              + (" [slim cache]" if stats.get('slim') else " [full cache]"))
 
     def affinity_tag_set(self, *genre_sources, lane: Optional[Set[str]] = None) -> Set[str]:
         """Normalized specific-tag set for the USER side of the affinity
