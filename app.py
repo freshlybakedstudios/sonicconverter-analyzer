@@ -7003,6 +7003,36 @@ async def deal_search(q: str = ""):
     return {"results": out}
 
 
+@app.get("/api/artist/peek")
+async def artist_peek(url: str = "", token: str = ""):
+    """2026-11-22 (owner: "wire and push"): the who-is-this line for the IG money reactor's pushes. Cheap on purpose:
+    the Supabase cache when the artist is known (monthly listeners), Spotify's artist endpoint when not (followers and
+    popularity). Never Chartmetric. Token-gated so it is not a public Spotify proxy."""
+    if not token or not CHAT_DESK_SECRET or token != CHAT_DESK_SECRET:
+        raise HTTPException(403, "no")
+    m = re.search(r'artist/([A-Za-z0-9]{22})', url or '')
+    if not m:
+        raise HTTPException(400, "spotify artist url required")
+    sid = m.group(1)
+    out = {'id': sid, 'source': 'none'}
+    cached = _cached_artist_lookup(f"https://open.spotify.com/artist/{sid}")
+    if cached:
+        out.update({'name': cached.get('name'), 'monthly_listeners': int(cached.get('listeners') or 0),
+                    'followers': int(cached.get('followers') or 0), 'source': 'db'})
+        return out
+    tok = _get_spotify_cc_token()
+    if tok:
+        try:
+            r = requests.get(f'https://api.spotify.com/v1/artists/{sid}', headers={'Authorization': f'Bearer {tok}'}, timeout=8)
+            if r.status_code == 200:
+                a = r.json()
+                out.update({'name': a.get('name'), 'followers': (a.get('followers') or {}).get('total', 0),
+                            'popularity': a.get('popularity'), 'genres': (a.get('genres') or [])[:3], 'source': 'spotify'})
+        except Exception:
+            pass
+    return out
+
+
 @app.post("/api/deal/lookup")
 async def deal_lookup(
     spotify_url: str = Form(...),
