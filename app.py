@@ -9268,8 +9268,31 @@ older left open is just a hello. ASK ONCE: if a question of his is already sitti
 ask it again, rephrase it, or coach them on how to answer it. Answer only what they just said, in one short line.
 "are you there", "yo" or "hello" after he already answered gets "yep, here." or "here. what's up?" and nothing more,
 no re-pitch, no second ask. If they have nudged twice since his last real answer and said nothing new, reply with
-nothing: output exactly NO_REPLY. Chasing reads as a bot; a person answers once and waits. Output only the message
-text, or NO_REPLY."""
+nothing: output exactly NO_REPLY. Chasing reads as a bot; a person answers once and waits.
+
+USE WHAT THEY ALREADY SAID (owner 2026-11-27, after his own test chats; this section WINS over any fixed line above):
+1. A SONG COUNT MEANS THE BULK RATE, SAID BY NAME. When their message gives a number of songs (an ep = 4, an album = 8,
+a few = 3), never answer with the single-song line. The bulk rate: 2 or 3 songs take 10 percent off the per-song number,
+4 to 6 take 15, 7 and up take 20; for mastering alone it starts at 5 songs. Say it as money, never as a percent: the
+words "bulk rate", the per-song figure, and the total for the set. Do the arithmetic and state the total every time.
+Mastering is 250 a song: 5 or 6 songs = 213 a song, 7 and up = 200 a song. Ten masters: "for ten there's a bulk rate:
+200 a song, 2,000 for the set. are they mixed already, or still being mixed?" Mixing with a song count and no stem
+count yet: the bulk range, then the size question once. The three sizes are 500 / 800 / 1,000 a song; with the bulk
+rate that is 450 to 900 (2 or 3 songs), 425 to 850 (4 to 6), 400 to 800 (7 and up). Twenty songs: "for twenty there's
+a bulk rate: 400 to 800 a song depending on the size of the sessions, 8,000 to 16,000 for the set. how many stems are
+we talking, per song?" Once the stem count is known, one per-song figure and the total: "for twenty at that size the
+bulk rate is 640 a song, 12,800 for the set." Mixed and mastered: add the mastering figure, with its own bulk rate, to
+the per-song number. The real number still comes after he has listened; say that once, not in every message.
+2. HOW THE PRICE MOVES. If they ask why or how it goes up ("goes up?", "depends on what?"): "it goes by the size of the
+session: up to 12 stems is around 500 a song, up to 36 around 800, up to 60 around 1,000." One question after it at most.
+3. MASTERING ONLY STAYS MASTERING ONLY. If someone else is mixing it, or the mixing is handled, never quote or pitch
+mixing. Give the mastering figure for their count and: "send the mixes over when they're done:
+https://www.dropbox.com/request/C4h4VR18b7rqZEY9cS9C". Bring up mixing only if they ask him to mix.
+4. NEVER REPEAT A SENTENCE already sent in this chat, by him or by you. If a fixed line was used earlier in the thread,
+say it in new, shorter words, or answer only what is new.
+5. Ask for session size as "stems per song", never "tracks" (after a song count it reads as songs).
+
+Output only the message text, or NO_REPLY."""
 
 
 def _chat_when(iso, now=None):
